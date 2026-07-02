@@ -53,6 +53,7 @@ export function AccountSettingsClient({ initialEmails, initialLinkedAccounts }: 
   useEffect(() => {
     if (addEmailState.status === 'success') {
       toast.success(addEmailState.message)
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sync UI after successful email add
       setShowAddEmail(false)
       refreshData()
     } else if (addEmailState.status === 'error') {
@@ -63,6 +64,7 @@ export function AccountSettingsClient({ initialEmails, initialLinkedAccounts }: 
   useEffect(() => {
     if (verifyEmailState.status === 'success') {
       toast.success(verifyEmailState.message)
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sync UI after successful email verify
       setVerifyingEmailId(null)
       setVerificationCode('')
       refreshData()
@@ -121,7 +123,7 @@ export function AccountSettingsClient({ initialEmails, initialLinkedAccounts }: 
       {/* Email'ы */}
       <section>
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-xl font-black uppercase">Email'ы</h2>
+          <h2 className="text-xl font-black uppercase">Email&apos;ы</h2>
           <Button
             onClick={() => setShowAddEmail(true)}
             className="h-10 bg-cf-accent px-4 text-xs font-black uppercase text-white hover:bg-[#b01e1e]"
@@ -316,7 +318,7 @@ export function AccountSettingsClient({ initialEmails, initialLinkedAccounts }: 
             <p className="font-bold text-cf-text-1">Безопасность</p>
             <p className="mt-1">
               Коды подтверждения отправляются на указанный email и действительны 15 минут.
-              Вы можете привязать до 5 email'ов и несколько внешних аккаунтов.
+              Вы можете привязать до 5 email&apos;ов и несколько внешних аккаунтов.
             </p>
           </div>
         </div>

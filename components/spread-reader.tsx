@@ -69,6 +69,7 @@ export function SpreadReader({
 
   useEffect(() => {
     const t = localStorage.getItem('canfly-reader-theme') as Theme | null
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initializing theme from localStorage
     if (t && t in THEMES) setTheme(t)
     const f = localStorage.getItem('canfly-reader-fontsize')
     if (f) {
@@ -236,12 +237,11 @@ export function SpreadReader({
   }, [currentUserId, currentChapter?.id, edition.id, progress])
 
   // ── Сброс страницы и selection при смене главы ──
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset selection/artifact on chapter change
     setSelection(null)
     setArtifactOpen(false)
   }, [currentIndex])
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   // ── После remeasure: восстановить последнюю страницу (переход назад) ──
   useEffect(() => {
@@ -250,6 +250,7 @@ export function SpreadReader({
       ? Math.floor((pageCount - 2) / 2) * 2
       : pageCount - 1
     setCurrentPage(Math.max(0, lastPage))
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- restore last page on back navigation
     setPendingLastPage(false)
   }, [pendingLastPage, pageCount, isSpread, setCurrentPage])
 

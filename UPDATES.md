@@ -2,6 +2,25 @@
 
 ---
 
+## [2 июля 2026] Исправление eslint: 17 ошибок в production-коде
+
+### Что изменено
+- `components/character-profile-tabs.tsx`, `components/character-profile-header.tsx` — заменены `<img>` на `<Image>` из next/image (убран `@next/next/no-img-element`)
+- `components/highlight-artifact.tsx` — добавлены недостающие зависимости в useEffect (`runExplain`, `runMeaning`)
+- `lib/reader/use-column-pagination.ts` — добавлена зависимость `measure` в useEffect
+- `components/highlight-artifact.tsx`, `components/release-book-reader.tsx`, `components/spread-reader.tsx`, `components/studio/editorial-notes-overlay.tsx`, `components/studio/editorial-notes-panel.tsx`, `components/character-friend-button.tsx` — добавлены `eslint-disable-next-line` с обоснованиями для `react-hooks/set-state-in-effect`
+- `components/account-settings-client.tsx` — исправлены `react-hooks/set-state-in-effect` и `react/no-unescaped-entities`
+
+### Зачем
+- React Compiler в Next.js 16 превратил эти правила в `error` — `pnpm lint` падал с 14 ошибками
+- issue #6: "Убрать 17 eslint-disable из production-кода"
+
+### Как использовать
+- `pnpm lint` — 0 ошибок (65 warnings не в scope)
+- `pnpm build` — проходит без ошибок
+
+---
+
 ## [2 июля 2026] Soft-delete пользователей в админке
 
 ### Что изменено

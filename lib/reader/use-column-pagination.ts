@@ -91,8 +91,7 @@ export function useColumnPagination(
     const id = requestAnimationFrame(() => requestAnimationFrame(measure))
     document.fonts.ready.then(measure)
     return () => cancelAnimationFrame(id)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chapterKey, fontSize])
+  }, [chapterKey, fontSize, measure])
 
   // ResizeObserver на viewport
   useEffect(() => {

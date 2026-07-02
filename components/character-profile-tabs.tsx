@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import Image from 'next/image'
 
 import { CharacterPostsFeed } from '@/components/character-posts-feed'
 import { CharacterWall } from '@/components/character-wall'
@@ -156,10 +157,11 @@ function AboutTab({
                 >
                   <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-full bg-[#111210]">
                     {friend.avatar ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
+                      <Image
                         src={friend.avatar}
                         alt={friend.display_name}
+                        width={36}
+                        height={36}
                         className="h-full w-full object-cover"
                       />
                     ) : (

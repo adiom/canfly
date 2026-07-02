@@ -164,9 +164,9 @@ export function HighlightArtifact({
 
   // Сброс при закрытии диалога. setState в effect — синхронизация internal
   // state с prop (`open`). remount-by-key сломал бы анимацию закрытия.
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset state on dialog close (sync with open prop)
       setPhase('save')
       setSavedHighlight(null)
       setNote('')
@@ -185,6 +185,7 @@ export function HighlightArtifact({
 
   // Сброс UI при смене вкладки (без abort — streamAI сам отменяет предыдущий)
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset AI state on tab change
     setAiText('')
     setAiLoading(false)
     setAiError('')
@@ -193,7 +194,6 @@ export function HighlightArtifact({
     setImageLoading(false)
     setImageError('')
   }, [activeTab])
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   const streamAI = useCallback(async (endpoint: string, body: object) => {
     abortRef.current?.abort()
@@ -233,13 +233,13 @@ export function HighlightArtifact({
 
   // Автозапуск при смене вкладки (explain / meaning) — вызовы запускают
   // streamAI, который внутри делает setState. Sync с activeTab-пропсом.
-  /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
   useEffect(() => {
     if (phase !== 'tools') return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- auto-trigger AI on tab change
     if (activeTab === 'explain') runExplain()
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- auto-trigger AI on tab change
     if (activeTab === 'meaning') runMeaning()
-  }, [activeTab, phase])
-  /* eslint-enable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
+  }, [activeTab, phase, runExplain, runMeaning])
 
   const handleIllustrate = async () => {
     setImageLoading(true)

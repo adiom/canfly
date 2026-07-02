@@ -21,9 +21,9 @@ export function CharacterFriendButton({
   const [loading, setLoading] = useState(true)
 
   // Fetch статуса дружбы при авторизации. setState в effect — data-loading.
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (authStatus !== 'authenticated') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- data-loading: reset on unauth
       setLoading(false)
       setFriendshipStatus(null)
       return
@@ -52,7 +52,6 @@ export function CharacterFriendButton({
       active = false
     }
   }, [characterSlug, authStatus])
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   const addFriend = async () => {
     setLoading(true)

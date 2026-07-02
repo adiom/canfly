@@ -40,7 +40,6 @@ export function EditorialNotesPanel({ chapterId, onNoteFocus, editorialNotes: ex
   }, [chapterId, onNotesUpdate])
 
   // Первичная загрузка notes. setState в effect — data-loading паттерн.
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     let cancelled = false
     void (async () => {
@@ -65,9 +64,11 @@ export function EditorialNotesPanel({ chapterId, onNoteFocus, editorialNotes: ex
 
   // Синхронизация с parent notes (после первичной загрузки).
   useEffect(() => {
-    if (hasLoaded && externalNotes) setNotes(externalNotes)
+    if (hasLoaded && externalNotes) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sync with parent state after initial load
+      setNotes(externalNotes)
+    }
   }, [externalNotes, hasLoaded])
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleMouseUp = useCallback(() => {
     const sel = window.getSelection()

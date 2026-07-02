@@ -1,4 +1,5 @@
 import { BookOpen, MessageCircle, Users } from 'lucide-react'
+import Image from 'next/image'
 
 import { CharacterFriendButton } from '@/components/character-friend-button'
 import type { Character, CharacterStats } from '@/lib/types'
@@ -20,10 +21,11 @@ export function CharacterProfileHeader({ character, stats }: CharacterProfileHea
           <div className="flex flex-col items-start gap-4 md:flex-row md:items-end">
             <div className="relative h-32 w-32 shrink-0 overflow-hidden rounded-full border-4 border-[#111210] bg-[#1b1c19] shadow-2xl">
               {character.avatar ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
+                <Image
                   src={character.avatar}
                   alt={character.name}
+                  width={128}
+                  height={128}
                   className="h-full w-full object-cover"
                 />
               ) : (

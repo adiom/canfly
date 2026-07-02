@@ -216,7 +216,6 @@ export function ReleaseBookReader({
 
   // Скролл наверх + синхронизация URL при смене главы. setState в effect —
   // reset selection/artifact при навигации (sync с currentIndex).
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -224,10 +223,10 @@ export function ReleaseBookReader({
       ? `/release/${release.slug}/book/${edition.quality_tier}/${currentIndex + 1}`
       : `/release/${release.slug}/${edition.slug}/${currentIndex + 1}`
     window.history.replaceState(null, '', chapterUrl)
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset selection/artifact on chapter navigation
     setSelection(null)
     setArtifactOpen(false)
   }, [currentIndex, release.slug, edition.slug])
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Клавиатура
   useEffect(() => {
