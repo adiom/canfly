@@ -172,11 +172,15 @@ export const authConfig = {
   callbacks: {
     async signIn({ user, account, profile }) {
       const provider = account?.provider
+      const callbackUrl = (account as { callbackUrl?: string })?.callbackUrl ?? ''
+      const isLinking = callbackUrl.includes('link=1') || callbackUrl.includes('linked=')
+
       console.log('[auth] signIn', {
         provider,
         userEmail: user?.email,
         userName: user?.name,
         userId: user?.id,
+        isLinking,
         profileData: provider !== 'credentials' ? { email: profile?.email, name: profile?.name } : undefined,
       })
 
@@ -191,6 +195,29 @@ export const authConfig = {
         }
 
         try {
+          // Если это режим привязки — привязываем к текущему пользователю
+          if (isLinking && user.id) {
+            const existingLink = await dbQueryOne<{ id: string }>(
+              'SELECT id FROM linked_accounts WHERE provider = $1 AND provider_account_id = $2 LIMIT 1',
+              [provider, user.id],
+            )
+            if (!existingLink) {
+              // Получаем профиль для display_name и avatar
+              const profileName = (profile as { name?: string | null })?.name ?? user.name ?? null
+              const profileImage = (profile as { image?: string | null })?.image ?? (profile as { picture?: string | null })?.picture ?? null
+
+              await dbQueryOne(
+                `INSERT INTO linked_accounts (user_id, provider, provider_account_id, display_name, avatar_url)
+                 VALUES ($1, $2, $3, $4, $5)
+                 ON CONFLICT (provider, provider_account_id) DO NOTHING`,
+                [user.id, provider, user.id, profileName, profileImage],
+              )
+            }
+            console.log('[auth] signIn linked', { provider, userId: user.id })
+            return true
+          }
+
+          // Обычный OAuth-вход: ищем/создаём пользователя по email
           const dbUser = await findOrCreateUserByEmail(user.email, user.name)
           if (!dbUser) {
             console.warn('[auth] signIn rejected: user not created', { email: user.email })
@@ -201,6 +228,24 @@ export const authConfig = {
           ;(user as { type: UserType }).type = 'regular'
           ;(user as { handle?: string | null }).handle = dbUser.handle
           ;(user as { login?: string | null }).login = dbUser.login
+
+          // Автоматически привязываем OAuth-аккаунт к найденному пользователю
+          const providerAccountId = user.id // Используем ID пользователя как provider_account_id
+          const existingLink = await dbQueryOne<{ id: string }>(
+            'SELECT id FROM linked_accounts WHERE provider = $1 AND provider_account_id = $2 LIMIT 1',
+            [provider, providerAccountId],
+          )
+          if (!existingLink) {
+            const profileName = (profile as { name?: string | null })?.name ?? user.name ?? null
+            const profileImage = (profile as { image?: string | null })?.image ?? (profile as { picture?: string | null })?.picture ?? null
+
+            await dbQueryOne(
+              `INSERT INTO linked_accounts (user_id, provider, provider_account_id, display_name, avatar_url)
+               VALUES ($1, $2, $3, $4, $5)
+               ON CONFLICT (provider, provider_account_id) DO NOTHING`,
+              [dbUser.id, provider, providerAccountId, profileName, profileImage],
+            )
+          }
 
           console.log('[auth] signIn success', { provider, userId: dbUser.id, email: user.email })
           return true

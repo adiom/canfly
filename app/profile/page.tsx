@@ -1,6 +1,6 @@
 import Image from 'next/image'
 import Link from 'next/link'
-import { MessageCircle, UserRound } from 'lucide-react'
+import { MessageCircle, Settings, UserRound } from 'lucide-react'
 import type { ChapterHighlight } from '@/lib/releases-types'
 
 import { fetchReaderProfileSummary } from '@/lib/server/users'
@@ -25,9 +25,15 @@ export default async function ProfilePage() {
           <Link href="/" className="flex h-9 w-16 items-center justify-center bg-cf-accent text-lg font-black uppercase tracking-[-0.04em] text-white">
             canfly
           </Link>
-          <Link href="/characters" className="text-xs font-black uppercase tracking-[0.18em] text-cf-text-2 hover:text-cf-text-heading transition-colors">
-            Персонажи
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link href="/profile/settings" className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-cf-text-2 hover:text-cf-text-heading transition-colors">
+              <Settings className="h-4 w-4" />
+              Настройки
+            </Link>
+            <Link href="/characters" className="text-xs font-black uppercase tracking-[0.18em] text-cf-text-2 hover:text-cf-text-heading transition-colors">
+              Персонажи
+            </Link>
+          </div>
         </div>
       </header>
 
