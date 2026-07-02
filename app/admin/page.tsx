@@ -242,6 +242,27 @@ export default function AdminPage() {
     setPasswordDrafts((current) => ({ ...current, [user.id]: '' }));
   };
 
+  const deleteUser = async (user: AdminUserProfile) => {
+    if (!window.confirm(`Скрыть пользователя "${user.display_name}"? Запись останется в БД.`)) {
+      return;
+    }
+
+    const response = await fetch(`/api/admin/users/${user.id}`, { method: 'DELETE' });
+
+    if (response.status === 401) {
+      router.push('/admin/login');
+      return;
+    }
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      setError(data.error || 'Не удалось скрыть пользователя');
+      return;
+    }
+
+    setUsers((current) => current.filter((item) => item.id !== user.id));
+  };
+
   if (loading) {
     return (
       <main className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
@@ -605,7 +626,7 @@ export default function AdminPage() {
                       ))}
                     </div>
 
-                    <div className="flex flex-col gap-3 border-t border-slate-700 pt-4 md:flex-row">
+                    <div className="flex flex-col gap-3 border-t border-slate-700 pt-4 md:flex-row md:items-center">
                       <input
                         value={passwordDrafts[user.id] || ''}
                         onChange={(event) =>
@@ -624,6 +645,14 @@ export default function AdminPage() {
                         onClick={() => changeUserPassword(user)}
                       >
                         Сменить пароль
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="text-red-400 hover:text-red-300"
+                        onClick={() => deleteUser(user)}
+                      >
+                        Удалить
                       </Button>
                     </div>
                   </div>

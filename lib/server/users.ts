@@ -32,7 +32,7 @@ export function normalizeLogin(value: unknown) {
 
 export async function findUserByLogin(login: string) {
   return dbQueryOne<UserProfile & { password_hash: string | null }>(
-    'SELECT * FROM users WHERE login = $1 LIMIT 1',
+    'SELECT * FROM users WHERE login = $1 AND COALESCE(is_deleted, FALSE) = FALSE LIMIT 1',
     [login],
   )
 }
@@ -109,6 +109,8 @@ export async function listAdminUsers() {
         u.display_name,
         u.avatar,
         u.bio,
+        u.is_deleted,
+        u.deleted_at,
         u.created_at,
         u.updated_at,
         COALESCE(
@@ -121,10 +123,40 @@ export async function listAdminUsers() {
       LEFT JOIN user_roles ur ON ur.user_id = u.id
       LEFT JOIN character_friendships cf ON cf.user_id = u.id
       LEFT JOIN character_conversations cc ON cc.user_id = u.id
+      WHERE COALESCE(u.is_deleted, FALSE) = FALSE
       GROUP BY u.id
       ORDER BY u.created_at DESC
     `,
   )
+}
+
+export async function softDeleteUser(userId: string) {
+  return dbQueryOne<UserProfile>(
+    `
+      UPDATE users
+      SET is_deleted = TRUE,
+          deleted_at = NOW()
+      WHERE id = $1
+      RETURNING *
+    `,
+    [userId],
+  )
+}
+
+export async function countActiveAdmins(excludeUserId?: string) {
+  const params: unknown[] = []
+  let where = `WHERE role = 'admin'`
+  if (excludeUserId) {
+    params.push(excludeUserId)
+    where += ` AND user_id <> $1::uuid`
+  }
+
+  const row = await dbQueryOne<{ count: number }>(
+    `SELECT COUNT(DISTINCT user_id)::int AS count FROM user_roles ${where}`,
+    params,
+  )
+
+  return row?.count ?? 0
 }
 
 export async function fetchUserById(userId: string) {

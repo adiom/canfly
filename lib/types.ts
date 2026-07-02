@@ -93,6 +93,8 @@ export interface UserProfile {
   display_name: string;
   avatar: string | null;
   bio: string | null;
+  is_deleted: boolean;
+  deleted_at: string | null;
   created_at: string;
   updated_at: string;
 }

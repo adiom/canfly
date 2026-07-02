@@ -145,13 +145,20 @@ CREATE TABLE IF NOT EXISTS public.users (
   display_name TEXT NOT NULL,
   avatar TEXT,
   bio TEXT,
+  is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+  deleted_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 ALTER TABLE public.users
   ADD COLUMN IF NOT EXISTS login TEXT UNIQUE,
-  ADD COLUMN IF NOT EXISTS password_hash TEXT;
+  ADD COLUMN IF NOT EXISTS password_hash TEXT,
+  ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS idx_users_is_deleted ON public.users (is_deleted)
+  WHERE is_deleted = TRUE;
 
 CREATE TABLE IF NOT EXISTS public.user_roles (
   user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,

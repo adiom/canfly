@@ -2,6 +2,29 @@
 
 ---
 
+## [2 июля 2026] Soft-delete пользователей в админке
+
+### Что изменено
+- `postgres/009_user_soft_delete.sql` — новая миграция: `users.is_deleted BOOLEAN` + `users.deleted_at TIMESTAMPTZ` + partial-индекс
+- `postgres/schema.sql` — те же поля добавлены в bootstrap
+- `lib/types.ts` — `UserProfile` / `AdminUserProfile` получили `is_deleted`, `deleted_at`
+- `lib/server/users.ts` — `softDeleteUser()`, `countActiveAdmins()`; `listAdminUsers` и `findUserByLogin` фильтруют `is_deleted = false`
+- `app/api/admin/users/[id]/route.ts` — `DELETE` handler с защитой:
+  - нельзя удалить свой аккаунт (`session.user.id === id`)
+  - нельзя удалить последнего администратора
+  - повторное удаление → 410
+- `app/admin/page.tsx` (Users Tab) — кнопка «Удалить» с подтверждением
+
+### Зачем
+Админ должен иметь возможность скрыть пользователя без физического удаления строки из БД (сохраняем связи с друзьями/диалогами/хьюлайтами/заказами).
+
+### Как использовать
+1. Применить миграцию: `psql $DATABASE_URL -f postgres/009_user_soft_delete.sql`
+2. В `/admin` → «Пользователи» нажать «Удалить» в карточке нужного юзера
+3. Скрытый пользователь не отображается в списке и не может войти
+
+---
+
 ## [2 июля 2026] Единый вход canfly SSO
 
 ### Что изменено
