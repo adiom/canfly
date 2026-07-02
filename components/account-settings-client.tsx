@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useActionState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { signIn } from 'next-auth/react'
 import { Trash2, CheckCircle, Mail, Link2, Unlink, Shield } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -30,6 +31,7 @@ const PROVIDERS: Record<string, { label: string; icon: string }> = {
 
 export function AccountSettingsClient({ initialEmails, initialLinkedAccounts }: AccountSettingsClientProps) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [emails, setEmails] = useState<UserEmail[]>(initialEmails)
   const [linkedAccounts, setLinkedAccounts] = useState<LinkedAccount[]>(initialLinkedAccounts)
   const [showAddEmail, setShowAddEmail] = useState(false)
@@ -38,6 +40,15 @@ export function AccountSettingsClient({ initialEmails, initialLinkedAccounts }: 
 
   const [addEmailState, addEmailAction, isAddingEmail] = useActionState(addEmail, { status: 'idle' })
   const [verifyEmailState, verifyEmailAction, isVerifyingEmail] = useActionState(verifyEmail, { status: 'idle' })
+
+  useEffect(() => {
+    const linked = searchParams.get('linked')
+    if (linked) {
+      toast.success(`Аккаунт ${PROVIDERS[linked]?.label ?? linked} привязан`)
+      refreshData()
+      router.replace('/profile/settings')
+    }
+  }, [searchParams, router])
 
   useEffect(() => {
     if (addEmailState.status === 'success') {
@@ -98,6 +109,11 @@ export function AccountSettingsClient({ initialEmails, initialLinkedAccounts }: 
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Ошибка')
     }
+  }
+
+  function handleLinkAccount(providerId: string) {
+    document.cookie = `cf_oauth_link=${providerId}; path=/; max-age=600; samesite=lax${window.location.protocol === 'https:' ? '; secure' : ''}`
+    signIn(providerId, { redirectTo: '/profile/settings?linked=' + providerId })
   }
 
   return (
@@ -279,14 +295,14 @@ export function AccountSettingsClient({ initialEmails, initialLinkedAccounts }: 
             const isLinked = linkedAccounts.some((a) => a.provider === providerId)
             if (isLinked) return null
             return (
-              <a
+              <Button
                 key={providerId}
-                href={`/api/auth/signin/${providerId}?callbackUrl=${encodeURIComponent('/profile/settings?linked=' + providerId)}`}
-                className="inline-flex h-10 items-center border border-cf-text-1/18 px-4 text-xs font-bold uppercase text-cf-text-1 hover:bg-cf-text-1/8 transition-colors"
+                onClick={() => handleLinkAccount(providerId)}
+                className="h-10 border border-cf-text-1/18 px-4 text-xs font-bold uppercase text-cf-text-1 hover:bg-cf-text-1/8"
               >
                 <Link2 className="mr-2 h-4 w-4" />
                 Привязать {provider.label}
-              </a>
+              </Button>
             )
           })}
         </div>

@@ -1,5 +1,7 @@
 import type { DefaultSession, NextAuthConfig } from 'next-auth'
 import type { DefaultJWT } from 'next-auth/jwt'
+import { getToken } from 'next-auth/jwt'
+import type { NextRequest } from 'next/server'
 import Credentials from 'next-auth/providers/credentials'
 import Yandex from 'next-auth/providers/yandex'
 import Google from 'next-auth/providers/google'
@@ -82,7 +84,8 @@ const canflyWellKnown =
   process.env.AUTH_CANFLY_WELL_KNOWN ??
   (canflyIssuer ? `${canflyIssuer}/.well-known/openid-configuration` : undefined)
 
-export const authConfig = {
+export function createAuthConfig(request?: NextRequest): NextAuthConfig {
+  return {
   trustHost: true,
   pages: {
     signIn: '/login',
@@ -172,8 +175,7 @@ export const authConfig = {
   callbacks: {
     async signIn({ user, account, profile }) {
       const provider = account?.provider
-      const callbackUrl = (account as { callbackUrl?: string })?.callbackUrl ?? ''
-      const isLinking = callbackUrl.includes('link=1') || callbackUrl.includes('linked=')
+      const isLinking = request?.cookies.get('cf_oauth_link')?.value === provider
 
       console.log('[auth] signIn', {
         provider,
@@ -185,6 +187,8 @@ export const authConfig = {
       })
 
       if (account?.provider !== 'credentials') {
+        if (!account) return false
+
         if (!user?.email) {
           console.warn('[auth] signIn rejected: no email', {
             provider,
@@ -195,14 +199,32 @@ export const authConfig = {
         }
 
         try {
-          // Если это режим привязки — привязываем к текущему пользователю
-          if (isLinking && user.id) {
+          // Если это режим привязки — привязываем к текущему пользователю из JWT
+          if (isLinking) {
+            if (!request) {
+              console.warn('[auth] signIn linking rejected: no request context')
+              return '/profile/settings?link_error=session'
+            }
+
+            const currentToken = await getToken({
+              req: request,
+              secret: process.env.AUTH_SECRET,
+            })
+            const currentUserId = currentToken?.id
+
+            if (!currentUserId) {
+              console.warn('[auth] signIn linking rejected: no current user in session')
+              return '/profile/settings?link_error=session'
+            }
+
+            const providerAccountId = account.providerAccountId
+
+            // Проверяем, не привязан ли уже такой аккаунт
             const existingLink = await dbQueryOne<{ id: string }>(
               'SELECT id FROM linked_accounts WHERE provider = $1 AND provider_account_id = $2 LIMIT 1',
-              [provider, user.id],
+              [provider, providerAccountId],
             )
             if (!existingLink) {
-              // Получаем профиль для display_name и avatar
               const profileName = (profile as { name?: string | null })?.name ?? user.name ?? null
               const profileImage = (profile as { image?: string | null })?.image ?? (profile as { picture?: string | null })?.picture ?? null
 
@@ -210,11 +232,12 @@ export const authConfig = {
                 `INSERT INTO linked_accounts (user_id, provider, provider_account_id, display_name, avatar_url)
                  VALUES ($1, $2, $3, $4, $5)
                  ON CONFLICT (provider, provider_account_id) DO NOTHING`,
-                [user.id, provider, user.id, profileName, profileImage],
+                [currentUserId, provider, providerAccountId, profileName, profileImage],
               )
             }
-            console.log('[auth] signIn linked', { provider, userId: user.id })
-            return true
+            console.log('[auth] signIn linked', { provider, currentUserId, linkedTo: providerAccountId })
+
+            return `/profile/settings?linked=${provider}`
           }
 
           // Обычный OAuth-вход: ищем/создаём пользователя по email
@@ -230,7 +253,7 @@ export const authConfig = {
           ;(user as { login?: string | null }).login = dbUser.login
 
           // Автоматически привязываем OAuth-аккаунт к найденному пользователю
-          const providerAccountId = user.id // Используем ID пользователя как provider_account_id
+          const providerAccountId = account.providerAccountId
           const existingLink = await dbQueryOne<{ id: string }>(
             'SELECT id FROM linked_accounts WHERE provider = $1 AND provider_account_id = $2 LIMIT 1',
             [provider, providerAccountId],
@@ -315,6 +338,13 @@ export const authConfig = {
 
       return session
     },
+
+    async redirect({ url, baseUrl }) {
+      return url.startsWith(baseUrl) ? url : baseUrl
+    },
   },
   debug: false,
-} satisfies NextAuthConfig
+  }
+}
+
+export const authConfig = createAuthConfig()
