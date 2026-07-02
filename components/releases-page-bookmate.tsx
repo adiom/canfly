@@ -1,14 +1,15 @@
-'use client'
-
-import { useState } from 'react'
+import Link from 'next/link'
 import type { Release, EditionFormat } from '@/lib/releases-types'
 import { ReleaseCardBookmate } from '@/components/release-card-bookmate'
 import { SiteHeader } from '@/components/site-header'
 import { SiteFooter } from '@/components/site-footer'
+import { Pagination } from '@/components/ui/pagination'
+import type { ReleasesPage } from '@/lib/server/releases'
+import { cn } from '@/lib/utils'
 
-type ReleaseWithFormats = Release & { formats: EditionFormat[] }
+type CategoryValue = EditionFormat | 'all'
 
-const CATEGORY_PILLS: { label: string; value: EditionFormat | 'all' }[] = [
+const CATEGORY_PILLS: { label: string; value: CategoryValue }[] = [
   { label: 'Всё', value: 'all' },
   { label: 'Комиксы', value: 'comic' },
   { label: 'Книги', value: 'book' },
@@ -18,57 +19,104 @@ const CATEGORY_PILLS: { label: string; value: EditionFormat | 'all' }[] = [
 ]
 
 interface ReleasesPageBookmateProps {
-  releases: ReleaseWithFormats[]
+  data: ReleasesPage
+  category: CategoryValue
+  page: number
 }
 
-export function ReleasesPageBookmate({ releases }: ReleasesPageBookmateProps) {
-  const [activeCategory, setActiveCategory] = useState<EditionFormat | 'all'>('all')
+function categoryHref(value: CategoryValue) {
+  const params = new URLSearchParams()
+  if (value !== 'all') params.set('category', value)
+  return params.toString() ? `/releases?${params}` : '/releases'
+}
 
-  const filtered =
-    activeCategory === 'all'
-      ? releases
-      : activeCategory === 'audiobook'
-        ? releases.filter((r) =>
-            r.formats.some((f) => f === 'audiobook' || f === 'audiorelease'),
-          )
-        : releases.filter((r) => r.formats.includes(activeCategory as EditionFormat))
+export function ReleasesPageBookmate({
+  data,
+  category,
+  page,
+}: ReleasesPageBookmateProps) {
+  const { items, total, totalPages } = data
+  const from = total === 0 ? 0 : (page - 1) * 24 + 1
+  const to = Math.min(page * 24, total)
 
   return (
-    <main className="min-h-screen bg-[#f4f2ef] text-[#302119]">
+    <main className="min-h-screen bg-cf-bg text-cf-text-1">
       <SiteHeader activePath="/releases" />
 
-      <div className="mx-auto max-w-[992px] px-4">
-        <h1 className="text-2xl font-bold text-[#302119] pt-6 pb-4">
-          Релизы
-        </h1>
+      <div className="mx-auto max-w-7xl px-4 md:px-8">
+        <header className="pt-10 pb-6 md:pt-16 md:pb-8">
+          <p className="mb-3 font-mono text-[9px] uppercase tracking-[0.22em] text-cf-accent">
+            каталог
+          </p>
+          <h1 className="text-4xl font-black uppercase leading-none text-cf-text-heading md:text-6xl">
+            Релизы
+          </h1>
+          <p className="mt-4 max-w-2xl leading-7 text-cf-text-caption">
+            Комиксы, книги, аудиокниги и альбомы вселенной canfly — единая
+            библиотека релизов.
+          </p>
+        </header>
 
-        <nav className="flex flex-wrap gap-2 pb-6 border-b border-[#302119]/10">
-          {CATEGORY_PILLS.map((pill) => (
-            <button
-              key={pill.value}
-              onClick={() => setActiveCategory(pill.value)}
-              className={`h-9 px-4 text-sm font-bold rounded-full transition-colors ${
-                activeCategory === pill.value
-                  ? 'bg-[#3456f3] text-white'
-                  : 'bg-[#ebe5d9] text-[#302119] hover:bg-[#d7c6ad]'
-              }`}
-            >
-              {pill.label}
-            </button>
-          ))}
+        <nav className="flex flex-wrap gap-2 border-b border-cf-text-1/10 pb-5">
+          {CATEGORY_PILLS.map((pill) => {
+            const active = category === pill.value
+            return (
+              <Link
+                key={pill.value}
+                href={categoryHref(pill.value)}
+                aria-current={active ? 'page' : undefined}
+                className={cn(
+                  'h-9 px-4 inline-flex items-center text-sm font-bold uppercase tracking-[0.1em] transition-colors',
+                  active
+                    ? 'bg-cf-accent text-white'
+                    : 'bg-cf-text-1/6 text-cf-text-2 hover:bg-cf-text-1/12 hover:text-cf-text-heading',
+                )}
+              >
+                {pill.label}
+              </Link>
+            )
+          })}
         </nav>
 
-        {filtered.length > 0 ? (
-          <section className="py-8">
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-x-4 gap-y-8">
-              {filtered.map((r) => (
-                <ReleaseCardBookmate key={r.id} release={r} />
-              ))}
+        {items.length > 0 ? (
+          <>
+            <div className="flex items-center justify-between py-5">
+              <p className="text-xs font-mono uppercase tracking-[0.14em] text-cf-text-3">
+                {from}–{to} из {total}
+              </p>
             </div>
-          </section>
+
+            <section className="pb-4">
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 lg:gap-x-5">
+                {items.map((r, i) => (
+                  <div
+                    key={r.id}
+                    className="relative pb-4 border-b border-cf-text-1/10"
+                  >
+                    <span className="pointer-events-none absolute inset-x-0 bottom-0 h-1.5 bg-gradient-to-t from-cf-text-1/8 to-transparent" />
+                    <ReleaseCardBookmate release={r} priority={i < 4} />
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <div className="flex justify-center py-10">
+              <Pagination
+                page={page}
+                totalPages={totalPages}
+                basePath="/releases"
+                query={{ category: category !== 'all' ? category : undefined }}
+              />
+            </div>
+          </>
         ) : (
-          <div className="py-16 text-center text-sm text-[#8a7e74]">
-            Ничего не найдено
+          <div className="py-24 text-center">
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-cf-text-3">
+              Ничего не найдено
+            </p>
+            <p className="mt-3 text-sm text-cf-text-4">
+              В этой категории пока нет релизов.
+            </p>
           </div>
         )}
       </div>

@@ -2,6 +2,34 @@
 
 ---
 
+## [2 июля 2026] Пагинация + shelf-редизайн /releases (Feature #11)
+
+### Что изменено
+- `lib/server/releases.ts` — новая `fetchReleasesPage({ status, format, page, pageSize })` возвращает `{ items, total, page, pageSize, totalPages }`. Фильтр по формату — в SQL через `EXISTS`-подзапрос (`edition_format[]`); COUNT — отдельным запросом. Категория «Аудиокниги» = `audiobook + audiorelease`. Старая `fetchReleasesWithEditions` сохранена для бэкомпат.
+- `postgres/010_releases_pagination_indexes.sql` — составные индексы `(status, release_date DESC, created_at DESC)` и `(release_id, format, status)`.
+- `components/ui/pagination.tsx` — новый shadcn-style компонент на `cf-*` токенах: Prev/Next + окно номеров с эллипсисом (`1 … 4 [5] 6 … 20`), всё через `<Link>` (progressive enhancement, нет клиентского JS), `aria-current`, touch ≥40px.
+- `components/releases-page-bookmate.tsx` — переделан в **Server Component** (убран `'use client'` + `useState`): состояние фильтра/страницы — в URL (`searchParams`). Eyebrow + H1, category pills (активная `bg-cf-accent`), shelf-сетка `items-end` с нижней линией-полкой и градиент-тенью под обложками. Счётчик `N–M из total`.
+- `components/release-card-bookmate.tsx` — миграция на `cf-*` токена (был хардкод `#f4f2ef`/`#3456f3`/`#302119`), hover-lift `-translate-y-1` + `ring-cf-warm/45`, chip формата `text-cf-warm`, `sizes` для LCP, `priority` на первых 4.
+- `app/releases/page.tsx` — async `searchParams` (Next 16) + валидация category/page (clamp, unknown→all), `generateMetadata` с динамическим canonical `?category=&page=`.
+
+### Зачем
+- Раньше грузились ВСЕ опубликованные релизы одним запросом + клиентский `.filter()` — при 50+ тормозило, при 200+ упало бы. Теперь 24 записи за запрос, фильтр в SQL.
+- Компонент нарушал `docs/design-system.md` §13 (хардкод hex, нет dark-mode) — мигрирован на `cf-*` с автоадаптацией к теме.
+- URL-driven пагинация: SEO-friendly, sharable, работает back/forward без JS.
+
+### Как использовать
+1. Применить миграцию: `psql $DATABASE_URL -f postgres/010_releases_pagination_indexes.sql`
+2. `/releases` — 24 релиза на страницу; `/releases?category=book&page=2` — фильтр + страница
+3. Категории: Всё / Комиксы / Книги / Аудиокниги (вкл. аудиорелизы) / Журналы / Альбомы
+4. Светлая/тёмная тема адаптируется автоматически через `cf-*` переменные
+
+### Проверка
+- `pnpm exec tsc --noEmit` — 0 ошибок
+- `pnpm lint` — 0 ошибок (66 pre-existing warnings)
+- Build компилируется (падение static-gen на `/` и `/sitemap.xml` — DB-таймаут, Bug #5, не связано с изменениями)
+
+---
+
 ## [2 июля 2026] Исправление eslint: 17 ошибок в production-коде
 
 ### Что изменено

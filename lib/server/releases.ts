@@ -249,6 +249,94 @@ export async function fetchReleasesWithEditions(opts: { status?: ReleaseStatus }
   )
 }
 
+// --- Paginated releases listing (Feature #11) ---
+
+export interface ReleasesPage {
+  items: (Release & { formats: EditionFormat[] })[]
+  total: number
+  page: number
+  pageSize: number
+  totalPages: number
+}
+
+/**
+ * Серверная пагинация + фильтр по формату издания.
+ *
+ * @param format — 'all' | 'audiobook' (→ audiobook+audiorelease) | конкретный EditionFormat
+ * Фильтр applied в SQL через EXISTS-подзапрос, COUNT — отдельным запросом.
+ * `formats`-массив карточки всё равно содержит ВСЕ опубликованные форматы релиза.
+ */
+export async function fetchReleasesPage(opts: {
+  status?: ReleaseStatus
+  format?: 'all' | EditionFormat
+  page?: number
+  pageSize?: number
+} = {}): Promise<ReleasesPage> {
+  const status: ReleaseStatus = opts.status ?? 'published'
+  const requestedPage = Math.max(1, opts.page ?? 1)
+  const pageSize = Math.max(1, Math.min(96, opts.pageSize ?? 24))
+
+  // 'audiobook' категория включает и audiorelease (см. старый клиентский фильтр)
+  let formatArray: EditionFormat[] | null = null
+  if (opts.format && opts.format !== 'all') {
+    formatArray =
+      opts.format === 'audiobook' ? ['audiobook', 'audiorelease'] : [opts.format]
+  }
+
+  // Сначала COUNT — чтобы clamp'нуть page до запроса items.
+  // Иначе ?page=999 при totalPages=1 вернёт пустой результат.
+  const countRow = await dbQueryOne<{ total: number }>(
+    `SELECT COUNT(*)::int AS total
+     FROM releases r
+     WHERE r.status = $1::release_status
+       AND ($2::edition_format[] IS NULL OR EXISTS (
+            SELECT 1 FROM editions e2
+            WHERE e2.release_id = r.id
+              AND e2.status = 'published'
+              AND e2.format = ANY($2::edition_format[])
+       ))`,
+    [status, formatArray],
+  )
+
+  const total = countRow?.total ?? 0
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
+  const page = Math.min(requestedPage, totalPages)
+  const offset = (page - 1) * pageSize
+
+  // EXISTS-подзапрос фильтрует релизы, имеющие хотя бы одно опубликованное издание
+  // нужного формата. LEFT JOIN сохраняет форматы карточки (все опубликованные).
+  const items = await dbQuery<Release & { formats: EditionFormat[] }>(
+    `SELECT r.id, r.title, r.slug, r.description, r.cover_image, r.genre,
+            r.release_date, r.isbn, r.authors, r.annotation, r.editor_notes,
+            r.view_count, r.status, r.design_config, r.created_at, r.updated_at,
+            COALESCE(
+              json_agg(DISTINCT e.format) FILTER (WHERE e.format IS NOT NULL),
+              '[]'::json
+            ) AS formats
+     FROM releases r
+     LEFT JOIN editions e ON e.release_id = r.id AND e.status = 'published'
+     WHERE r.status = $1::release_status
+       AND ($2::edition_format[] IS NULL OR EXISTS (
+            SELECT 1 FROM editions e2
+            WHERE e2.release_id = r.id
+              AND e2.status = 'published'
+              AND e2.format = ANY($2::edition_format[])
+       ))
+     GROUP BY r.id
+     ORDER BY r.release_date DESC NULLS LAST, r.created_at DESC
+     LIMIT $3 OFFSET $4`,
+    [status, formatArray, pageSize, offset],
+  )
+
+  return {
+    items,
+    total,
+    page,
+    pageSize,
+    totalPages,
+  }
+}
+
 // --- Release Events (HomeIssuesSection) ---
 
 export async function fetchRecentReleaseEvents(limit = 8) {
