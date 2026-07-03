@@ -24,25 +24,6 @@ app/(auth)/actions.ts:66-75 — в development режиме токен выво�
 
 ---
 
-### Bug: #6 — Техдолг: 17 eslint-disable в production-коде
-- Приоритет: `priority-medium`
-- Статус: `open`
-- Обновлено: 02.07.2026
-
-Описание
-
-В 11 файлах используются eslint-disable для подавления React Compiler strict-mode ошибок. Большинство — react-hooks/set-state-in-effect и @next/next/no-img-element.
-
-Файлы
-
-
-components/book-reader.tsx
-components/character-profile-tabs.tsx
-components/character-profile-header.tsx
-components/
-
----
-
 ### Bug: #4 — Turbopack: ChunkLoadError при HMR в dev-режиме
 - Приоритет: `priority-medium`
 - Статус: `open`

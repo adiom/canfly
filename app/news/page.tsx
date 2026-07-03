@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import Image from 'next/image'
 import { ChevronLeft } from 'lucide-react'
 
 import { fetchNewsPosts } from '@/lib/server/news'
@@ -51,36 +52,55 @@ export default async function NewsPage() {
 
           {news.length > 0 ? (
             <div className="space-y-8">
-              {news.map((item) => (
-                <article
-                  key={item.id}
-                  className="border-b border-cf-text-1/10 pb-8 last:border-b-0"
-                >
-                  <div className="mb-3 flex items-center gap-3">
-                    <span className="text-xs font-black uppercase tracking-[0.18em] text-cf-accent">
-                      {item.section}
-                    </span>
-                    {item.tag && (
-                      <span className="text-xs uppercase tracking-[0.14em] text-cf-text-4">
-                        {item.tag}
+              {news.map((item) => {
+                const date = item.published_at ?? item.created_at
+                return (
+                  <article
+                    key={item.id}
+                    className="border-b border-cf-text-1/10 pb-8 last:border-b-0"
+                  >
+                    <div className="mb-3 flex items-center gap-3">
+                      <span className="text-xs font-black uppercase tracking-[0.18em] text-cf-accent">
+                        {item.section}
                       </span>
+                      {item.tag && (
+                        <span className="text-xs uppercase tracking-[0.14em] text-cf-text-4">
+                          {item.tag}
+                        </span>
+                      )}
+                    </div>
+                    <Link href={`/news/${item.id}`} className="group block">
+                      {item.cover_image && (
+                        <div className="relative mb-4 h-48 w-full overflow-hidden border border-cf-text-1/10 sm:h-64">
+                          <Image
+                            src={item.cover_image}
+                            alt={item.title}
+                            fill
+                            sizes="(max-width: 768px) 100vw, 768px"
+                            className="object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+                          />
+                        </div>
+                      )}
+                      <h3 className="mb-4 text-2xl font-bold leading-tight text-cf-text-1 group-hover:text-cf-accent transition-colors">
+                        {item.title}
+                      </h3>
+                    </Link>
+                    {item.content && (
+                      <p className="leading-7 text-cf-text-caption line-clamp-3">
+                        {item.content.replace(/<[^>]+>/g, '').slice(0, 300)}
+                        {item.content.length > 300 ? '…' : ''}
+                      </p>
                     )}
-                  </div>
-                  <h3 className="mb-4 text-2xl font-bold leading-tight text-cf-text-1">
-                    {item.title}
-                  </h3>
-                  {item.content && (
-                    <p className="leading-7 text-cf-text-caption">{item.content}</p>
-                  )}
-                  <p className="mt-4 text-xs uppercase tracking-[0.14em] text-cf-text-4">
-                    {new Date(item.created_at).toLocaleDateString('ru-RU', {
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric',
-                    })}
-                  </p>
-                </article>
-              ))}
+                    <p className="mt-4 text-xs uppercase tracking-[0.14em] text-cf-text-4">
+                      {new Date(date).toLocaleDateString('ru-RU', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric',
+                      })}
+                    </p>
+                  </article>
+                )
+              })}
             </div>
           ) : (
             <div className="rounded border border-cf-text-1/10 bg-cf-bg-2 px-6 py-8 text-center text-cf-text-caption">

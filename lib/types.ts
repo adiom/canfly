@@ -38,6 +38,11 @@ export interface NewsPost {
   display_order: number;
   is_active: boolean;
   created_at: string;
+  author_user_id: string | null;
+  cover_image: string | null;
+  status: string;
+  published_at: string | null;
+  updated_at: string;
 }
 
 /** @deprecated Books system retired. */

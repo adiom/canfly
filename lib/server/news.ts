@@ -1,14 +1,13 @@
 import { dbQuery, dbQueryOne } from '@/lib/db'
 import { NewsPost } from '@/lib/types'
 
-const newsColumns = `id, section, title, content, tag, display_order, is_active, created_at`
+const newsColumns = `id, section, title, content, tag, display_order, is_active, created_at, author_user_id, cover_image, status, published_at, updated_at`
 
 export async function fetchNewsPosts(limit = 3) {
   return dbQuery<NewsPost>(
-    `SELECT id, section, title, content, tag, display_order, is_active, created_at
-     FROM news_posts
-     WHERE is_active = true
-     ORDER BY display_order ASC
+    `SELECT ${newsColumns} FROM news_posts
+     WHERE status = 'published'
+     ORDER BY published_at DESC NULLS LAST, created_at DESC
      LIMIT $1`,
     [limit],
   )
@@ -16,7 +15,7 @@ export async function fetchNewsPosts(limit = 3) {
 
 export async function listAdminNewsPosts() {
   return dbQuery<NewsPost>(
-    `SELECT ${newsColumns} FROM news_posts ORDER BY display_order ASC, created_at DESC`,
+    `SELECT ${newsColumns} FROM news_posts ORDER BY updated_at DESC`,
   )
 }
 

@@ -5,23 +5,6 @@
 
 ---
 
-### Feature: #11 — Пагинация на /releases
-- Приоритет: `priority-high`
-- Статус: `open`
-- Обновлено: 02.07.2026
-
-Описание
-
-Сейчас /releases (и /releases?category=book) загружает все релизы разом. При 50+ релизах страница тормозит, при 200+ — упадёт.
-
-Что нужно
-
-- Пагинация: offset/limit или cursor-based (created_at DESC)
-- UI: «Загрузить ещё» (infinite scroll) или страницы (pagination controls)
-- Server Compon
-
----
-
 ### Feature: #7 — Страница серии /series/[slug]
 - Приоритет: `priority-high`
 - Статус: `open`

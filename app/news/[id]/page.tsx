@@ -1,7 +1,11 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
+
 import { fetchNewsPostById } from '@/lib/server/news'
 import { generateNewsArticleSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
+import { sanitizeChapterHtml } from '@/lib/sanitize'
+import { ThemeToggle } from '@/components/theme-toggle'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
@@ -31,6 +35,7 @@ export async function generateMetadata({ params }: NewsPageProps) {
       type: 'article',
       locale: 'ru_RU',
       siteName: 'canfly',
+      images: post.cover_image ? [{ url: post.cover_image }] : undefined,
     },
     alternates: { canonical: url },
   }
@@ -40,7 +45,7 @@ export default async function NewsPage({ params }: NewsPageProps) {
   const { id } = await params
   const post = await fetchNewsPostById(id)
 
-  if (!post || !post.is_active) {
+  if (!post || post.status !== 'published') {
     notFound()
   }
 
@@ -50,6 +55,8 @@ export default async function NewsPage({ params }: NewsPageProps) {
     { label: 'Новости', url: `${BASE_URL}/news` },
     { label: post.title, url: `${BASE_URL}/news/${post.id}` },
   ])
+
+  const date = post.published_at ?? post.created_at
 
   return (
     <main className="min-h-screen bg-cf-bg text-cf-text-1">
@@ -61,16 +68,18 @@ export default async function NewsPage({ params }: NewsPageProps) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }}
       />
+
       <header className="sticky top-0 z-50 border-b border-cf-text-1/10 bg-cf-bg/92 backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 md:px-8">
           <Link href="/" className="flex items-center gap-3">
-            <span className="flex h-9 w-16 items-center justify-center bg-[#d52525] text-lg font-black uppercase tracking-[-0.04em] text-white">
+            <span className="flex h-9 w-16 items-center justify-center bg-cf-accent text-lg font-black uppercase tracking-[-0.04em] text-white">
               CF
             </span>
           </Link>
-          <Link href="/#news" className="text-sm font-black uppercase tracking-[0.12em] text-cf-text-2 hover:text-cf-text-heading">
+          <Link href="/news" className="text-sm font-black uppercase tracking-[0.12em] text-cf-text-2 hover:text-cf-text-heading">
             ← Новости
           </Link>
+          <ThemeToggle />
         </div>
       </header>
 
@@ -84,13 +93,29 @@ export default async function NewsPage({ params }: NewsPageProps) {
         {post.tag && (
           <p className="mt-4 text-xs uppercase tracking-[0.14em] text-cf-text-4">{post.tag}</p>
         )}
-        {post.content && (
-          <div className="mt-10 text-lg leading-8 text-cf-text-caption whitespace-pre-wrap">
-            {post.content}
+
+        {post.cover_image && (
+          <div className="relative mt-8 h-64 w-full overflow-hidden border border-cf-text-1/10 sm:h-96">
+            <Image
+              src={post.cover_image}
+              alt={post.title}
+              fill
+              sizes="(max-width: 768px) 100vw, 768px"
+              className="object-cover"
+              priority
+            />
           </div>
         )}
+
+        {post.content && (
+          <div
+            className="mt-10 prose prose-lg max-w-none prose-headings:text-cf-text-heading prose-headings:font-black prose-headings:uppercase prose-p:mb-5 prose-p:text-cf-text-caption prose-p:leading-8 prose-blockquote:border-l-cf-accent prose-blockquote:text-cf-text-2 prose-strong:text-cf-text-1 prose-em:text-cf-text-2 prose-a:text-cf-warm prose-img:rounded-sm"
+            dangerouslySetInnerHTML={{ __html: sanitizeChapterHtml(post.content) }}
+          />
+        )}
+
         <p className="mt-12 text-xs text-cf-text-4">
-          {new Date(post.created_at).toLocaleDateString('ru-RU', {
+          {new Date(date).toLocaleDateString('ru-RU', {
             day: 'numeric',
             month: 'long',
             year: 'numeric',

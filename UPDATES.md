@@ -2,6 +2,54 @@
 
 ---
 
+## [3 июля 2026] Новости в Studio + хаб типов контента
+
+### Что изменено
+
+**1. Хаб создания контента `/studio/new`**
+- `app/studio/new/page.tsx` — страница выбора типа контента (Релиз / Новость)
+- `lib/actions/studio-create.ts` — `createDraftAction`: мгновенный INSERT пустого черновика с UUID → редирект в редактор
+- Кнопка «+ НОВЫЙ» в `app/studio/page.tsx` теперь ведёт на `/studio/new` (вместо `/studio/releases/new`)
+- Архитектура: любой тип контента создаётся единым путём — выбрать тип → получить UUID → править в Studio
+
+**2. Новости в Studio (полный CRUD)**
+- `postgres/011_news_studio.sql` — миграция: `author_user_id`, `status` (draft/published/archived), `cover_image`, `published_at`, `updated_at`. Backfill: `is_active→status`, первый admin-юзер → автор
+- `lib/server/news-studio.ts` — studio-fns: `listMyNews`, `fetchNewsForEdit`, `requireNewsOwnership`, `updateNews`, `updateNewsStatus`, `deleteNews`
+- `lib/actions/studio-news.ts` — server actions с zod-валидацией и ownership-проверкой
+- `lib/schemas/studio-news.ts` — `newsFormSchema`, `newsStatusSchema`
+- `app/studio/news/page.tsx` — список новостей (drafts / published / archived секции)
+- `app/studio/news/[id]/page.tsx` — детальная страница-редактор
+- `components/studio/news-editor.tsx` — клиентский редактор: Tiptap (StarterKit + Link + Image), статический toolbar + BubbleMenu, автосохранение (debounce 1.5с), управление статусом, удаление с подтверждением
+
+**3. Публичные страницы новостей обновлены**
+- `app/news/page.tsx` — фильтр `status='published'` (вместо `is_active`), обложки, сортировка по `published_at DESC`
+- `app/news/[id]/page.tsx` — обложка (next/Image + priority), Tiptap HTML рендер через `sanitizeChapterHtml`, OG image из cover, дата из `published_at`
+- `lib/server/news.ts` — все запросы обновлены под новые колонки
+- `lib/server/search.ts` — фильтр `status='published'` в обоих ветках (searchAll + autocomplete)
+- `lib/seo/schema.ts` — `generateNewsArticleSchema` поддерживает `cover_image` и `published_at`
+- `lib/types.ts` — `NewsPost` расширен новыми полями
+
+**4. Навигация**
+- В Studio dashboard добавлена ссылка «Новости» → `/studio/news`
+
+### Зачем
+- Новости переносятся из legacy `/admin` в Studio — единое место управления контентом
+- Хаб `/studio/new` — первый шаг к унифицированной модели «контентный объект» (как avrora.click): любой объект — UUID + тип + статус + автор, редактируется в Studio
+- Tiptap-редактор даёт форматирование (заголовки, списки, цитаты, ссылки, изображения) вместо plain-text
+
+### Как использовать
+1. Применить миграцию: `psql $DATABASE_URL -f postgres/011_news_studio.sql`
+2. В Studio (`/studio`) нажать «+ НОВЫЙ» → выбрать тип (Релиз / Новость)
+3. Для новостей: редактор открывается автоматически после создания черновика
+4. Кнопки статуса внизу редактора: Черновик / Опубликовать / Архив
+5. Публичная страница: `/news/{uuid}` — видна только для `status='published'`
+
+### Проверка
+- `pnpm exec tsc --noEmit` — 0 ошибок
+- `pnpm lint` — 0 ошибок (66 pre-existing warnings)
+
+---
+
 ## [2 июля 2026] Пагинация + shelf-редизайн /releases (Feature #11)
 
 ### Что изменено

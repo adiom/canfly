@@ -198,10 +198,19 @@ export function generateBreadcrumbSchema(
 }
 
 export function generateNewsArticleSchema(
-  post: { id: string; title: string; content: string | null; section: string; created_at: string },
+  post: {
+    id: string
+    title: string
+    content: string | null
+    section: string
+    created_at: string
+    cover_image?: string | null
+    published_at?: string | null
+  },
   baseUrl: string
 ) {
   const url = baseUrl + '/news/' + post.id
+  const dateSource = post.published_at ?? post.created_at
 
   return {
     '@context': 'https://schema.org',
@@ -209,7 +218,8 @@ export function generateNewsArticleSchema(
     '@id': url,
     headline: post.title,
     description: post.content?.slice(0, 160) ?? post.title,
-    datePublished: new Date(post.created_at).toISOString().split('T')[0],
+    datePublished: new Date(dateSource).toISOString().split('T')[0],
+    image: post.cover_image ?? undefined,
     author: CANFLY_AUTHOR,
     publisher: {
       '@type': 'Organization',

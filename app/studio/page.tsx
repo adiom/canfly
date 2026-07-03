@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { getMyReleasesWithEditions } from '@/lib/actions/studio'
 import { requireStudioSession } from '@/lib/server/studio-auth'
 import { ReleaseCard } from '@/components/studio/release-card'
-import { Plus } from 'lucide-react'
+import { Plus, Newspaper } from 'lucide-react'
 
 export default async function StudioDashboard() {
   const session = await requireStudioSession()
@@ -28,7 +28,7 @@ export default async function StudioDashboard() {
             </h1>
           </div>
           <Link
-            href="/studio/releases/new"
+            href="/studio/new"
             className="inline-flex h-11 items-center gap-2 bg-cf-accent px-5 text-sm font-black uppercase tracking-[0.08em] text-white transition-colors hover:bg-[#b81e1e]"
           >
             <Plus className="h-4 w-4" />
@@ -56,6 +56,17 @@ export default async function StudioDashboard() {
           </div>
         )}
 
+        {/* Quick nav */}
+        <div className="mb-10 flex gap-3">
+          <Link
+            href="/studio/news"
+            className="inline-flex h-11 items-center gap-2 border border-cf-text-1/12 bg-cf-bg-2 px-4 text-xs font-black uppercase tracking-[0.08em] text-cf-text-2 transition-colors hover:border-cf-warm/45 hover:text-cf-text-heading"
+          >
+            <Newspaper className="h-4 w-4" />
+            Новости
+          </Link>
+        </div>
+
         {/* Release list */}
         {releases.length === 0 ? (
           <div className="flex flex-col items-center justify-center border border-dashed border-cf-text-1/10 py-20">
@@ -69,7 +80,7 @@ export default async function StudioDashboard() {
               Создайте первый
             </p>
             <Link
-              href="/studio/releases/new"
+              href="/studio/new"
               className="mt-6 inline-flex h-11 items-center gap-2 bg-cf-accent px-6 text-sm font-black uppercase tracking-[0.08em] text-white transition-colors hover:bg-[#b81e1e]"
             >
               <Plus className="h-4 w-4" />

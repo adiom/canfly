@@ -152,7 +152,7 @@ export async function searchAll(q: string): Promise<SearchResults> {
         ELSE 4
       END AS rank
     FROM news_posts
-    WHERE is_active = true
+    WHERE status = 'published'
       AND (
         LOWER(title)   LIKE LOWER($1)
         OR LOWER(content) LIKE LOWER($1)
@@ -276,7 +276,7 @@ export async function searchAutocomplete(q: string, limit = 5): Promise<Autocomp
       SELECT 'news' AS kind, id::text, title, '' AS slug, NULL AS type,
              NULL AS cover_image, NULL AS avatar, NULL AS label, section
       FROM news_posts
-      WHERE is_active = true
+      WHERE status = 'published'
         AND (LOWER(title) LIKE LOWER($1) OR LOWER(content) LIKE LOWER($1)
              OR word_similarity($2, title) >= 0.4)
       ORDER BY
