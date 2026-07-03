@@ -4,7 +4,6 @@ import Image from 'next/image'
 
 import { fetchNewsPostById } from '@/lib/server/news'
 import { generateNewsArticleSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
-import { sanitizeChapterHtml } from '@/lib/sanitize'
 import { ThemeToggle } from '@/components/theme-toggle'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
@@ -110,7 +109,7 @@ export default async function NewsPage({ params }: NewsPageProps) {
         {post.content && (
           <div
             className="mt-10 prose prose-lg max-w-none prose-headings:text-cf-text-heading prose-headings:font-black prose-headings:uppercase prose-p:mb-5 prose-p:text-cf-text-caption prose-p:leading-8 prose-blockquote:border-l-cf-accent prose-blockquote:text-cf-text-2 prose-strong:text-cf-text-1 prose-em:text-cf-text-2 prose-a:text-cf-warm prose-img:rounded-sm"
-            dangerouslySetInnerHTML={{ __html: sanitizeChapterHtml(post.content) }}
+            dangerouslySetInnerHTML={{ __html: post.content }}
           />
         )}
 
