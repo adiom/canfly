@@ -1,7 +1,66 @@
 import { requireStudioSession } from '@/lib/server/studio-auth'
 import { getMyNews } from '@/lib/actions/studio-news'
+import { redirect } from 'next/navigation'
+import Link from 'next/link'
+import { Plus, ExternalLink } from 'lucide-react'
+import type { NewsPost } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
+
+const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
+  draft: { label: 'Черновик', className: 'text-cf-text-3 border-cf-text-1/20' },
+  published: { label: 'Опубликована', className: 'text-cf-warm border-cf-warm/40' },
+  archived: { label: 'Архив', className: 'text-cf-text-4 border-cf-text-1/15' },
+}
+
+function NewsRow({ news }: { news: NewsPost }) {
+  const status = STATUS_CONFIG[news.status] ?? STATUS_CONFIG.draft
+  const date = news.published_at ?? news.updated_at
+
+  return (
+    <div className="group flex items-center gap-4 py-4 px-1 transition-colors duration-200 hover:bg-cf-text-1/[0.03]">
+      <Link href={`/studio/news/${news.id}`} className="flex-shrink-0">
+        <div className="relative h-16 w-16 overflow-hidden border border-cf-text-1/10 bg-cf-footer-bg transition-colors group-hover:border-cf-warm/40">
+          {news.cover_image ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={news.cover_image} alt={news.title} className="h-full w-full object-cover" />
+          ) : (
+            <div className="flex h-full items-center justify-center">
+              <span className="text-[7px] font-black uppercase tracking-[0.1em] text-cf-text-4">cf</span>
+            </div>
+          )}
+        </div>
+      </Link>
+
+      <Link href={`/studio/news/${news.id}`} className="flex min-w-0 flex-1 flex-col gap-1">
+        <h3 className="truncate text-sm font-black uppercase leading-none tracking-[0.04em] text-cf-text-heading transition-colors group-hover:text-cf-accent">
+          {news.title}
+        </h3>
+        <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-cf-text-3">
+          {news.section}
+          {news.tag && ` · ${news.tag}`}
+          {date && ` · ${new Date(date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })}`}
+        </p>
+      </Link>
+
+      <div className="flex flex-shrink-0 items-center gap-2">
+        <span className={`border px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.12em] ${status.className}`}>
+          {status.label}
+        </span>
+        {news.status === 'published' && (
+          <a
+            href={`/news/${news.id}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex h-7 w-7 items-center justify-center border border-cf-text-1/10 text-cf-text-3 transition-colors hover:border-cf-text-1/30 hover:text-cf-text-1"
+          >
+            <ExternalLink className="h-3 w-3" />
+          </a>
+        )}
+      </div>
+    </div>
+  )
+}
 
 export default async function StudioNewsPage() {
   const session = await requireStudioSession()
