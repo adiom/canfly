@@ -8,6 +8,7 @@ import {
 } from '@/lib/server/users'
 import { getCurrentUser } from '@/lib/server/session'
 import { fetchCharacterBySlug } from '@/lib/server/characters'
+import { checkRateLimit } from '@/lib/server/rate-limit'
 import { apiHandler } from '@/lib/api-handler'
 
 const characterPrompts: Record<string, string> = {
@@ -49,6 +50,20 @@ async function postCharacterChat(request: NextRequest) {
 
   const user = await getCurrentUser()
   if (!user) return new NextResponse('Unauthorized', { status: 401 })
+
+  // Каждое сообщение — платный вызов модели, поэтому лимит на пользователя
+  const limit = await checkRateLimit({
+    bucket: 'chat:character',
+    subject: user.id,
+    limit: 60,
+    windowSeconds: 60 * 60,
+  })
+  if (!limit.allowed) {
+    return new NextResponse('Слишком много сообщений. Попробуйте позже.', {
+      status: 429,
+      headers: { 'Retry-After': String(limit.resetAfter) },
+    })
+  }
 
   const friendship = await upsertCharacterFriendship(user.id, character.id)
   const conversation = await getOrCreateCharacterConversation(user.id, character.id)

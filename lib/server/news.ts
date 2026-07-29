@@ -1,7 +1,14 @@
 import { dbQuery, dbQueryOne } from '@/lib/db'
+import { sanitizeChapterHtml } from '@/lib/sanitize'
 import { NewsPost } from '@/lib/types'
 
 const newsColumns = `id, section, title, content, tag, display_order, is_active, created_at, author_user_id, cover_image, status, published_at, updated_at`
+
+/** Контент новости пишет любой author — доверенным он не является */
+function withSafeContent<T extends { content?: string | null }>(row: T): T {
+  if (!row.content) return row
+  return { ...row, content: sanitizeChapterHtml(row.content) }
+}
 
 export async function fetchNewsPosts(limit = 3) {
   return dbQuery<NewsPost>(
@@ -20,10 +27,11 @@ export async function listAdminNewsPosts() {
 }
 
 export async function fetchNewsPostById(id: string) {
-  return dbQueryOne<NewsPost>(
+  const row = await dbQueryOne<NewsPost>(
     `SELECT ${newsColumns} FROM news_posts WHERE id = $1 LIMIT 1`,
     [id],
   )
+  return row ? withSafeContent(row) : row
 }
 
 export async function createNewsPost(data: Record<string, unknown>) {

@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { sanitizeChapterHtml } from '@/lib/sanitize'
 import Link from 'next/link'
 import { ChevronLeft, ChevronRight, X, AlignJustify, Heart, Quote, MessageCircle, Check, Bookmark, BookmarkPlus } from 'lucide-react'
 import { toast } from 'sonner'
@@ -553,7 +552,7 @@ export function ReleaseBookReader({
               ['--tw-prose-quotes' as string]: textColor,
               ['--tw-prose-hr' as string]: `${textColor}20`,
             }}
-            dangerouslySetInnerHTML={{ __html: sanitizeChapterHtml(currentChapter.content) }}
+            dangerouslySetInnerHTML={{ __html: currentChapter.content ?? '' }}
           />
         ) : (
           <p className="opacity-40 py-16 text-center text-sm" style={{ color: textColor }}>

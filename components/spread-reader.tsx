@@ -4,7 +4,6 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import { X, AlignJustify, Bookmark, BookmarkPlus, Heart, ChevronLeft, ChevronRight, Sun, Moon, Palette } from 'lucide-react'
 import { toast } from 'sonner'
-import { sanitizeChapterHtml } from '@/lib/sanitize'
 import { useColumnPagination, SPINE_WIDTH } from '@/lib/reader/use-column-pagination'
 import {
   collectParagraphs,
@@ -652,7 +651,7 @@ export function SpreadReader({
                     ['--tw-prose-quotes' as string]: t.text,
                     ['--tw-prose-hr' as string]: `${t.text}20`,
                   }}
-                  dangerouslySetInnerHTML={{ __html: sanitizeChapterHtml(currentChapter.content) }}
+                  dangerouslySetInnerHTML={{ __html: currentChapter.content ?? '' }}
                 />
               ) : (
                 <p className="py-8 text-center text-sm opacity-40" style={{ color: t.text }}>

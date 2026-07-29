@@ -3,7 +3,7 @@
 import { useState, useActionState, startTransition } from 'react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { createMagicLink, validateMagicCode, type CreateMagicLinkState, type ValidateCodeState } from '@/app/(auth)/actions'
+import { createMagicLink, type CreateMagicLinkState } from '@/app/(auth)/actions'
 import { signIn, useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 
@@ -47,20 +47,13 @@ export function MagicLinkForm({ onFocus, onBlur }: MagicLinkFormProps) {
     setCodeLoading(true)
 
     try {
-      const formData = new FormData()
-      formData.append('email', email)
-      formData.append('code', code.trim())
-
-      const result = await validateMagicCode({ status: 'idle' }, formData)
-
-      if (result.status !== 'success' || !result.email) {
-        setCodeError(result.message || 'Неверный или просроченный код')
-        setCodeLoading(false)
-        return
-      }
-
+      // Код уходит прямо в authorize — он там и проверяется, и гасится.
+      // Отдельной серверной проверки «до» больше нет: именно разрыв между
+      // проверкой кода и выдачей сессии позволял войти по одному email.
       const signInResult = await signIn('credentials', {
-        email: result.email,
+        email,
+        token: code.trim(),
+        via: 'code',
         redirect: false,
       })
 
@@ -71,19 +64,22 @@ export function MagicLinkForm({ onFocus, onBlur }: MagicLinkFormProps) {
       }
 
       await updateSession()
+      // push() на новый маршрут уже приносит свежие серверные данные —
+      // следом идущий refresh() обрывал этот же в разгаре RSC-запрос
+      // (ERR_ABORTED) и был чистым дублированием.
       router.push('/profile')
-      router.refresh()
     } catch {
       setCodeError('Ошибка соединения')
       setCodeLoading(false)
     }
   }
 
-  // После успешного создания кода — показать кнопку "Ввести код"
-  if (isSuccess && magicCode && !showCodeInput) {
+  // После успешного создания кода — показать кнопку "Ввести код".
+  // В production magicCode не приходит вовсе: код уходит только на почту.
+  if (isSuccess && !showCodeInput) {
     return (
       <div className="space-y-4">
-        {process.env.NODE_ENV === 'development' && (
+        {magicCode && (
           <div className="border border-[#f4efe5]/10 bg-[#1b1c19] px-4 py-3 text-sm text-[#ded7cc]">
             <span className="font-bold text-[#d7c6ad]">Код создан: </span>
             <span className="font-mono text-[#f6d6a8] tracking-widest">{magicCode}</span>

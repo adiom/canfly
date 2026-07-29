@@ -2,6 +2,60 @@
 
 ---
 
+## [29 июля 2026] Security-хотфикс: обход аутентификации, утечка цитат, XSS
+
+### Что изменено
+
+**1. Обход аутентификации (CRITICAL)**
+- `Credentials.authorize` (`app/(auth)/auth.config.ts`) раньше выдавал сессию по голому `email` из тела запроса, без проверки magic-кода — `POST /api/auth/callback/credentials` с любым email давал полноценную сессию, включая admin. Теперь единственный фактор входа — токен: `authorize` вызывает `validateAndConsumeMagicToken`, который атомарно (`UPDATE ... WHERE used=false RETURNING`, без TOCTOU) гасит его и только тогда возвращает пользователя. `findOrCreateUserByEmail` из `authorize` убран — пользователь создаётся только вместе с погашением токена.
+- `lib/server/magic-token.ts` — переписан: атомарный CAS, счётчик попыток (`attempts`, лимит 5), отдельный длинный `link_token` (32 байта, `crypto.randomBytes`) для входа по ссылке — 8-значный код теперь используется только при ручном вводе и защищён привязкой к email внутри SQL.
+- `app/(auth)/actions.ts` — `validateMagicCode` удалён (проверка теперь только в `authorize`); код генерируется через `crypto.randomInt` вместо `Math.random()`; `magicLink` и `console.log` кода убраны из production-ответа/логов — раньше код утекал в обоих.
+- `app/login/page.tsx` — удалён авто-логин по `?magic_email=` (вектор фишинга: ссылка с чужим email логинила под жертвой).
+- `app/hi/[token]/*` — токен больше не гасится на GET (страница), а только при явном `signIn` — раньше ссылку «съедал» любой префетчер (антивирус, почтовый клиент, unfurl).
+- `lib/actions/account-settings.ts` — код подтверждения email тоже на `crypto.randomInt` + счётчик попыток; `users.email` теперь пишется только после подтверждения кода, а не сразу при добавлении.
+- Миграция: `postgres/012_magic_token_hardening.sql`.
+
+**2. Утечка приватных цитат (HIGH)**
+- `lib/server/chapter-highlights.ts` — `fetchChapterHighlights` фильтровал видимость только в одной ветке `if/else`; анонимный `GET /api/chapter-highlights?chapterId=` и запрос `?userId=<чужой>` отдавали приватные цитаты и заметки. Фильтр `is_public = true (OR user_id = свой)` теперь безусловный.
+
+**3. Открытые LLM-эндпоинты (HIGH)**
+- `app/api/highlights/{explain,meaning,rewrite,illustrate}` были без авторизации, без лимитов — публичный прокси к OpenAI за счёт владельца. Общая защита вынесена в `lib/ai/highlight-actions.ts`: авторизация, zod (1–600 символов), rate limit, явное отделение пользовательского текста от промпта (защита от prompt injection).
+- `lib/server/rate-limit.ts` + `postgres/013_rate_limits.sql` — фиксированное окно на Postgres (без внешнего Redis), применено к LLM-ручкам и `POST /api/characters/chat`.
+
+**4. Заказы (HIGH)**
+- `POST /api/orders` принимал `item.price` от клиента без авторизации — заказ на любую сумму. `/cart` и `/shop` уже недостижимы (редиректятся в `proxy.ts`), поэтому ручка отключена (410) по образцу `/api/books`.
+
+**5. Загрузка файлов (HIGH)**
+- `app/api/{studio,admin}/upload` не проверяли размер и принимали `image/svg+xml` (stored XSS через blob-URL) — `file.type` из multipart полностью задаёт клиент. Общий `lib/server/image-upload.ts`: лимит 10 МБ, проверка по сигнатуре байтов (PNG/JPEG/GIF/WebP/AVIF), SVG запрещён.
+
+**6. XSS на `/news/[id]` + CSP (HIGH)**
+- Санитизация вернулась, но на сервере при чтении/записи (`lib/server/chapters.ts`, `lib/server/news.ts`, `lib/server/news-studio.ts`) — `lib/sanitize.ts` переведён с `isomorphic-dompurify` (падал на Vercel из-за jsdom) на `sanitize-html`. Клиентские ридеры (`release-book-reader`, `spread-reader`, `release-full-page`, `release-reader`) больше не тянут санитайзер в бандл.
+- `components/markdown-renderer.tsx` — самописный regex-санитайзер обходился через `<svg/onload=...>` и закодированный `javascript:`; заменён на белый список URL-схем.
+- `next.config.mjs` — добавлены security-заголовки (CSP, `X-Frame-Options`, HSTS и др.) — раньше отсутствовали полностью.
+
+**7. IDOR в Studio + защита `/admin` (MEDIUM)**
+- `lib/actions/studio.ts` — `createEditionAction`, `getRelease/getEditions/getEdition/getChapters/getChapter/getChapterVersions/getEditionSetupData` проверяли только авторизацию, без владения релизом — черновики и мутации по чужому UUID. Добавлены `requireReleaseOwnership`/`requireEditionOwnership`/`requireChapterOwnership`. Мутации серий (`create/update/deleteSeriesAction`) ограничены ролью admin.
+- `app/admin/layout.tsx` — добавлена серверная проверка `requireStudioAdminSession()` (раньше защита держалась только на `proxy.ts`); `/admin/login` вынесен в отдельную route-группу `app/(admin-login)/`, чтобы не редиректить сам на себя.
+- `lib/api-handler.ts` — в production больше не отдаёт наружу `error.message` (сообщения `pg` с именами таблиц/constraint'ов); `NEXT_REDIRECT`/`NEXT_NOT_FOUND` пробрасываются, а не превращаются в 500.
+
+**8. Битые SQL-плейсхолдеры**
+- `lib/server/releases.ts` — `setReleaseCharacters`/`setReleaseSeries` строили `VALUES` без `$` перед номером плейсхолдера, из-за чего запрос падал и привязка персонажей/серий к релизу молча не работала. Исправлено.
+
+### Зачем
+Аудит проекта выявил рабочий обход входа в систему (любая сессия, включая admin, одним HTTP-запросом без пароля и кода) и ряд смежных дыр. Полный список находок и обоснование — в плане `peaceful-singing-pie.md`.
+
+### Как использовать
+1. Применить миграции: `psql $DATABASE_URL -f postgres/012_magic_token_hardening.sql` и `-f postgres/013_rate_limits.sql`
+2. `pnpm install` — добавлены `sanitize-html`, `server-only`, удалён `isomorphic-dompurify`
+3. Вход по коду/ссылке работает как раньше для пользователя; изменилась только внутренняя проверка
+
+### Проверка
+- `pnpm build` — 0 ошибок типов
+- `pnpm lint` — 0 ошибок (только pre-existing warnings)
+- `e2e/auth-security.spec.ts` — новый регрессионный тест на обход входа, приватные цитаты, авторизацию LLM-ручек
+
+---
+
 ## [3 июля 2026] Новости в Studio + хаб типов контента
 
 ### Что изменено

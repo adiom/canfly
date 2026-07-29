@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { sanitizeChapterHtml } from '@/lib/sanitize'
 import Link from 'next/link'
 import type { Edition, Chapter, Release, ReleaseDesignConfig } from '@/lib/releases-types'
 import { Button } from '@/components/ui/button'
@@ -97,7 +96,7 @@ export function ReleaseReader({ release, edition, chapters, chapterIndex }: {
         {currentChapter?.content ? (
           <div
             className="prose prose-lg max-w-none leading-7 prose-p:mb-5"
-            dangerouslySetInnerHTML={{ __html: sanitizeChapterHtml(currentChapter.content) }}
+            dangerouslySetInnerHTML={{ __html: currentChapter.content ?? '' }}
           />
         ) : (
           <div className="text-center opacity-40 py-16">

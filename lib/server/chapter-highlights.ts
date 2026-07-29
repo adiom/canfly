@@ -35,10 +35,14 @@ export async function fetchChapterHighlights(options: FetchHighlightsOptions): P
     where.push(`h.user_id = $${params.length}`)
   }
 
-  if (options.publicOnly) {
+  // Фильтр видимости безусловный. Раньше он стоял в ветке if/else и не
+  // срабатывал для анонима (currentUserId = null) и при запросе ?userId=,
+  // из-за чего публичный GET /api/chapter-highlights отдавал приватные
+  // цитаты и заметки всех пользователей.
+  if (options.publicOnly || !options.currentUserId) {
     where.push(`h.is_public = true`)
-  } else if (options.userId === undefined && options.currentUserId) {
-    // Показываем публичные + приватные текущего пользователя
+  } else {
+    // Публичные + собственные приватные
     params.push(options.currentUserId)
     where.push(`(h.is_public = true OR h.user_id = $${params.length})`)
   }

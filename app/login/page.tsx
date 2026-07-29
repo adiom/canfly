@@ -1,9 +1,9 @@
 'use client'
 
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense } from 'react'
 import Link from 'next/link'
-import { useRouter, useSearchParams } from 'next/navigation'
-import { signIn, useSession } from 'next-auth/react'
+import { useSearchParams } from 'next/navigation'
+import { signIn } from 'next-auth/react'
 
 import { MagicLinkForm } from '@/components/magic-link-form'
 import { Button } from '@/components/ui/button'
@@ -11,45 +11,16 @@ import { Button } from '@/components/ui/button'
 const isCanflySsoEnabled = process.env.NEXT_PUBLIC_CANFLY_SSO_ENABLED === 'true'
 
 function LoginForm() {
-  const router = useRouter()
   const searchParams = useSearchParams()
-  const { status, update: updateSession } = useSession()
-  const [loginTriggered, setLoginTriggered] = useState(false)
-  const [successHandled, setSuccessHandled] = useState(false)
 
-  // Редирект если уже авторизован
-  useEffect(() => {
-    if (status === 'authenticated' && !successHandled) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- redirect on auth status change
-      setSuccessHandled(true)
-      const redirect = searchParams.get('redirect') || '/'
-      router.push(redirect)
-    }
-  }, [status, successHandled, router, searchParams])
+  // Редиректа «уже авторизован → /» здесь больше нет: это уже делает
+  // proxy.ts (`pathname === '/login'` + valid token) до отрисовки страницы.
+  // Дублирующий клиентский эффект здесь гонялся с router.push('/profile')
+  // из MagicLinkForm после входа по коду и иногда побеждал — уносил на / вместо /profile.
 
-  // Автоматический вход после перехода по magic link (/login?magic_email=...)
-  useEffect(() => {
-    if (loginTriggered) return
-    const magicEmail = searchParams.get('magic_email')
-    if (!magicEmail) return
-
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time magic link trigger
-    setLoginTriggered(true)
-
-    signIn('credentials', {
-      email: magicEmail,
-      redirect: false,
-    }).then((result) => {
-      if (result?.error) {
-        router.push('/login?error=invalid_token')
-        return
-      }
-      updateSession().then(() => {
-        router.push('/profile')
-        router.refresh()
-      })
-    })
-  }, [searchParams, updateSession, router, loginTriggered])
+  // Автологина по ?magic_email= здесь больше нет: он входил под любым адресом
+  // из query-строки, то есть ссылка вида /login?magic_email=victim@example.com
+  // логинила под жертвой. Вход по ссылке живёт на /hi/[token].
 
   const errorParam = searchParams.get('error')
   const errorMessages: Record<string, string> = {

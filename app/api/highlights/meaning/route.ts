@@ -1,14 +1,16 @@
 import { streamText } from 'ai'
+import { guardHighlightRequest, buildPrompt, HIGHLIGHT_MODEL } from '@/lib/ai/highlight-actions'
+
+const INSTRUCTION =
+  'Раскрой глубинный смысл следующего отрывка: что за ним скрывается, какие символы и образы используются, какие литературные приёмы, возможные отсылки к философии или культуре. Пиши живо и интересно, 3–4 предложения.'
 
 export async function POST(req: Request) {
-  const { text } = await req.json() as { text: string }
-  if (!text?.trim()) {
-    return Response.json({ error: 'text required' }, { status: 400 })
-  }
+  const guard = await guardHighlightRequest(req, 'llm:meaning')
+  if (!guard.ok) return guard.response
 
   const result = streamText({
-    model: 'openai/gpt-4o-mini' as Parameters<typeof streamText>[0]['model'],
-    prompt: `Раскрой глубинный смысл следующего отрывка: что за ним скрывается, какие символы и образы используются, какие литературные приёмы, возможные отсылки к философии или культуре. Пиши живо и интересно, 3–4 предложения.\n\n«${text.slice(0, 600)}»`,
+    model: HIGHLIGHT_MODEL as Parameters<typeof streamText>[0]['model'],
+    prompt: buildPrompt(INSTRUCTION, guard.text),
     maxOutputTokens: 350,
   })
 

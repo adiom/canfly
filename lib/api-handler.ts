@@ -7,6 +7,12 @@ type HandlerFn = (
 
 type SimpleHandlerFn = (request: NextRequest) => Promise<NextResponse>
 
+/** redirect()/notFound() бросают специальную ошибку с digest — её нельзя глотать */
+function isNextControlFlow(error: unknown): boolean {
+  const digest = (error as { digest?: unknown })?.digest
+  return typeof digest === 'string' && (digest.startsWith('NEXT_REDIRECT') || digest === 'NEXT_NOT_FOUND')
+}
+
 function logError(method: string, path: string, error: unknown) {
   const msg =
     error instanceof Error ? error.message : String(error)
@@ -36,9 +42,18 @@ export function apiHandler(
       }
       return result
     } catch (error) {
+      // redirect() из ownership-проверок — это управляющий поток, а не сбой:
+      // пробрасываем, иначе он превращается в 500 с мусорным digest.
+      if (isNextControlFlow(error)) throw error
+
       logError(method, path, error)
+
+      // Наружу — общий текст: сообщения pg содержат имена таблиц, колонок
+      // и constraint'ов. Детали остаются в логе.
       const message =
-        error instanceof Error ? error.message : 'Internal Server Error'
+        process.env.NODE_ENV === 'development' && error instanceof Error
+          ? error.message
+          : 'Internal Server Error'
       return NextResponse.json({ error: message }, { status: 500 })
     }
   }

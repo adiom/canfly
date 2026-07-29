@@ -1,5 +1,6 @@
 'use server'
 
+import { randomInt } from 'node:crypto'
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { dbQuery, dbQueryOne } from '@/lib/db'
@@ -31,8 +32,12 @@ export interface AccountSettings {
 
 // === Helpers ===
 
+/** Сколько неудачных вводов кода допускается до инвалидации верификации */
+const MAX_VERIFY_ATTEMPTS = 5
+
 function generateVerificationCode(): string {
-  return Math.floor(100000 + Math.random() * 900000).toString()
+  // CSPRNG: Math.random() предсказуем и не годится для кодов доступа
+  return randomInt(100_000, 1_000_000).toString()
 }
 
 // === Getters ===
@@ -117,10 +122,9 @@ export async function addEmail(
     return { status: 'error', message: 'Ошибка при добавлении email' }
   }
 
-  // Если первый — синхронизируем users.email
-  if (isFirst) {
-    await dbQuery('UPDATE users SET email = $1 WHERE id = $2', [rawEmail, user.id])
-  }
+  // users.email синхронизируется только после подтверждения кода (см. verifyEmail):
+  // это ключ идентификации при входе, и подставлять туда неподтверждённый адрес
+  // значит позволять менять identity аккаунта чужой почтой.
 
   // Генерируем код верификации
   const code = generateVerificationCode()
@@ -159,19 +163,33 @@ export async function verifyEmail(
     `SELECT id FROM email_verifications
      WHERE user_id = $1 AND email_id = $2 AND code = $3
        AND expires_at > NOW()
+       AND attempts < $4
      LIMIT 1`,
-    [user.id, emailId, code],
+    [user.id, emailId, code, MAX_VERIFY_ATTEMPTS],
   )
 
   if (!verification) {
+    // 6 цифр подбираются быстро — считаем неудачные попытки
+    await dbQuery(
+      `UPDATE email_verifications SET attempts = attempts + 1
+       WHERE user_id = $1 AND email_id = $2 AND expires_at > NOW()`,
+      [user.id, emailId],
+    )
     return { status: 'error', message: 'Неверный или просроченный код' }
   }
 
   // Помечаем email как верифицированный
-  await dbQuery(
-    'UPDATE user_emails SET verified = true WHERE id = $1 AND user_id = $2',
+  const verified = await dbQueryOne<{ email: string; is_primary: boolean }>(
+    `UPDATE user_emails SET verified = true
+      WHERE id = $1 AND user_id = $2
+      RETURNING email, is_primary`,
     [emailId, user.id],
   )
+
+  // Только теперь адрес попадает в users.email — ключ идентификации при входе
+  if (verified?.is_primary) {
+    await dbQuery('UPDATE users SET email = $1 WHERE id = $2', [verified.email, user.id])
+  }
 
   // Удаляем использованные коды
   await dbQuery(

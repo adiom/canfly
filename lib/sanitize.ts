@@ -1,4 +1,10 @@
-import DOMPurify from 'isomorphic-dompurify'
+import 'server-only'
+import sanitizeHtmlLib from 'sanitize-html'
+
+// sanitize-html вместо isomorphic-dompurify: последний тянет условный jsdom и
+// падает на Vercel (из-за чего санитизацию однажды просто сняли с /news/[id]).
+// Этот работает только на сервере — и там же ему и место: чистить нужно на
+// входе и на выходе из БД, а не в браузере, который мы не контролируем.
 
 const ALLOWED_TAGS = [
   'p', 'br', 'strong', 'em', 'u', 's', 'b', 'i',
@@ -11,21 +17,29 @@ const ALLOWED_TAGS = [
   'div', 'span',
 ]
 
-const ALLOWED_ATTR = ['href', 'src', 'alt', 'title', 'class', 'id', 'rel']
+const OPTIONS: sanitizeHtmlLib.IOptions = {
+  allowedTags: ALLOWED_TAGS,
+  allowedAttributes: {
+    a: ['href', 'title', 'target', 'rel'],
+    img: ['src', 'alt', 'title'],
+    '*': ['class', 'id'],
+  },
+  // Только безопасные схемы: javascript:/data: в href отсекаются
+  allowedSchemes: ['http', 'https', 'mailto'],
+  allowedSchemesByTag: { img: ['http', 'https', 'data'] },
+  allowProtocolRelative: false,
+  // Внешние ссылки не должны получать доступ к window.opener
+  transformTags: {
+    a: sanitizeHtmlLib.simpleTransform('a', { rel: 'noopener noreferrer' }, true),
+  },
+  disallowedTagsMode: 'discard',
+}
 
-/**
- * Sanitize HTML content before rendering via dangerouslySetInnerHTML.
- * Strips script/style/iframe/event-handler attributes.
- */
+/** Чистит HTML главы/новости. Применять и при записи, и перед рендером. */
 export function sanitizeChapterHtml(html: string | null | undefined): string {
   if (!html) return ''
-  return DOMPurify.sanitize(html, {
-    ALLOWED_TAGS,
-    ALLOWED_ATTR,
-    ALLOW_DATA_ATTR: false,
-    FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'input'],
-    FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur'],
-    ADD_ATTR: ['target'],
-    FORCE_BODY: false,
-  })
+  return sanitizeHtmlLib(html, OPTIONS)
 }
+
+/** Алиас для произвольного пользовательского HTML */
+export const sanitizeHtml = sanitizeChapterHtml

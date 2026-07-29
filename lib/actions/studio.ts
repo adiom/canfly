@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { del, head } from '@vercel/blob'
 import {
   requireStudioSession,
+  requireStudioAdminSession,
   requireReleaseOwnership,
   requireEditionOwnership,
   requireChapterOwnership,
@@ -40,6 +41,16 @@ const editionStatusSchemaSafe = (v: string) => parseEnum(editionStatusSchema, v)
 async function requireAuth() {
   const session = await requireStudioSession()
   if (!session) redirect('/login')
+  return session
+}
+
+/**
+ * Серии — общий каталог вселенной, владельца у них нет. Мутации ограничены
+ * админом: раньше любой author мог переименовать или удалить любую серию по UUID.
+ */
+async function requireSeriesAdmin() {
+  const session = await requireStudioAdminSession()
+  if (!session) redirect('/studio')
   return session
 }
 
@@ -93,7 +104,7 @@ export async function getMyReleasesWithEditions() {
 }
 
 export async function getRelease(id: string) {
-  await requireAuth()
+  await requireReleaseOwnership(id)
   return releasesDb.fetchReleaseById(id)
 }
 
@@ -177,18 +188,20 @@ export async function updateReleaseDesignAction(id: string, config: ReleaseDesig
 // === Editions ===
 
 export async function getEditions(releaseId: string) {
-  await requireAuth()
+  await requireReleaseOwnership(releaseId)
   return editionsDb.fetchEditionsByRelease(releaseId)
 }
 
 export async function getEdition(id: string) {
-  await requireAuth()
+  await requireEditionOwnership(id)
   return editionsDb.fetchEditionById(id)
 }
 
 export async function createEditionAction(formData: FormData) {
-  await requireAuth()
   const data = validateForm(editionFormSchema, formData)
+  // release_id приходит из формы — без этой проверки любой автор мог
+  // создать издание в чужом релизе
+  await requireReleaseOwnership(data.release_id)
 
   const edition = await editionsDb.createEdition({
     release_id: data.release_id,
@@ -227,12 +240,12 @@ export async function deleteEditionAction(id: string, releaseId: string) {
 // === Chapters ===
 
 export async function getChapters(editionId: string) {
-  await requireAuth()
+  await requireEditionOwnership(editionId)
   return chaptersDb.fetchChaptersByEdition(editionId)
 }
 
 export async function getChapter(id: string) {
-  await requireAuth()
+  await requireChapterOwnership(id)
   return chaptersDb.fetchChapterById(id)
 }
 
@@ -459,7 +472,7 @@ export async function deleteChapterAction(id: string) {
 // === Chapter Versions ===
 
 export async function getChapterVersions(chapterId: string) {
-  await requireAuth()
+  await requireChapterOwnership(chapterId)
   return chaptersDb.fetchChapterVersions(chapterId)
 }
 
@@ -478,7 +491,7 @@ export async function getAllSeries() {
 }
 
 export async function createSeriesAction(formData: FormData) {
-  await requireAuth()
+  await requireSeriesAdmin()
   const data = validateForm(seriesFormSchema, formData)
   await seriesDb.createSeries({
     title: data.title,
@@ -489,7 +502,7 @@ export async function createSeriesAction(formData: FormData) {
 }
 
 export async function updateSeriesAction(id: string, formData: FormData) {
-  await requireAuth()
+  await requireSeriesAdmin()
   const data = validateForm(seriesFormSchema, formData)
   await seriesDb.updateSeries(id, {
     title: data.title,
@@ -500,7 +513,7 @@ export async function updateSeriesAction(id: string, formData: FormData) {
 }
 
 export async function deleteSeriesAction(id: string) {
-  await requireAuth()
+  await requireSeriesAdmin()
   await seriesDb.deleteSeries(id)
   revalidatePath('/studio/series')
 }
@@ -508,7 +521,7 @@ export async function deleteSeriesAction(id: string) {
 // === Edition Setup ===
 
 export async function getEditionSetupData(editionId: string) {
-  await requireAuth()
+  await requireEditionOwnership(editionId)
   const edition = await editionsDb.fetchEditionById(editionId)
   if (!edition) return null
 

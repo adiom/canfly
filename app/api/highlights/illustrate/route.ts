@@ -1,10 +1,14 @@
 import { generateText } from 'ai'
+import { guardHighlightRequest, buildPrompt, HIGHLIGHT_MODEL } from '@/lib/ai/highlight-actions'
+
+const INSTRUCTION =
+  'На основе этого литературного отрывка создай короткий промпт (до 60 слов) для генерации иллюстрации в стиле dark arthouse, book illustration, ink and watercolor. Только промпт, без объяснений.'
 
 export async function POST(req: Request) {
-  const { text } = await req.json() as { text: string }
-  if (!text?.trim()) {
-    return Response.json({ error: 'text required' }, { status: 400 })
-  }
+  const guard = await guardHighlightRequest(req, 'llm:illustrate')
+  if (!guard.ok) return guard.response
+
+  const { text } = guard
 
   const sdUrl = process.env.STABLE_DIFFUSION_URL
   if (!sdUrl) {
@@ -15,8 +19,8 @@ export async function POST(req: Request) {
   let artPrompt: string
   try {
     const { text: promptText } = await generateText({
-      model: 'openai/gpt-4o-mini' as Parameters<typeof generateText>[0]['model'],
-      prompt: `На основе этого литературного отрывка создай короткий промпт (до 60 слов) для генерации иллюстрации в стиле dark arthouse, book illustration, ink and watercolor. Только промпт, без объяснений.\n\n«${text.slice(0, 400)}»`,
+      model: HIGHLIGHT_MODEL as Parameters<typeof generateText>[0]['model'],
+      prompt: buildPrompt(INSTRUCTION, text.slice(0, 400)),
       maxOutputTokens: 120,
     })
     artPrompt = promptText.trim()

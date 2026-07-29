@@ -1,5 +1,16 @@
 import { dbQuery, dbQueryOne } from '@/lib/db'
+import { sanitizeChapterHtml } from '@/lib/sanitize'
 import type { Chapter, ChapterVersion } from '@/lib/releases-types'
+
+/**
+ * Контент чистится здесь, в серверном слое, а не в ридерах: ридеры клиентские,
+ * и санитайзер в них — это и лишний вес бандла, и защита не там, где нужно.
+ * Чистим на чтении, чтобы покрыть и уже сохранённые главы.
+ */
+function withSafeContent<T extends { content?: string | null }>(row: T): T {
+  if (!row.content) return row
+  return { ...row, content: sanitizeChapterHtml(row.content) }
+}
 
 const chapterColumns = `
   id, edition_id, title, content, audio_url, audio_blob_path, duration_seconds,
@@ -25,27 +36,30 @@ export async function fetchChaptersByEdition(editionId: string) {
 }
 
 export async function fetchPublishedChaptersByEdition(editionId: string) {
-  return dbQuery<Chapter>(
+  const rows = await dbQuery<Chapter>(
     `SELECT ${chapterColumns} FROM chapters
      WHERE edition_id = $1 AND status = 'published'
      ORDER BY chapter_index ASC`,
     [editionId],
   )
+  return rows.map(withSafeContent)
 }
 
 export async function fetchChapterById(id: string) {
-  return dbQueryOne<Chapter>(
+  const row = await dbQueryOne<Chapter>(
     `SELECT ${chapterColumns} FROM chapters WHERE id = $1 LIMIT 1`,
     [id],
   )
+  return row ? withSafeContent(row) : row
 }
 
 export async function fetchChapterByEditionAndIndex(editionId: string, chapterIndex: number) {
-  return dbQueryOne<Chapter>(
+  const row = await dbQueryOne<Chapter>(
     `SELECT ${chapterColumns} FROM chapters
      WHERE edition_id = $1 AND chapter_index = $2 LIMIT 1`,
     [editionId, chapterIndex],
   )
+  return row ? withSafeContent(row) : row
 }
 
 export async function createChapter(data: Record<string, unknown>) {

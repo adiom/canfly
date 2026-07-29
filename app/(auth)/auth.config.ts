@@ -8,6 +8,7 @@ import Google from 'next-auth/providers/google'
 import GitHub from 'next-auth/providers/github'
 
 import { dbQuery, dbQueryOne } from '@/lib/db'
+import { validateAndConsumeMagicToken } from '@/lib/server/magic-token'
 import type { UserProfile } from '@/lib/types'
 
 export type UserType = 'regular'
@@ -92,19 +93,37 @@ export function createAuthConfig(request?: NextRequest): NextAuthConfig {
     newUser: '/',
   },
   providers: [
+    // Magic link. Единственный фактор входа — токен: он проверяется и гасится
+    // здесь же, внутри authorize. Раньше код гасился отдельно на клиенте, а
+    // authorize доверял голому email из тела запроса — то есть любой POST с
+    // чужим адресом выдавал полноценную сессию.
     Credentials({
-      credentials: {},
+      credentials: { token: {}, email: {}, via: {} },
       async authorize(credentials) {
-        const { email } = credentials as { email?: string }
-        const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : ''
-        if (!normalizedEmail) return null
+        const rawToken = typeof credentials?.token === 'string' ? credentials.token.trim() : ''
+        if (!rawToken) return null
 
-        const user = await findOrCreateUserByEmail(normalizedEmail)
+        const rawEmail = typeof credentials?.email === 'string'
+          ? credentials.email.trim().toLowerCase()
+          : ''
+
+        const data = await validateAndConsumeMagicToken(rawToken, {
+          // При ручном вводе кода email — второй фактор: 8 цифр без привязки
+          // к адресу подбираются против всего пула активных токенов.
+          expectedEmail: rawEmail || undefined,
+          byLink: credentials?.via === 'link',
+        })
+        if (!data) return null
+
+        const user = await dbQueryOne<UserProfile>(
+          'SELECT id, email, display_name, login, handle FROM users WHERE id = $1 LIMIT 1',
+          [data.userId],
+        )
         if (!user) return null
 
         return {
           id: user.id,
-          email: user.email ?? normalizedEmail,
+          email: user.email ?? data.email,
           name: user.display_name,
           type: 'regular' as UserType,
           login: user.login,

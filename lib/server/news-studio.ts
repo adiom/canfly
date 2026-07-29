@@ -1,5 +1,6 @@
 import { dbQuery, dbQueryOne } from '@/lib/db'
 import { redirect } from 'next/navigation'
+import { sanitizeChapterHtml } from '@/lib/sanitize'
 import type { NewsPost } from '@/lib/types'
 import {
   requireStudioSession,
@@ -83,7 +84,7 @@ export async function updateNews(
          updated_at = NOW()
      WHERE id = $1
      RETURNING ${newsColumns}`,
-    [id, data.title, data.section, data.tag, data.content, data.cover_image],
+    [id, data.title, data.section, data.tag, sanitizeChapterHtml(data.content), data.cover_image],
   )
 }
 

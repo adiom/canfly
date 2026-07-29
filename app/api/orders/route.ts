@@ -1,72 +1,21 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { dbQueryOne } from '@/lib/db'
-import { Order, OrderItem } from '@/lib/types'
-import { apiHandler } from '@/lib/api-handler'
+import { NextResponse } from 'next/server'
 
-async function createOrder(request: NextRequest) {
-  const body = await request.json()
-  const {
-    customer_name,
-    customer_email,
-    customer_phone,
-    customer_address,
-    items,
-    notes,
-  } = body
+export const dynamic = 'force-dynamic'
 
-  if (!customer_name || !customer_email || !Array.isArray(items) || items.length === 0) {
-    return NextResponse.json(
-      { error: 'Missing required fields' },
-      { status: 400 },
-    )
-  }
-
-  const total = items.reduce((sum: number, item: OrderItem) =>
-    sum + (item.price * item.quantity), 0,
+// Магазин выведен из эксплуатации: /shop и /cart редиректятся на /releases
+// (proxy.ts), оформить заказ физически неоткуда. Ручка при этом принимала
+// анонимный POST и считала сумму по цене из тела запроса — то есть заказ на
+// любую сумму. Отключена по образцу /api/books.
+//
+// Если магазин вернётся, здесь нужны: авторизация, zod-схема и цены,
+// поднятые с сервера по id товара, а не принятые от клиента.
+export async function POST() {
+  return NextResponse.json(
+    {
+      status: 'retired',
+      message: 'Оформление заказов отключено: витрина переехала в /releases.',
+      suggestion: '/releases',
+    },
+    { status: 410 },
   )
-
-  const data = await dbQueryOne<Order>(
-    `
-      INSERT INTO orders (
-        customer_name,
-        customer_email,
-        customer_phone,
-        customer_address,
-        items,
-        total,
-        notes,
-        status
-      )
-      VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, 'pending')
-      RETURNING
-        id,
-        customer_name,
-        customer_email,
-        customer_phone,
-        customer_address,
-        items,
-        total::float8 AS total,
-        status,
-        notes,
-        created_at,
-        updated_at
-    `,
-    [
-      customer_name,
-      customer_email,
-      customer_phone || null,
-      customer_address || null,
-      JSON.stringify(items),
-      total,
-      notes || null,
-    ],
-  )
-
-  if (!data) {
-    return NextResponse.json({ error: 'Failed to create order' }, { status: 500 })
-  }
-
-  return NextResponse.json(data as Order, { status: 201 })
 }
-
-export const POST = apiHandler(createOrder)
