@@ -9,6 +9,11 @@ import { MagicLinkForm } from '@/components/magic-link-form'
 import { Button } from '@/components/ui/button'
 
 const isCanflySsoEnabled = process.env.NEXT_PUBLIC_CANFLY_SSO_ENABLED === 'true'
+const isYandexEnabled = process.env.NEXT_PUBLIC_AUTH_YANDEX_ENABLED === 'true'
+const isGoogleEnabled = process.env.NEXT_PUBLIC_AUTH_GOOGLE_ENABLED === 'true'
+const isGitHubEnabled = process.env.NEXT_PUBLIC_AUTH_GITHUB_ENABLED === 'true'
+
+const hasOAuth = isCanflySsoEnabled || isYandexEnabled || isGoogleEnabled || isGitHubEnabled
 
 function LoginForm() {
   const searchParams = useSearchParams()
@@ -50,53 +55,61 @@ function LoginForm() {
         <MagicLinkForm />
       </div>
 
-      <div className="mt-4 flex items-center gap-3">
-        <div className="h-px flex-1 bg-[#f4efe5]/10" />
-        <span className="text-xs uppercase tracking-[0.12em] text-[#ded7cc]/50">или</span>
-        <div className="h-px flex-1 bg-[#f4efe5]/10" />
-      </div>
+      {hasOAuth && (
+        <>
+          <div className="mt-4 flex items-center gap-3">
+            <div className="h-px flex-1 bg-[#f4efe5]/10" />
+            <span className="text-xs uppercase tracking-[0.12em] text-[#ded7cc]/50">или</span>
+            <div className="h-px flex-1 bg-[#f4efe5]/10" />
+          </div>
 
-      <div className="mt-4 flex flex-col gap-3">
-        {isCanflySsoEnabled && (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => signIn('canfly', { callbackUrl: searchParams.get('redirect') || '/' })}
-            className="h-11 w-full border-[#f6d6a8]/35 bg-[#f6d6a8]/10 text-sm font-black uppercase text-[#f6d6a8] hover:bg-[#f6d6a8]/15"
-          >
-            Войти через canfly
-          </Button>
-        )}
+          <div className="mt-4 flex flex-col gap-3">
+            {isCanflySsoEnabled && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => signIn('canfly', { callbackUrl: searchParams.get('redirect') || '/' })}
+                className="h-11 w-full border-[#f6d6a8]/35 bg-[#f6d6a8]/10 text-sm font-black uppercase text-[#f6d6a8] hover:bg-[#f6d6a8]/15"
+              >
+                Войти через canfly
+              </Button>
+            )}
 
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => signIn('yandex', { callbackUrl: searchParams.get('redirect') || '/' })}
-          className="h-11 w-full border-[#f4efe5]/10 text-sm font-bold uppercase text-[#ded7cc] hover:bg-[#f4efe5]/5"
-        >
-          Войти через Яндекс
-        </Button>
+            {isYandexEnabled && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => signIn('yandex', { callbackUrl: searchParams.get('redirect') || '/' })}
+                className="h-11 w-full border-[#f4efe5]/10 text-sm font-bold uppercase text-[#ded7cc] hover:bg-[#f4efe5]/5"
+              >
+                Войти через Яндекс
+              </Button>
+            )}
 
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => signIn('google', { callbackUrl: searchParams.get('redirect') || '/' })}
-          className="h-11 w-full border-[#f4efe5]/10 text-sm font-bold uppercase text-[#ded7cc] hover:bg-[#f4efe5]/5"
-        >
-          Войти через Google
-        </Button>
+            {isGoogleEnabled && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => signIn('google', { callbackUrl: searchParams.get('redirect') || '/' })}
+                className="h-11 w-full border-[#f4efe5]/10 text-sm font-bold uppercase text-[#ded7cc] hover:bg-[#f4efe5]/5"
+              >
+                Войти через Google
+              </Button>
+            )}
 
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => signIn('github', { callbackUrl: searchParams.get('redirect') || '/' })}
-          className="h-11 w-full border-[#f4efe5]/10 text-sm font-bold uppercase text-[#ded7cc] hover:bg-[#f4efe5]/5"
-        >
-          Войти через GitHub
-        </Button>
-
-
-      </div>
+            {isGitHubEnabled && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => signIn('github', { callbackUrl: searchParams.get('redirect') || '/' })}
+                className="h-11 w-full border-[#f4efe5]/10 text-sm font-bold uppercase text-[#ded7cc] hover:bg-[#f4efe5]/5"
+              >
+                Войти через GitHub
+              </Button>
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }
