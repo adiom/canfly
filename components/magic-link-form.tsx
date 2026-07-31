@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { createMagicLink, type CreateMagicLinkState } from '@/app/(auth)/actions'
 import { signIn, useSession } from 'next-auth/react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 interface MagicLinkFormProps {
   onFocus?: () => void
@@ -23,6 +23,8 @@ export function MagicLinkForm({ onFocus, onBlur }: MagicLinkFormProps) {
   const [cooldown, setCooldown] = useState(0)
   const { update: updateSession } = useSession()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const redirectTo = searchParams.get('redirect') || '/profile'
 
   useEffect(() => {
     if (cooldown <= 0) return
@@ -87,7 +89,7 @@ export function MagicLinkForm({ onFocus, onBlur }: MagicLinkFormProps) {
       // push() на новый маршрут уже приносит свежие серверные данные —
       // следом идущий refresh() обрывал этот же в разгаре RSC-запрос
       // (ERR_ABORTED) и был чистым дублированием.
-      router.push('/profile')
+      router.push(redirectTo)
     } catch {
       setCodeError('Ошибка соединения')
       setCodeLoading(false)
