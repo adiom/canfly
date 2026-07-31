@@ -40,9 +40,9 @@ function LoginForm() {
       <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#d7c6ad]">
         Профиль читателя
       </p>
-      <h1 className="mt-3 text-3xl font-black uppercase">Вход</h1>
+      <h1 className="mt-3 text-3xl font-black uppercase">Вход или регистрация</h1>
       <p className="mt-3 text-sm leading-6 text-[#ded7cc]">
-        Введите email — мы отправим ссылку для входа. Аккаунт создаётся автоматически.
+        Введите email — мы отправим ссылку. Если аккаунта ещё нет, он создастся автоматически.
       </p>
 
       {errorParam && errorMessages[errorParam] && (
