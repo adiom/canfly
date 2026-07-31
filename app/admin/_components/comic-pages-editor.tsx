@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Image from 'next/image'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 
@@ -10,7 +11,7 @@ interface ComicPagesEditorProps {
   onUpdate: (pages: string[]) => void
 }
 
-export function ComicPagesEditor({ bookId, initialPages, onUpdate }: ComicPagesEditorProps) {
+export function ComicPagesEditor({ initialPages, onUpdate }: ComicPagesEditorProps) {
   const [pages, setPages] = useState<string[]>(initialPages || [])
   const [uploading, setUploading] = useState(false)
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
@@ -134,11 +135,13 @@ export function ComicPagesEditor({ bookId, initialPages, onUpdate }: ComicPagesE
                 draggedIndex === index ? 'opacity-50' : ''
               }`}
             >
-              <div className="aspect-[3/4] bg-[#1b1c19]">
-                <img
+              <div className="relative aspect-[3/4] bg-[#1b1c19]">
+                <Image
                   src={url}
                   alt={`Страница ${index + 1}`}
-                  className="w-full h-full object-cover"
+                  fill
+                  sizes="200px"
+                  className="object-cover"
                 />
               </div>
               

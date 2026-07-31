@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { isRedirectError } from 'next/dist/client/components/redirect-error'
 import { toast } from 'sonner'
@@ -99,10 +100,12 @@ export function CharacterPostComposer({ characterId, post }: CharacterPostCompos
           <Label className="text-gray-600">Изображение</Label>
           {imagePreview ? (
             <div className="relative inline-block">
-              <img
+              <Image
                 src={imagePreview}
                 alt="Preview"
-                className="max-h-64 rounded-xl border border-white/70"
+                width={512}
+                height={512}
+                className="max-h-64 w-auto rounded-xl border border-white/70 object-contain"
               />
               <Button
                 type="button"

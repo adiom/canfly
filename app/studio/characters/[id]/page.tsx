@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import Image from 'next/image'
 import { notFound } from 'next/navigation'
 import { ArrowLeft, Edit, Plus, Trash2, ExternalLink, MapPin } from 'lucide-react'
 
@@ -87,10 +88,12 @@ export default async function StudioCharacterPage({
           <div className="flex items-start gap-4">
             <div className={`relative h-16 w-16 shrink-0 overflow-hidden rounded-2xl shadow-lg shadow-black/5 ring-2 ring-white/80 ${isCity ? 'bg-gradient-to-br from-emerald-50 to-teal-50' : 'bg-gradient-to-br from-violet-50 to-rose-50'}`}>
               {character.avatar ? (
-                <img
+                <Image
                   src={character.avatar}
                   alt={character.name}
-                  className="h-full w-full object-cover"
+                  fill
+                  sizes="64px"
+                  className="object-cover"
                 />
               ) : (
                 <div className={`flex h-full w-full items-center justify-center text-lg font-bold ${isCity ? 'text-emerald-400' : 'text-violet-400'}`}>
@@ -233,11 +236,15 @@ export default async function StudioCharacterPage({
                 <div>
                   <dt className="font-semibold text-gray-600">Карта</dt>
                   <dd className="mt-1">
-                    <img
-                      src={character.map_image_url}
-                      alt={`Карта ${character.name}`}
-                      className="max-w-full rounded-xl border border-white/70 shadow-sm"
-                    />
+                    <div className="relative max-w-full">
+                      <Image
+                        src={character.map_image_url}
+                        alt={`Карта ${character.name}`}
+                        fill
+                        sizes="(max-width: 768px) 100vw, 50vw"
+                        className="rounded-xl border border-white/70 shadow-sm object-contain"
+                      />
+                    </div>
                   </dd>
                 </div>
               ) : null}

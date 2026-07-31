@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import Image from 'next/image'
 import { Plus, MessageSquareOff, Users, MapPin, Lock } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -138,10 +139,12 @@ function CharacterCard({
           <div className="absolute -top-10 left-5">
             <div className="relative h-20 w-20 overflow-hidden rounded-2xl border-4 border-white/80 shadow-lg shadow-black/10 bg-gradient-to-br from-violet-50 to-rose-50">
               {character.avatar ? (
-                <img
+                <Image
                   src={character.avatar}
                   alt={character.name}
-                  className="h-full w-full object-cover"
+                  fill
+                  sizes="80px"
+                  className="object-cover"
                 />
               ) : (
                 <div className="flex h-full w-full items-center justify-center text-2xl font-bold text-violet-400">
@@ -211,11 +214,15 @@ function CityCard({
             </div>
           ) : null}
           {character.map_image_url ? (
-            <img
-              src={character.map_image_url}
-              alt={`Карта ${character.name}`}
-              className="h-full w-full object-cover opacity-60"
-            />
+            <div className="relative h-full w-full">
+              <Image
+                src={character.map_image_url}
+                alt={`Карта ${character.name}`}
+                fill
+                sizes="(max-width: 768px) 100vw, 50vw"
+                className="object-cover opacity-60"
+              />
+            </div>
           ) : null}
         </div>
 
@@ -223,10 +230,12 @@ function CityCard({
           <div className="absolute -top-10 left-5">
             <div className="relative h-20 w-20 overflow-hidden rounded-2xl border-4 border-white/80 shadow-lg shadow-black/10 bg-gradient-to-br from-emerald-50 to-teal-50">
               {character.avatar ? (
-                <img
+                <Image
                   src={character.avatar}
                   alt={character.name}
-                  className="h-full w-full object-cover"
+                  fill
+                  sizes="80px"
+                  className="object-cover"
                 />
               ) : (
                 <div className="flex h-full w-full items-center justify-center">

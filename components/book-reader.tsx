@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import Image from 'next/image'
 import { BookWithCharacters, Highlight, UserRole, UserProfile } from '@/lib/types'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -212,10 +213,12 @@ function TextBookReader({ book, initialHighlights = [], initialChapter = 0 }: { 
               <div className="order-2 md:order-1 md:col-span-1 hidden md:block">
                 {book.cover_image && (
                   <div className="relative w-full aspect-[2/3] rounded-lg overflow-hidden shadow-2xl mb-6">
-                    <img
+                    <Image
                       src={book.cover_image}
                       alt={book.title}
-                      className="w-full h-full object-cover"
+                      fill
+                      sizes="(max-width: 768px) 100vw, 25vw"
+                      className="object-cover"
                     />
                   </div>
                 )}
@@ -538,11 +541,15 @@ function TextBookReader({ book, initialHighlights = [], initialChapter = 0 }: { 
             </div>
             <div className="flex-1 flex items-center justify-center p-4">
               {pages[currentPage] ? (
-                <img
-                  src={pages[currentPage]}
-                  alt={`Страница ${currentPage + 1}`}
-                  className="max-w-full max-h-full object-contain"
-                />
+                <div className="relative w-full h-full max-w-full max-h-full">
+                  <Image
+                    src={pages[currentPage]}
+                    alt={`Страница ${currentPage + 1}`}
+                    fill
+                    sizes="(max-width: 768px) 100vw, 50vw"
+                    className="object-contain"
+                  />
+                </div>
               ) : (
                 <p className="text-slate-400">Страница не найдена</p>
               )}

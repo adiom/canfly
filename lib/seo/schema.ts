@@ -13,22 +13,11 @@ const CANFLY_AUTHOR = {
   sameAs: ['https://twitter.com/adiomtimur', 'https://github.com/adiom'],
 }
 
-function schemaOrgType(formats: EditionFormat[]): string {
-  if (formats.includes('audiobook') || formats.includes('audiorelease')) return 'AudioBook'
-  return 'Book'
-}
-
 function bookGenres(formats: EditionFormat[], genre: string | null): string[] {
   const g: string[] = ['Fiction', 'Contemporary Fiction']
   if (formats.includes('comic')) g.push('Comics & Graphic Novels')
   if (genre && !g.includes(genre)) g.push(genre)
   return g
-}
-
-const tierLabels: Record<QualityTier, string> = {
-  draft: 'черновик',
-  standard: '',
-  premium: 'иллюстрированное издание',
 }
 
 const tierNameSuffixes: Record<QualityTier, string> = {

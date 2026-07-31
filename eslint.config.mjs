@@ -7,6 +7,14 @@ export default defineConfig([
   ...nextTs,
   {
     rules: {
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+        },
+      ],
       'no-restricted-imports': [
         'error',
         {

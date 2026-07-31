@@ -8,12 +8,6 @@ import { generateBookEditionSchema, generateBreadcrumbSchema } from '@/lib/seo/s
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
-const tierLabels: Record<string, string> = {
-  draft: 'черновик',
-  standard: '',
-  premium: 'иллюстрированное издание',
-}
-
 const tierSuffixes: Record<string, string> = {
   draft: ' — черновик',
   standard: '',

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import Image from 'next/image'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { Plus, Trash2, Check, Loader2 } from 'lucide-react'
@@ -167,11 +168,13 @@ export function ComicPagesEditor({ chapterId, initialPages }: ComicPagesEditorPr
                 draggedIndex === index ? 'opacity-50' : ''
               }`}
             >
-              <div className="aspect-[3/4] bg-muted">
-                <img
+              <div className="relative aspect-[3/4] bg-muted">
+                <Image
                   src={url}
                   alt={`Страница ${index + 1}`}
-                  className="w-full h-full object-cover"
+                  fill
+                  sizes="200px"
+                  className="object-cover"
                 />
               </div>
               <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">

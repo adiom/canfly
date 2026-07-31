@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
+import Image from 'next/image'
 import { X, Globe, Lock, Check, RotateCcw, Loader2, ImageOff, Sparkles } from 'lucide-react'
 import Link from 'next/link'
 import type { ChapterHighlight } from '@/lib/releases-types'
@@ -237,7 +238,6 @@ export function HighlightArtifact({
     if (phase !== 'tools') return
     // eslint-disable-next-line react-hooks/set-state-in-effect -- auto-trigger AI on tab change
     if (activeTab === 'explain') runExplain()
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- auto-trigger AI on tab change
     if (activeTab === 'meaning') runMeaning()
   }, [activeTab, phase, runExplain, runMeaning])
 
@@ -623,7 +623,9 @@ export function HighlightArtifact({
                     )}
                     {imageUrl && (
                       <div className="flex flex-col gap-2">
-                        <img src={imageUrl} alt="Иллюстрация" className="w-full rounded-sm" style={{ aspectRatio: '1/1', objectFit: 'cover' }} />
+                        <div className="relative w-full" style={{ aspectRatio: '1/1' }}>
+                          <Image src={imageUrl} alt="Иллюстрация" fill sizes="(max-width: 768px) 100vw, 50vw" className="rounded-sm object-cover" />
+                        </div>
                         <button
                           onClick={handleIllustrate}
                           className="flex items-center justify-center gap-1.5 py-2 text-[10px] uppercase tracking-[0.14em] transition-opacity hover:opacity-70"

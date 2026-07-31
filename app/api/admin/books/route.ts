@@ -5,13 +5,13 @@ import {
   listAdminBooks,
   updateBookCharacters,
 } from '@/lib/server/books'
-import { Book, BookWithCharacters } from '@/lib/types'
+import { BookWithCharacters } from '@/lib/types'
 import { apiHandler } from '@/lib/api-handler'
 import { normalizeBookPayload } from '@/lib/api/normalizers'
 
 export const dynamic = 'force-dynamic'
 
-async function getAdminBooks(request: NextRequest) {
+async function getAdminBooks(_request: NextRequest) {
   const session = await requireStudioAdminSession()
 
   if (!session) {

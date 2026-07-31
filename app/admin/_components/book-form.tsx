@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { BookChapter, BookType, BookWithCharacters, Character, Highlight } from '@/lib/types'
+import { BookChapter, BookType, BookWithCharacters, Character } from '@/lib/types'
 import { ChapterEditor } from './chapter-editor'
 import { ComicPagesEditor } from './comic-pages-editor'
 

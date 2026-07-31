@@ -10,7 +10,7 @@ import { normalizeSlidePayload } from '@/lib/api/normalizers'
 
 export const dynamic = 'force-dynamic'
 
-async function getAdminHomepageSlides(request: NextRequest) {
+async function getAdminHomepageSlides(_request: NextRequest) {
   try {
     const session = await requireStudioAdminSession()
 

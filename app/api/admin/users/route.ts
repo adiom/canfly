@@ -6,7 +6,7 @@ import { normalizeRoles } from '@/lib/api/normalizers'
 
 export const dynamic = 'force-dynamic'
 
-async function getAdminUsers(request: NextRequest) {
+async function getAdminUsers(_request: NextRequest) {
   const session = await requireStudioAdminSession()
 
   if (!session) {

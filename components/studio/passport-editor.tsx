@@ -157,7 +157,6 @@ const PASSPORT_TEMPLATE_CITY = `# ПАСПОРТ ГОРОДА: [ИМЯ]
 export function PassportEditor({
   characterId,
   passport,
-  characterName,
   characterType,
 }: PassportEditorProps) {
   const [mode, setMode] = useState<'view' | 'edit'>(passport ? 'view' : 'edit')

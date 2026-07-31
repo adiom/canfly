@@ -6,7 +6,7 @@ import { normalizeCharacterPayload, parseAbilities } from '@/lib/api/normalizers
 
 export const dynamic = 'force-dynamic'
 
-async function getAdminCharacters(request: NextRequest) {
+async function getAdminCharacters(_request: NextRequest) {
   const session = await requireStudioAdminSession()
 
   if (!session) {

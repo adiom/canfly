@@ -1,7 +1,5 @@
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
-import Link from 'next/link'
-
 import { fetchBookBySlug } from '@/lib/server/books'
 import { generateBookSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
 import { BookReader } from '@/components/book-reader'

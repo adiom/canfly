@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import type { Release, EditionFormat } from '@/lib/releases-types'
+import type { EditionFormat } from '@/lib/releases-types'
 import { ReleaseCardBookmate } from '@/components/release-card-bookmate'
 import { SiteHeader } from '@/components/site-header'
 import { SiteFooter } from '@/components/site-footer'

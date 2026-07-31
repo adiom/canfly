@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { X, AlignJustify, Bookmark, BookmarkPlus, Heart, ChevronLeft, ChevronRight, Sun, Moon, Palette } from 'lucide-react'
 import { toast } from 'sonner'
-import { useColumnPagination, SPINE_WIDTH } from '@/lib/reader/use-column-pagination'
+import { useColumnPagination } from '@/lib/reader/use-column-pagination'
 import {
   collectParagraphs,
   clearHighlightMarks,
@@ -179,6 +180,7 @@ export function SpreadReader({
       })
       .catch(() => {})
     return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- highlights refetch only on chapter change
   }, [currentChapter?.id])
 
   // ── Применяем хайлайты к DOM ──
@@ -199,6 +201,7 @@ export function SpreadReader({
       if (!list) return
       for (const hl of list) wrapHighlight(p, hl, currentUserId, accent)
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- DOM highlight sync, avoids re-render loop
   }, [currentChapter?.id, chapterHighlights, currentIndex, accent, currentUserId])
 
   // ── Клик по <mark> ──
@@ -233,6 +236,7 @@ export function SpreadReader({
       }).catch(() => {})
     }, 1500)
     return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- saves on chapter+progress change, not on full object
   }, [currentUserId, currentChapter?.id, edition.id, progress])
 
   // ── Сброс страницы и selection при смене главы ──
@@ -824,7 +828,9 @@ export function SpreadReader({
             </button>
             <div className="mb-4 flex items-center gap-3">
               {activeHighlight.user_avatar ? (
-                <img src={activeHighlight.user_avatar} alt={activeHighlight.user_name ?? ''} className="h-10 w-10 rounded-full object-cover" />
+                <div className="relative h-10 w-10">
+                  <Image src={activeHighlight.user_avatar} alt={activeHighlight.user_name ?? ''} fill sizes="40px" className="rounded-full object-cover" />
+                </div>
               ) : (
                 <div className="flex h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: `${accent}33`, color: accent }}>
                   <span className="text-sm font-black">{(activeHighlight.user_name ?? '?')[0]}</span>

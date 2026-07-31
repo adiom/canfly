@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { BookOpen, Library, Home, PenTool, Users, MapPin } from 'lucide-react'
+import { BookOpen, Library, Home, PenTool, Users } from 'lucide-react'
 import type { SessionUser } from '@/lib/server/session'
 import {
   Sidebar,
@@ -27,7 +27,7 @@ const passportNav = [
   { title: 'Персонажи', href: '/studio/characters', icon: Users },
 ]
 
-export function StudioSidebar({ user, isAdmin = false, isAuthorOrAdmin = false }: { user: SessionUser; isAdmin?: boolean; isAuthorOrAdmin?: boolean }) {
+export function StudioSidebar({ user, isAdmin: _isAdmin = false, isAuthorOrAdmin = false }: { user: SessionUser; isAdmin?: boolean; isAuthorOrAdmin?: boolean }) {
   const pathname = usePathname()
   const navItems = [...baseNav, ...(isAuthorOrAdmin ? passportNav : [])]
 

@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { ChevronLeft, ChevronRight, X, AlignJustify, Heart, Quote, MessageCircle, Check, Bookmark, BookmarkPlus } from 'lucide-react'
 import { toast } from 'sonner'
-import type { Release, Edition, Chapter, ChapterHighlight, ChapterEditorialNote, EditorialNoteStatus, QualityTier } from '@/lib/releases-types'
+import type { Release, Edition, Chapter, ChapterHighlight, ChapterEditorialNote, EditorialNoteStatus } from '@/lib/releases-types'
 import type { UserRole } from '@/lib/types'
 import { BookmarksPanel } from '@/components/bookmarks-panel'
 import { HighlightArtifact } from '@/components/highlight-artifact'
@@ -36,7 +37,6 @@ export function ReleaseBookReader({
   currentUserId,
   initialHighlights,
   userRole,
-  userName,
   initialChapterIndex = 0,
   otherBookEditions = [],
 }: ReleaseBookReaderProps) {
@@ -104,6 +104,7 @@ export function ReleaseBookReader({
       })
       .catch(() => {})
     return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- highlights refetch only on chapter change
   }, [currentChapter?.id])
 
   // Подгружаем editorial notes при смене главы (editor/admin)
@@ -122,6 +123,7 @@ export function ReleaseBookReader({
       })
       .catch(() => {})
     return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- editorialNotes refetch only on chapter change
   }, [currentChapter?.id, isEditor])
 
   // Применяем подсветки к DOM после рендера
@@ -192,6 +194,7 @@ export function ReleaseBookReader({
     }
 
     return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- DOM highlight sync, avoids re-render loop
   }, [currentChapter?.id, chapterHighlights, chapterEditorialNotes, currentIndex, isEditor])
 
   // Сохраняем прогресс чтения на сервере (только для залогиненных).
@@ -211,6 +214,7 @@ export function ReleaseBookReader({
       }).catch(() => {})
     }, 1500)
     return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- saves on chapter+progress change, not on full object
   }, [currentUserId, currentChapter?.id, edition.id, progress])
 
   // Скролл наверх + синхронизация URL при смене главы. setState в effect —
@@ -225,6 +229,7 @@ export function ReleaseBookReader({
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reset selection/artifact on chapter navigation
     setSelection(null)
     setArtifactOpen(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- URL sync on chapter index only
   }, [currentIndex, release.slug, edition.slug])
 
   // Клавиатура
@@ -315,6 +320,7 @@ export function ReleaseBookReader({
     const contextAfter = offset >= 0 ? fullText.slice(offset + text.length, offset + text.length + 30) : ''
 
     setSelection({ text, rect, paragraphIndex, contextBefore, contextAfter })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- currentUserId checked inside, stable callback
   }, [])
 
   const scrollToParagraph = useCallback((paragraphIndex: number) => {
@@ -702,7 +708,9 @@ export function ReleaseBookReader({
 
             <div className="flex items-center gap-3 mb-4">
               {activeHighlight.user_avatar ? (
-                <img src={activeHighlight.user_avatar} alt={activeHighlight.user_name ?? ''} className="h-10 w-10 rounded-full object-cover" />
+                <div className="relative h-10 w-10">
+                  <Image src={activeHighlight.user_avatar} alt={activeHighlight.user_name ?? ''} fill sizes="40px" className="rounded-full object-cover" />
+                </div>
               ) : (
                 <div className="h-10 w-10 rounded-full flex items-center justify-center" style={{ backgroundColor: `${accent}33`, color: accent }}>
                   <span className="font-black text-sm">{(activeHighlight.user_name ?? '?')[0]}</span>
@@ -782,7 +790,9 @@ export function ReleaseBookReader({
 
             <div className="flex items-center gap-3 mb-4">
               {activeEditorialNote.author_avatar ? (
-                <img src={activeEditorialNote.author_avatar} alt={activeEditorialNote.author_name ?? ''} className="h-10 w-10 rounded-full object-cover" />
+                <div className="relative h-10 w-10">
+                  <Image src={activeEditorialNote.author_avatar} alt={activeEditorialNote.author_name ?? ''} fill sizes="40px" className="rounded-full object-cover" />
+                </div>
               ) : (
                 <div className="h-10 w-10 rounded-full flex items-center justify-center" style={{ backgroundColor: '#e9731633', color: '#e97316' }}>
                   <span className="font-black text-sm">{(activeEditorialNote.author_name ?? '?')[0]}</span>

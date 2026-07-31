@@ -35,14 +35,6 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   }
 }
 
-function getBookEditionUrl(release: { slug: string }, edition: { quality_tier: string }): string {
-  return `/release/${release.slug}/book/${edition.quality_tier}/1`
-}
-
-function getFullBookEditionUrl(release: { slug: string }, edition: { quality_tier: string }): string {
-  return `/release/${release.slug}/book/${edition.quality_tier}/full`
-}
-
 export default async function ReleasePublicPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
   const release = await fetchReleaseBySlug(slug)

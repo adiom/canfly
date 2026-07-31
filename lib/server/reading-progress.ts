@@ -1,4 +1,4 @@
-import { dbQuery, dbQueryOne } from '@/lib/db'
+import { dbQueryOne } from '@/lib/db'
 
 /**
  * Прогресс чтения пользователя по главе внутри издания.

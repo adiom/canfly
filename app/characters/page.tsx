@@ -1,7 +1,6 @@
 import { Character } from '@/lib/types';
 import { fetchCharactersList } from '@/lib/server/characters';
 import { CharacterCard } from '@/components/character-card';
-import Link from 'next/link';
 import { Suspense } from 'react';
 import { SiteHeader } from '@/components/site-header';
 import { SiteFooter } from '@/components/site-footer';

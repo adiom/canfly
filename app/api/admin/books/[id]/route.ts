@@ -7,7 +7,7 @@ import {
   updateBook,
   updateBookCharacters,
 } from '@/lib/server/books'
-import { Book, BookWithCharacters } from '@/lib/types'
+import { BookWithCharacters } from '@/lib/types'
 import { apiHandler } from '@/lib/api-handler'
 import { normalizeBookPayload } from '@/lib/api/normalizers'
 

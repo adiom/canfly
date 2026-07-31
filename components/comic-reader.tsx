@@ -12,7 +12,7 @@ interface ComicReaderProps {
 
 export function ComicReader({ book }: ComicReaderProps) {
   const pages = book.preview_pages || []
-  const [loadedPages, setLoadedPages] = useState<Set<number>>(new Set())
+  const [, setLoadedPages] = useState<Set<number>>(new Set())
   const [currentPage, setCurrentPage] = useState(0) // для прогресс-бара
   const [showUI, setShowUI] = useState(true)
   const [uiTimeout, setUiTimeout] = useState<ReturnType<typeof setTimeout> | null>(null)
@@ -181,16 +181,17 @@ export function ComicReader({ book }: ComicReaderProps) {
           <div
             key={index}
             ref={el => { pageRefs.current[index] = el }}
-            className="w-full flex justify-center"
+            className="relative w-full flex justify-center"
           >
             {/* Lazy load: рендерим только ±2 страницы от текущей */}
             {Math.abs(index - currentPage) <= 3 ? (
-              <img
+              <Image
                 src={url}
                 alt={`Страница ${index + 1}`}
-                className="w-full max-w-[720px] block"
+                fill
+                sizes="(max-width: 768px) 100vw, 720px"
+                className="w-full max-w-[720px] block object-cover"
                 style={{ display: 'block' }}
-                loading={index === 0 ? 'eager' : 'lazy'}
                 onLoad={() => setLoadedPages(prev => new Set(prev).add(index))}
               />
             ) : (
@@ -211,11 +212,15 @@ export function ComicReader({ book }: ComicReaderProps) {
           {book.price && (
             <div className="w-full border border-[#f4efe5]/10 rounded p-6 flex flex-col items-center gap-4 text-center">
               {book.cover_image && (
-                <img
-                  src={book.cover_image}
-                  alt={book.title}
-                  className="w-20 h-28 object-cover rounded"
-                />
+                <div className="relative w-20 h-28">
+                  <Image
+                    src={book.cover_image}
+                    alt={book.title}
+                    fill
+                    sizes="80px"
+                    className="object-cover rounded"
+                  />
+                </div>
               )}
               <div>
                 <p className="text-[#f4efe5] font-black uppercase text-sm mb-1">{book.title}</p>

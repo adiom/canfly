@@ -4,7 +4,7 @@ import { apiHandler } from '@/lib/api-handler'
 
 export const dynamic = 'force-dynamic'
 
-async function getHomepageSlides(request: NextRequest) {
+async function getHomepageSlides(_request: NextRequest) {
   const slides = await getPublicHomepageSlides()
 
   return NextResponse.json(slides)

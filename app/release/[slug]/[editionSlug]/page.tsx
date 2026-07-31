@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import { redirect } from 'next/navigation'
 import { fetchReleaseBySlug } from '@/lib/server/releases'
-import { fetchEditionsByRelease, fetchEditionBySlug } from '@/lib/server/editions'
+import { fetchEditionBySlug } from '@/lib/server/editions'
 import { fetchPublishedChaptersByEdition } from '@/lib/server/chapters'
 
 export default async function EditionPublicPage({

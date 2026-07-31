@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { ChevronLeft, ChevronRight, Maximize, Minimize, List, X } from 'lucide-react'
 import type { Release, Edition, Chapter } from '@/lib/releases-types'
@@ -192,14 +193,15 @@ export function ReleaseComicReader({ release, chapters }: ReleaseComicReaderProp
           <div
             key={index}
             ref={el => { pageRefs.current[index] = el }}
-            className="w-full flex justify-center"
+            className="relative w-full flex justify-center"
           >
             {Math.abs(index - currentPage) <= 3 ? (
-              <img
+              <Image
                 src={page.url}
                 alt={`Страница ${index + 1}`}
-                className="w-full max-w-[720px] block"
-                loading={index === 0 ? 'eager' : 'lazy'}
+                fill
+                sizes="(max-width: 768px) 100vw, 720px"
+                className="w-full max-w-[720px] block object-cover"
               />
             ) : (
               <div className="w-full max-w-[720px] bg-[#111210]" style={{ aspectRatio: '3/4', minHeight: 400 }} />
@@ -251,7 +253,7 @@ export function ReleaseComicReader({ release, chapters }: ReleaseComicReaderProp
                   style={i === currentPage ? { borderColor: accent } : {}}
                   aria-label={`Страница ${i + 1}`}
                 >
-                  <img src={page.url} alt={`Страница ${i + 1}`} className="w-full h-full object-cover" />
+                  <Image src={page.url} alt={`Страница ${i + 1}`} fill sizes="64px" className="object-cover" />
                 </button>
               ))}
             </div>

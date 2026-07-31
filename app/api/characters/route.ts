@@ -5,7 +5,7 @@ import { apiHandler } from '@/lib/api-handler'
 
 export const dynamic = 'force-dynamic'
 
-async function getCharacters(request: NextRequest) {
+async function getCharacters(_request: NextRequest) {
   const data = await fetchCharactersList()
 
   const parsedCharacters = data.map((character) => ({

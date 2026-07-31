@@ -97,9 +97,6 @@ export default async function HighlightSharePage({ params }: PageProps) {
     chapters = [...chapters, chapter]
   }
 
-  // Определяем индекс нужной главы
-  const startIndex = Math.max(0, chapters.findIndex(c => c.id === chapter.id))
-
   return (
     <>
       <div className="fixed top-0 left-0 right-0 z-[60] bg-cf-bg border-b border-cf-text-1/12">

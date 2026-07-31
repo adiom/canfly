@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import { Book } from '@/lib/types';
 import { useCart } from '@/lib/cart-context';
-import Link from 'next/link';
 import Image from 'next/image';
 import { SiteHeader } from '@/components/site-header';
 import { SiteFooter } from '@/components/site-footer';

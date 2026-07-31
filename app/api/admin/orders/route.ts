@@ -6,7 +6,7 @@ import { apiHandler } from '@/lib/api-handler'
 
 export const dynamic = 'force-dynamic'
 
-async function getAdminOrders(request: NextRequest) {
+async function getAdminOrders(_request: NextRequest) {
   const session = await requireStudioAdminSession()
 
   if (!session) {

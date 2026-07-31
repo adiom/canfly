@@ -6,7 +6,7 @@ import { normalizeNewsPayload } from '@/lib/api/normalizers'
 
 export const dynamic = 'force-dynamic'
 
-async function getAdminNews(request: NextRequest) {
+async function getAdminNews(_request: NextRequest) {
   const session = await requireStudioAdminSession()
 
   if (!session) {

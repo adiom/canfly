@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import Link from 'next/link'
 import { CANFLY_COLORS, type CanflyColor } from './data'
 
 const SERIF = "var(--font-cormorant, 'Cormorant Garamond', Georgia, serif)"
