@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useActionState, startTransition } from 'react'
+import { useState, useEffect, useCallback, useActionState, startTransition } from 'react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { createMagicLink, type CreateMagicLinkState } from '@/app/(auth)/actions'
@@ -12,14 +12,23 @@ interface MagicLinkFormProps {
   onBlur?: () => void
 }
 
+const COOLDOWN_SECONDS = 60
+
 export function MagicLinkForm({ onFocus, onBlur }: MagicLinkFormProps) {
   const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
   const [showCodeInput, setShowCodeInput] = useState(false)
   const [codeError, setCodeError] = useState('')
   const [codeLoading, setCodeLoading] = useState(false)
+  const [cooldown, setCooldown] = useState(0)
   const { update: updateSession } = useSession()
   const router = useRouter()
+
+  useEffect(() => {
+    if (cooldown <= 0) return
+    const timer = setTimeout(() => setCooldown(cooldown - 1), 1000)
+    return () => clearTimeout(timer)
+  }, [cooldown])
 
   const [state, formAction] = useActionState<CreateMagicLinkState, FormData>(
     createMagicLink,
@@ -34,10 +43,21 @@ export function MagicLinkForm({ onFocus, onBlur }: MagicLinkFormProps) {
     e.preventDefault()
     const formData = new FormData()
     formData.append('email', email)
+    setCooldown(COOLDOWN_SECONDS)
     startTransition(() => {
       formAction(formData)
     })
   }
+
+  const handleResend = useCallback(() => {
+    if (cooldown > 0) return
+    const formData = new FormData()
+    formData.append('email', email)
+    setCooldown(COOLDOWN_SECONDS)
+    startTransition(() => {
+      formAction(formData)
+    })
+  }, [cooldown, email, formAction])
 
   const handleCodeSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -93,16 +113,19 @@ export function MagicLinkForm({ onFocus, onBlur }: MagicLinkFormProps) {
           Ввести код
         </Button>
 
-        <Button
-          variant="outline"
-          onClick={() => {
-            setEmail('')
-            window.location.reload()
-          }}
-          className="w-full h-11 border-[#f4efe5]/10 text-sm font-bold uppercase text-[#ded7cc] hover:bg-[#f4efe5]/5"
-        >
-          Новый код
-        </Button>
+        {cooldown > 0 ? (
+          <p className="text-center text-xs uppercase tracking-[0.18em] text-[#ded7cc]/50">
+            Отправить повторно через {cooldown} сек
+          </p>
+        ) : (
+          <Button
+            variant="outline"
+            onClick={handleResend}
+            className="w-full h-11 border-[#f4efe5]/10 text-sm font-bold uppercase text-[#ded7cc] hover:bg-[#f4efe5]/5"
+          >
+            Отправить повторно
+          </Button>
+        )}
       </div>
     )
   }
