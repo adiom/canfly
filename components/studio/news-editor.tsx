@@ -453,7 +453,7 @@ export function NewsEditor({ news }: NewsEditorProps) {
               <button
                 type="button"
                 onClick={handleDelete}
-                className="h-9 px-3 bg-cf-accent text-xs font-black uppercase tracking-[0.08em] text-white hover:bg-[#b01e1e]"
+                className="h-9 px-3 bg-cf-accent text-xs font-black uppercase tracking-[0.08em] text-white hover:bg-cf-accent-hover"
               >
                 Да, удалить
               </button>

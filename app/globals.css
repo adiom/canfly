@@ -19,6 +19,11 @@
   --cf-warm: #a07428;
   --cf-blue: #3d6e8c;
   --cf-tan: #7a6450;
+  --cf-accent-hover: #b01e1e;
+  /* Статусы редакторских правок — в тон палитре, не Tailwind-дефолты */
+  --cf-status-open: #8a4a10;
+  --cf-status-resolved: #3f6b2f;
+  --cf-status-ignored: var(--cf-text-3);
 }
 
 .dark {
@@ -36,6 +41,10 @@
   --cf-warm: #f6d6a8;
   --cf-blue: #9db5c8;
   --cf-tan: #d7c6ad;
+  --cf-accent-hover: #e84545;
+  --cf-status-open: #e0a75e;
+  --cf-status-resolved: #9dbb85;
+  --cf-status-ignored: var(--cf-text-3);
 }
 
 @theme inline {
@@ -54,6 +63,10 @@
   --color-cf-warm: var(--cf-warm);
   --color-cf-blue: var(--cf-blue);
   --color-cf-tan: var(--cf-tan);
+  --color-cf-accent-hover: var(--cf-accent-hover);
+  --color-cf-status-open: var(--cf-status-open);
+  --color-cf-status-resolved: var(--cf-status-resolved);
+  --color-cf-status-ignored: var(--cf-status-ignored);
   --font-cormorant: var(--font-cormorant, 'Cormorant Garamond', Georgia, serif);
   --font-cormorant-serif: var(--font-cormorant, 'Cormorant Garamond', Georgia, serif);
 

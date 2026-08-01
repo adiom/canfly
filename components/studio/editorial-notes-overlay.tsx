@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import type { ChapterEditorialNote } from '@/lib/releases-types'
 import { collectParagraphs } from '@/lib/studio/paragraphs'
+import { editorialStatusStyle } from '@/lib/studio/editorial-status'
 
 interface EditorialNotesOverlayProps {
   editorContainer: HTMLDivElement | null
@@ -119,12 +120,6 @@ export function EditorialNotesOverlay({ editorContainer, notes, onIndicatorClick
 
   if (!editorContainer || indicators.length === 0) return null
 
-  const statusColors: Record<string, string> = {
-    open: '#e97316',
-    resolved: '#16a34a',
-    ignored: '#6b7280',
-  }
-
   return (
     <div className="absolute top-0 left-0 right-0 bottom-0 pointer-events-none overflow-hidden">
       {indicators.map(ind => (
@@ -139,15 +134,15 @@ export function EditorialNotesOverlay({ editorContainer, notes, onIndicatorClick
             top: `${ind.top}px`,
             height: `${ind.height}px`,
             width: '3px',
-            backgroundColor: statusColors[ind.status] ?? '#e97316',
+            backgroundColor: editorialStatusStyle(ind.status).color,
             borderRadius: '1px',
             opacity: ind.status === 'open' ? 0.8 : 0.4,
           }}
         >
           {ind.count > 1 && (
             <span
-              className="absolute -top-3 -left-1 text-[9px] font-bold leading-none rounded px-1"
-              style={{ backgroundColor: statusColors[ind.status], color: 'white' }}
+              className="absolute -top-3 -left-1 text-[9px] font-bold leading-none rounded px-1 text-cf-bg"
+              style={{ backgroundColor: editorialStatusStyle(ind.status).color }}
             >
               {ind.count}
             </span>

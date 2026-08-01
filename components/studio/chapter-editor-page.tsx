@@ -15,6 +15,7 @@ import { VersionHistory } from '@/components/studio/version-history'
 import { EditorialNotesPanel } from '@/components/studio/editorial-notes-panel'
 import { EditorialNotesOverlay } from '@/components/studio/editorial-notes-overlay'
 import { collectParagraphs } from '@/lib/studio/paragraphs'
+import { editorialStatusStyle } from '@/lib/studio/editorial-status'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -102,11 +103,11 @@ export function ChapterEditorPage({ chapter, editionId, editionFormat }: { chapt
 
     target.scrollIntoView({ behavior: 'smooth', block: 'center' })
 
-    const statusColor = note.status === 'open' ? '#e97316' : note.status === 'resolved' ? '#16a34a' : '#6b7280'
+    const statusColor = editorialStatusStyle(note.status).color
     target.style.transition = 'background-color 0.3s ease-out'
-    target.style.backgroundColor = `${statusColor}33`
+    target.style.backgroundColor = `color-mix(in srgb, ${statusColor} 20%, transparent)`
     setTimeout(() => {
-      target.style.backgroundColor = `${statusColor}18`
+      target.style.backgroundColor = `color-mix(in srgb, ${statusColor} 9%, transparent)`
       setTimeout(() => {
         target.style.backgroundColor = ''
       }, 1500)
@@ -161,22 +162,22 @@ export function ChapterEditorPage({ chapter, editionId, editionFormat }: { chapt
 
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-40 border-b border-white/70 bg-white/60 backdrop-blur-xl">
+      <header className="sticky top-0 z-40 border-b border-cf-text-1/10 bg-cf-bg/80 backdrop-blur-xl">
         <div className="mx-auto flex max-w-4xl items-center gap-3 px-4 md:px-8 py-3">
           <Link href={`/studio/editions/${editionId}`}>
-            <Button variant="ghost" size="icon-sm" className="rounded-xl text-gray-500 hover:text-violet-600 hover:bg-violet-50/50">
+            <Button variant="ghost" size="icon-sm" className="rounded-xl text-cf-text-3 hover:text-cf-accent hover:bg-cf-accent/10">
               <ArrowLeft className="h-4 w-4" />
             </Button>
           </Link>
 
           <div className="flex flex-1 items-center gap-2">
-            <Badge variant="outline" className={`border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] rounded-lg ${chapter.status === 'published' ? 'bg-emerald-50 text-emerald-600 border-emerald-200/80' : 'bg-amber-50 text-amber-600 border-amber-200/80'}`}>
+            <Badge variant="outline" className={`border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] rounded-lg ${chapter.status === 'published' ? 'bg-cf-status-resolved/15 text-cf-status-resolved border-cf-status-resolved/40' : 'bg-cf-status-open/15 text-cf-status-open border-cf-status-open/40'}`}>
               {chapter.status === 'published' ? 'Опубликована' : 'Черновик'}
             </Badge>
-            <span className="text-sm text-gray-500">
-              {saveStatus === 'saving' && <Loader2 className="inline h-3 w-3 animate-spin text-violet-500" />}
-              {saveStatus === 'saved' && <Check className="inline h-3 w-3 text-emerald-500" />}
-              {saveStatus === 'error' && <AlertCircle className="inline h-3 w-3 text-red-500" />}
+            <span className="text-sm text-cf-text-3">
+              {saveStatus === 'saving' && <Loader2 className="inline h-3 w-3 animate-spin text-cf-accent" />}
+              {saveStatus === 'saved' && <Check className="inline h-3 w-3 text-cf-status-resolved" />}
+              {saveStatus === 'error' && <AlertCircle className="inline h-3 w-3 text-cf-accent" />}
               {saveStatus === 'saving' && ' Сохраняю...'}
               {saveStatus === 'saved' && ' Сохранено'}
               {saveStatus === 'error' && ' Ошибка'}
@@ -188,7 +189,7 @@ export function ChapterEditorPage({ chapter, editionId, editionFormat }: { chapt
               variant="ghost"
               size="sm"
               onClick={isHtmlMode ? switchToWysiwyg : switchToHtml}
-              className={`rounded-xl ${isHtmlMode ? 'bg-amber-50 text-amber-600 border border-amber-200/80 font-semibold' : 'text-gray-500 hover:text-violet-600 hover:bg-violet-50/50'}`}
+              className={`rounded-xl ${isHtmlMode ? 'bg-cf-status-open/15 text-cf-status-open border border-cf-status-open/40 font-semibold' : 'text-cf-text-3 hover:text-cf-accent hover:bg-cf-accent/10'}`}
             >
               <Code2 className="mr-1.5 h-4 w-4" />
               {isHtmlMode ? 'WYSIWYG' : 'HTML'}
@@ -198,7 +199,7 @@ export function ChapterEditorPage({ chapter, editionId, editionFormat }: { chapt
           {!isAudioEditor && !isComic && <VersionHistory chapterId={chapter.id} />}
 
           {chapter.status !== 'published' && (
-            <Button size="sm" onClick={handlePublish} className="rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 text-white shadow-md shadow-emerald-500/25 hover:from-emerald-700 hover:to-emerald-600">
+            <Button size="sm" onClick={handlePublish} className="rounded-xl bg-cf-status-resolved text-cf-bg hover:opacity-90">
               <Globe className="mr-2 h-4 w-4" />
               Опубликовать
             </Button>
@@ -206,20 +207,20 @@ export function ChapterEditorPage({ chapter, editionId, editionFormat }: { chapt
 
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button variant="ghost" size="icon-sm" className="rounded-xl text-gray-400 hover:text-red-600 hover:bg-red-50/50">
+              <Button variant="ghost" size="icon-sm" className="rounded-xl text-cf-text-4 hover:text-cf-accent hover:bg-cf-accent/10">
                 <Trash2 className="h-4 w-4" />
               </Button>
             </AlertDialogTrigger>
-            <AlertDialogContent className="bg-white/80 backdrop-blur-xl border-white/70 rounded-2xl shadow-xl">
+            <AlertDialogContent className="bg-cf-bg-2 border-cf-text-1/10 rounded-2xl shadow-xl">
               <AlertDialogHeader>
-                <AlertDialogTitle className="text-gray-900">Удалить главу?</AlertDialogTitle>
+                <AlertDialogTitle className="text-cf-text-heading">Удалить главу?</AlertDialogTitle>
                 <AlertDialogDescription>
                   Глава и все её версии будут удалены. Это необратимо.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel className="rounded-xl">Отмена</AlertDialogCancel>
-                <AlertDialogAction onClick={handleDelete} className="rounded-xl bg-red-600 text-white">Удалить</AlertDialogAction>
+                <AlertDialogAction onClick={handleDelete} className="rounded-xl bg-cf-accent text-cf-bg hover:bg-cf-accent-hover">Удалить</AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
@@ -233,7 +234,7 @@ export function ChapterEditorPage({ chapter, editionId, editionFormat }: { chapt
           </div>
         ) : isComic ? (
           <div className="mx-auto max-w-4xl">
-            <div className="bg-white/60 backdrop-blur-md border border-white/70 rounded-2xl shadow-sm shadow-black/5 p-5 md:p-6">
+            <div className="bg-cf-bg-2 border border-cf-text-1/10 rounded-2xl p-5 md:p-6">
               <ComicPagesEditor
                 chapterId={chapter.id}
                 initialPages={parseComicPages(chapter.content)}
@@ -243,26 +244,26 @@ export function ChapterEditorPage({ chapter, editionId, editionFormat }: { chapt
         ) : isHtmlMode ? (
           <div className="grid gap-8 lg:grid-cols-[1fr_320px]">
             <div className="space-y-4">
-              <div className="bg-white/60 backdrop-blur-md border border-white/70 rounded-2xl shadow-sm shadow-black/5 p-4">
-                <label className="text-sm font-semibold text-gray-600 mb-2 block">HTML код главы</label>
+              <div className="bg-cf-bg-2 border border-cf-text-1/10 rounded-2xl p-4">
+                <label className="text-sm font-semibold text-cf-text-2 mb-2 block">HTML код главы</label>
                 <textarea
                   value={htmlContent}
                   onChange={(e) => setHtmlContent(e.target.value)}
-                  className="w-full min-h-[60vh] bg-white/60 border border-white/70 rounded-xl font-mono text-sm leading-6 text-gray-800 p-4 resize-y focus:outline-none focus:ring-2 focus:ring-violet-500/70 focus:border-violet-500/70"
+                  className="w-full min-h-[60vh] bg-cf-bg border border-cf-text-1/10 rounded-xl font-mono text-sm leading-6 text-cf-text-1 p-4 resize-y focus:outline-none focus:ring-2 focus:ring-cf-accent/70 focus:border-cf-accent/70"
                   spellCheck={false}
                 />
                 <div className="flex justify-end gap-3 mt-4">
                   <Button
                     variant="outline"
                     onClick={switchToWysiwyg}
-                    className="rounded-xl border-white/70 bg-white/60 text-gray-600 hover:bg-white/80"
+                    className="rounded-xl border-cf-text-1/10 bg-cf-bg text-cf-text-2 hover:bg-cf-bg-2"
                   >
                     Вернуться в редактор
                   </Button>
                   <Button
                     onClick={handleHtmlSave}
                     disabled={saveStatus === 'saving'}
-                    className="rounded-xl bg-gradient-to-r from-violet-600 to-violet-500 text-white shadow-md shadow-violet-500/25 hover:from-violet-700 hover:to-violet-600"
+                    className="rounded-xl bg-cf-accent text-cf-bg hover:bg-cf-accent-hover"
                   >
                     {saveStatus === 'saving' ? 'Сохраняю...' : 'Сохранить'}
                   </Button>
@@ -270,7 +271,7 @@ export function ChapterEditorPage({ chapter, editionId, editionFormat }: { chapt
               </div>
             </div>
             <aside className="lg:sticky lg:top-20 lg:self-start">
-              <div className="bg-white/60 backdrop-blur-md border border-white/70 rounded-2xl shadow-sm shadow-black/5 p-4">
+              <div className="bg-cf-bg-2 border border-cf-text-1/10 rounded-2xl p-4">
                 <EditorialNotesPanel
                   chapterId={chapter.id}
                   onNoteFocus={handleNoteFocus}
@@ -299,7 +300,7 @@ export function ChapterEditorPage({ chapter, editionId, editionFormat }: { chapt
               />
             </div>
             <aside className="lg:sticky lg:top-20 lg:self-start">
-              <div className="bg-white/60 backdrop-blur-md border border-white/70 rounded-2xl shadow-sm shadow-black/5 p-4">
+              <div className="bg-cf-bg-2 border border-cf-text-1/10 rounded-2xl p-4">
                 <EditorialNotesPanel
                   chapterId={chapter.id}
                   onNoteFocus={handleNoteFocus}

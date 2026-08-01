@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { Plus, Check, X, MessageCircle, RefreshCw, Trash2, RotateCcw } from 'lucide-react'
 import type { ChapterEditorialNote, EditorialNoteStatus } from '@/lib/releases-types'
 import { closestParagraph, collectParagraphs } from '@/lib/studio/paragraphs'
+import { EDITORIAL_STATUS, editorialStatusStyle } from '@/lib/studio/editorial-status'
 
 interface EditorialNotesPanelProps {
   chapterId: string
@@ -184,7 +185,7 @@ export function EditorialNotesPanel({ chapterId, onNoteFocus, editorialNotes: ex
           <MessageCircle className="h-4 w-4" />
           Правки
           {openCount > 0 && (
-            <span className="ml-1 px-2 py-0.5 text-xs bg-orange-500/20 text-orange-700 rounded-full">{openCount}</span>
+            <span className={`ml-1 px-2 py-0.5 text-xs rounded-full ${EDITORIAL_STATUS.open.badge}`}>{openCount}</span>
           )}
         </h3>
         <div className="flex items-center gap-2">
@@ -260,11 +261,7 @@ export function EditorialNotesPanel({ chapterId, onNoteFocus, editorialNotes: ex
             <div
               key={n.id}
               onClick={() => onNoteFocus?.(n)}
-              className={`border rounded p-3 space-y-2 cursor-pointer transition-colors ${
-                n.status === 'open' ? 'border-orange-300 bg-orange-50 hover:bg-orange-100' :
-                n.status === 'resolved' ? 'border-green-300 bg-green-50 opacity-60 hover:bg-green-100' :
-                'border-gray-300 bg-gray-50 opacity-50 hover:bg-gray-100'
-              }`}
+              className={`border rounded p-3 space-y-2 cursor-pointer transition-colors ${editorialStatusStyle(n.status).card}`}
             >
               <blockquote className="text-xs italic border-l-2 border-current/30 pl-2 line-clamp-3">
                 «{n.text_content}»
@@ -273,14 +270,14 @@ export function EditorialNotesPanel({ chapterId, onNoteFocus, editorialNotes: ex
               <div className="flex items-center justify-between text-[10px] text-muted-foreground">
                 <span>{n.author_name} · {new Date(n.created_at).toLocaleDateString('ru-RU')}</span>
                 <span className="uppercase tracking-wider font-bold">
-                  {n.status === 'open' ? 'открыта' : n.status === 'resolved' ? 'решена' : 'проигнорирована'}
+                  {editorialStatusStyle(n.status).label}
                 </span>
               </div>
               {n.status === 'open' && (
                 <div className="flex gap-1.5 pt-1" onClick={e => e.stopPropagation()}>
                   <button
                     onClick={() => updateStatus(n.id, 'resolved')}
-                    className="flex-1 h-7 text-xs bg-green-600 text-white hover:bg-green-700 flex items-center justify-center gap-1"
+                    className="flex-1 h-7 text-xs bg-cf-status-resolved text-cf-bg hover:opacity-90 flex items-center justify-center gap-1"
                   >
                     <Check className="h-3 w-3" /> Решено
                   </button>

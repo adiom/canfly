@@ -605,11 +605,10 @@ export function AudioChapterEditor({ chapter, onSaveStatus }: AudioChapterEditor
                     }}
                     className={cn(
                       'block w-full text-left px-2 py-1.5 rounded-lg transition-all duration-300',
-                      isActive && 'text-white font-bold text-base scale-[1.02]',
+                      isActive && 'text-cf-accent font-bold text-base scale-[1.02]',
                       isPast && !isActive && 'text-gray-400 text-sm',
                       !isActive && !isPast && 'text-gray-500 text-sm',
                     )}
-                    style={isActive ? { color: '#d52525' } : undefined}
                   >
                     {line.text}
                   </button>

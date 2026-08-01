@@ -2,6 +2,49 @@
 
 ---
 
+## [1 августа 2026] Studio/highlights: приведение UI к дизайн-системе
+
+### Что изменено
+
+**1. Семантические токены статусов правок (`app/globals.css`)**
+- Добавлены `--cf-status-open` / `--cf-status-resolved` / `--cf-status-ignored` в оба блока тем и их маппинг в `@theme inline`. Цвета подобраны по палитре сайта (контраст к `cf-bg-2` ≥ 4.5:1), а не скопированы из дефолтов Tailwind.
+- Добавлен `--cf-accent-hover` вместо хардкода `#b01e1e` в разметке.
+
+**2. Единый источник визуала статусов (`lib/studio/editorial-status.ts` — новый)**
+- Карта `EDITORIAL_STATUS` + `editorialStatusStyle()`: подпись, значение для inline `style` и классы карточки/бейджа. Переиспользует существующий тип `EditorialNoteStatus`.
+- Раньше тройка `#e97316 / #16a34a / #6b7280` дублировалась хардкодом в трёх местах: `editorial-notes-overlay.tsx`, `editorial-notes-panel.tsx`, `chapter-editor-page.tsx`. Теперь все три берут цвет оттуда.
+
+**3. Вёрстка редактора главы (`components/studio/chapter-editor-page.tsx`)**
+- Дефолтные Tailwind-цвета (`violet-*`, `emerald-*`, `amber-*`, `red-*`, `gray-*`, `bg-white/60`, `border-white/70`) заменены на токены `cf-*`. Карточки приведены к `border border-cf-text-1/10 bg-cf-bg-2` из дизайн-системы.
+- Подсветка абзаца при переходе к правке теперь строится через `color-mix(in srgb, …)` — hex-суффиксы прозрачности (`${color}33`) с CSS-переменными не работают.
+
+**4. Точечные правки**
+- `components/studio/news-editor.tsx` — `hover:bg-[#b01e1e]` → `hover:bg-cf-accent-hover`.
+- `components/studio/audio-chapter-editor.tsx` — inline `style={{ color: '#d52525' }}` у активной строки лирики → `text-cf-accent`.
+
+### Зачем
+
+`docs/design-system.md` §13 запрещает хардкод hex вне `app/globals.css` и дефолтные Tailwind-палитры: при переключении темы такие цвета не адаптируются, а `bg-white/60` в светлой теме давал белые карточки поверх кремового фона. Плюс убран тройной дубль карты статусов.
+
+### Как использовать
+
+Для статусов редакторских правок импортировать из `lib/studio/editorial-status.ts`:
+
+```ts
+import { EDITORIAL_STATUS, editorialStatusStyle } from '@/lib/studio/editorial-status'
+
+<div className={editorialStatusStyle(note.status).card}>…</div>
+<span style={{ backgroundColor: editorialStatusStyle(note.status).color }} />
+```
+
+Новые цвета заводить переменной в `app/globals.css` (оба блока тем + `@theme inline`), а не хексом в разметке.
+
+### Известное ограничение
+
+`components/spread-reader.tsx` держит собственные палитры читалки (`THEMES`: dark/light/sepia) хексами — это независимый от темы интерфейса выбор пользователя. Не тронуто; вынос в `--cf-reader-*` — отдельная задача.
+
+---
+
 ## [1 августа 2026] Highlights: починка сломанных сценариев (Этап 1)
 
 ### Что изменено
