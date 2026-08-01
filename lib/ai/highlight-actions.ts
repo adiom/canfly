@@ -4,6 +4,19 @@ import { checkRateLimit, rateLimitResponse } from '@/lib/server/rate-limit'
 
 /** Модель через Vercel AI Gateway */
 export const HIGHLIGHT_MODEL = 'openai/gpt-4o-mini'
+export const HIGHLIGHT_STREAM_TIMEOUT = { totalMs: 30_000, chunkMs: 8_000 } as const
+
+export type HighlightAiError =
+  | 'unauthorized'
+  | 'rate_limited'
+  | 'timeout'
+  | 'provider_error'
+  | 'unavailable'
+  | 'invalid_response'
+
+export function highlightAiError(error: HighlightAiError, status: number) {
+  return Response.json({ error }, { status })
+}
 
 /** Максимум обращений к LLM на пользователя в час */
 const LLM_LIMIT = 30
@@ -34,7 +47,7 @@ export async function guardHighlightRequest(
 ): Promise<GuardSuccess | GuardFailure> {
   const user = await getCurrentUser()
   if (!user) {
-    return { ok: false, response: Response.json({ error: 'Unauthorized' }, { status: 401 }) }
+    return { ok: false, response: highlightAiError('unauthorized', 401) }
   }
 
   let body: unknown
@@ -56,7 +69,14 @@ export async function guardHighlightRequest(
     windowSeconds: LLM_WINDOW_SECONDS,
   })
   if (!limit.allowed) {
-    return { ok: false, response: rateLimitResponse(limit) }
+    const response = rateLimitResponse(limit)
+    return {
+      ok: false,
+      response: new Response(JSON.stringify({ error: 'rate_limited' }), {
+        status: response.status,
+        headers: { 'Content-Type': 'application/json', 'Retry-After': response.headers.get('Retry-After') ?? '1' },
+      }),
+    }
   }
 
   return { ok: true, userId: user.id, text: parsed.data.text }

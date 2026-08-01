@@ -1,5 +1,5 @@
 import { streamText } from 'ai'
-import { guardHighlightRequest, buildPrompt, HIGHLIGHT_MODEL } from '@/lib/ai/highlight-actions'
+import { guardHighlightRequest, buildPrompt, HIGHLIGHT_MODEL, HIGHLIGHT_STREAM_TIMEOUT } from '@/lib/ai/highlight-actions'
 
 const INSTRUCTION =
   'Объясни следующий отрывок из книги простым и понятным языком — без потери смысла, красиво и кратко (2–3 предложения). Не говори "этот отрывок о...", просто объясни напрямую.'
@@ -12,6 +12,8 @@ export async function POST(req: Request) {
     model: HIGHLIGHT_MODEL as Parameters<typeof streamText>[0]['model'],
     prompt: buildPrompt(INSTRUCTION, guard.text),
     maxOutputTokens: 300,
+    abortSignal: req.signal,
+    timeout: HIGHLIGHT_STREAM_TIMEOUT,
   })
 
   return result.toTextStreamResponse()

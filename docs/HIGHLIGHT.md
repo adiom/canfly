@@ -105,7 +105,7 @@
 | `POST /api/highlights/rewrite` | `mode` ∈ `другой-финал` \| `другая-эпоха` \| `другой-стиль` | text stream, 400 |
 | `POST /api/highlights/illustrate` | GPT генерирует art-промпт → Stable Diffusion | JSON `{ imageUrl, prompt }` |
 
-Модель — `openai/gpt-4o-mini` через Vercel AI Gateway (`HIGHLIGHT_MODEL` в `lib/ai/highlight-actions.ts:6`). `illustrate` требует `STABLE_DIFFUSION_URL` (+ опционально `SD_API_KEY`), без него отдаёт 503 `unavailable`.
+Модель — `openai/gpt-4o-mini` через Vercel AI Gateway. Стримы используют `req.signal`, общий timeout 30 секунд и timeout между chunks 8 секунд. `illustrate` требует `STABLE_DIFFUSION_URL`, ограничивает запрос 45 секундами и base64-ответ 8 МБ.
 
 **Общий гвард — `guardHighlightRequest(req, bucket)` (`lib/ai/highlight-actions.ts:31`), обязателен для любой новой LLM-ручки:**
 1. `getCurrentUser()` → 401;
@@ -196,4 +196,4 @@ Pull-quote в hero: `fetchPublicHighlightsByRelease(release.id, 6)`, по умо
 Отсортировано по влиянию.
 
 1. В DOM-утилитах и отдельных компонентах остаются цвета, заданные hex-значениями, что нарушает правило `cf-*` из `docs/design-system.md`.
-2. Функциональных e2e-тестов для создания, редактирования, лайков, шаринга и editorial notes недостаточно; нет изолированной проверки `findTextRange`.
+2. Функциональных e2e-тестов для создания, редактирования, лайков, шаринга, editorial notes и AI-ошибок недостаточно.

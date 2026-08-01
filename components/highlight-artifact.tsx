@@ -53,6 +53,15 @@ const REWRITE_MODES: { id: RewriteMode; label: string }[] = [
   { id: 'другой-стиль', label: 'Другой стиль' },
 ]
 
+const AI_ERROR_MESSAGES: Record<string, string> = {
+  unauthorized: 'Нужно войти в аккаунт',
+  rate_limited: 'Лимит запросов исчерпан. Попробуйте позже',
+  timeout: 'Сервис не ответил вовремя',
+  provider_error: 'AI-сервис временно недоступен',
+  unavailable: 'Функция пока недоступна',
+  invalid_response: 'Сервис вернул некорректный ответ',
+}
+
 export function HighlightArtifact({
   open,
   text,
@@ -215,7 +224,11 @@ export function HighlightArtifact({
         body: JSON.stringify(body),
         signal: ctrl.signal,
       })
-      if (!res.ok || !res.body) { setAiError('Ошибка запроса'); setAiLoading(false); return }
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => null) as { error?: string } | null
+        setAiError(AI_ERROR_MESSAGES[data?.error ?? ''] ?? 'Ошибка запроса')
+        return
+      }
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       while (true) {
@@ -251,19 +264,23 @@ export function HighlightArtifact({
     setImageError('')
     setImageUrl(null)
     try {
+      abortRef.current?.abort()
+      const ctrl = new AbortController()
+      abortRef.current = ctrl
       const res = await fetch('/api/highlights/illustrate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text }),
+        signal: ctrl.signal,
       })
       const data = await res.json() as { imageUrl?: string; prompt?: string; error?: string }
       if (!res.ok || data.error) {
-        setImageError(data.error === 'unavailable' ? 'Функция пока недоступна' : 'Не удалось сгенерировать')
+        setImageError(AI_ERROR_MESSAGES[data.error ?? ''] ?? 'Не удалось сгенерировать')
       } else {
         setImageUrl(data.imageUrl ?? null)
       }
-    } catch {
-      setImageError('Ошибка сети')
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'AbortError')) setImageError('Ошибка сети')
     } finally {
       setImageLoading(false)
     }
