@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser, getUserRoles } from '@/lib/server/session'
-import { fetchChapterEditorialNotes, createEditorialNote } from '@/lib/server/chapter-highlights'
+import { fetchChapterEditorialNotes, createEditorialNote, canManageChapterEditorialNotes } from '@/lib/server/chapter-highlights'
 import { apiHandler } from '@/lib/api-handler'
+import { createEditorialNoteSchema } from '@/lib/schemas/highlights'
+import { checkRateLimit, rateLimitResponse } from '@/lib/server/rate-limit'
 
 async function getChapterEditorialNotes(request: NextRequest) {
   const { searchParams } = new URL(request.url)
@@ -12,8 +14,8 @@ async function getChapterEditorialNotes(request: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const roles = await getUserRoles(user.id)
-  const isTeam = roles.some(r => ['admin', 'editor', 'author'].includes(r))
-  if (!isTeam) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const allowed = await canManageChapterEditorialNotes(chapterId, user.id, roles.includes('admin'))
+  if (!allowed) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const notes = await fetchChapterEditorialNotes(chapterId)
   return NextResponse.json({ data: notes })
@@ -24,23 +26,17 @@ async function createEditorialNoteHandler(request: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const roles = await getUserRoles(user.id)
-  const canEdit = roles.includes('admin') || roles.includes('editor') || roles.includes('author')
-  if (!canEdit) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-
-  const body = await request.json()
-  const { chapter_id, text_content, paragraph_index, context_before, context_after, note } = body
-
-  if (!chapter_id || !text_content || !note) {
-    return NextResponse.json({ error: 'chapter_id, text_content, note required' }, { status: 400 })
-  }
+  const limit = await checkRateLimit({ bucket: 'editorial:create', subject: user.id, limit: 60, windowSeconds: 3600 })
+  if (!limit.allowed) return rateLimitResponse(limit)
+  const parsed = createEditorialNoteSchema.safeParse(await request.json())
+  if (!parsed.success) return NextResponse.json({ error: 'Invalid editorial note', details: parsed.error.flatten() }, { status: 400 })
+  const body = parsed.data
+  const allowed = await canManageChapterEditorialNotes(body.chapter_id, user.id, roles.includes('admin'))
+  if (!allowed) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const created = await createEditorialNote(user.id, {
-    chapter_id,
-    text_content,
-    paragraph_index: paragraph_index ?? null,
-    context_before: context_before ?? null,
-    context_after: context_after ?? null,
-    note,
+    ...body,
+    client_request_id: body.client_request_id ?? crypto.randomUUID(),
   })
 
   return NextResponse.json({ data: created })

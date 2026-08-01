@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser, getUserRoles } from '@/lib/server/session'
-import { updateEditorialNoteStatus } from '@/lib/server/chapter-highlights'
-import type { EditorialNoteStatus } from '@/lib/releases-types'
+import { updateEditorialNoteStatus, canManageChapterEditorialNotes, fetchEditorialNoteChapterId } from '@/lib/server/chapter-highlights'
 import { apiHandler } from '@/lib/api-handler'
+import { editorialStatusSchema } from '@/lib/schemas/highlights'
+import { checkRateLimit, rateLimitResponse } from '@/lib/server/rate-limit'
 
 async function updateEditorialNoteStatusHandler(
   request: NextRequest,
@@ -13,16 +14,16 @@ async function updateEditorialNoteStatusHandler(
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const roles = await getUserRoles(user.id)
-  const canEdit = roles.includes('admin') || roles.includes('editor') || roles.includes('author')
-  if (!canEdit) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const chapterId = await fetchEditorialNoteChapterId(id)
+  if (!chapterId) return NextResponse.json({ error: 'Not Found' }, { status: 404 })
+  const allowed = await canManageChapterEditorialNotes(chapterId, user.id, roles.includes('admin'))
+  if (!allowed) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const limit = await checkRateLimit({ bucket: 'editorial:update', subject: user.id, limit: 120, windowSeconds: 3600 })
+  if (!limit.allowed) return rateLimitResponse(limit)
+  const parsed = editorialStatusSchema.safeParse(await request.json())
+  if (!parsed.success) return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
 
-  const body = await request.json()
-  const status = body.status as EditorialNoteStatus
-  if (!['open', 'resolved', 'ignored'].includes(status)) {
-    return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
-  }
-
-  const updated = await updateEditorialNoteStatus(id, status)
+  const updated = await updateEditorialNoteStatus(id, parsed.data.status)
   if (!updated) return NextResponse.json({ error: 'Not Found' }, { status: 404 })
   return NextResponse.json({ data: updated })
 }

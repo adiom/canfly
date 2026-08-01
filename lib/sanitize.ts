@@ -43,3 +43,9 @@ export function sanitizeChapterHtml(html: string | null | undefined): string {
 
 /** Алиас для произвольного пользовательского HTML */
 export const sanitizeHtml = sanitizeChapterHtml
+
+/** Plain-text user fields: strips markup and normalizes surrounding whitespace. */
+export function sanitizePlainText(value: string | null | undefined): string {
+  if (!value) return ''
+  return sanitizeHtmlLib(value, { allowedTags: [], allowedAttributes: {} }).trim()
+}

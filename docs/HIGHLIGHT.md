@@ -8,7 +8,7 @@
 
 ## 1. Модель данных
 
-Миграция: `postgres/highlights-migration.sql`. Три таблицы, привязка к `chapters(id)`, а не к книге.
+Миграции: `postgres/highlights-migration.sql` и `postgres/014_highlights_stability.sql`. Три таблицы, привязка к `chapters(id)`, а не к книге.
 
 ### `chapter_highlights` — цитаты читателей
 
@@ -20,6 +20,9 @@
 | `text_content` | TEXT NOT NULL | выделенный фрагмент |
 | `paragraph_index` | INTEGER | индекс параграфа в DOM-порядке (для быстрой пере-разметки) |
 | `context_before` / `context_after` | TEXT | ±30 символов вокруг — fallback-якорь, если текст не нашёлся по индексу |
+| `client_request_id` | UUID | ключ идемпотентности создания |
+| `start_offset` / `end_offset` | INTEGER | точные смещения внутри смыслового блока |
+| `source_chapter_updated_at` | TIMESTAMPTZ | версия содержимого на момент создания |
 | `note` | TEXT | личная заметка, необязательна |
 | `is_public` | BOOLEAN DEFAULT false | **единственный признак видимости** |
 | `likes_count` | INTEGER DEFAULT 0 | денормализованный счётчик |
@@ -191,14 +194,7 @@ Pull-quote в hero: `fetchPublicHighlightsByRelease(release.id, 6)`, по умо
 
 Отсортировано по влиянию.
 
-1. `fetchUserHighlights` не передаёт `currentUserId` в `fetchChapterHighlights`, поэтому страница «Мои цитаты» показывает только публичные цитаты пользователя и скрывает его собственные приватные.
-2. Share-route загружает release по URL и highlight по ID независимо, но не проверяет, что глава цитаты принадлежит этому release. Валидный ID публичной цитаты можно открыть под чужим slug с неверными метаданными и читалкой.
-3. CRUD-роуты цитат и editorial notes валидируют тела вручную, а не через общие Zod-схемы; у editorial note нет явного ограничения длины `text_content` и `note`.
-4. `text_content`, `note` и контекстные поля не проходят серверную санитизацию через `lib/sanitize.ts` перед записью.
-5. На CRUD-операции цитат и правок не установлен rate limit; ограничение есть только у LLM-ручек.
-6. Проверка editorial notes использует глобальные роли, но не проверяет владение конкретным release/edition/chapter через `studio-auth`.
-7. `toggleHighlightLike` выполняет проверку, запись лайка и изменение счётчика несколькими запросами без транзакции; конкурентные запросы могут дать рассинхрон.
-8. `findTextRange` не поддерживает выделения, пересекающие несколько текстовых узлов или HTML-тегов; такие цитаты не размечаются.
-9. `release-book-reader.tsx` содержит собственные копии части DOM-логики вместо полного переиспользования `lib/reader/highlights-dom.ts`.
-10. В DOM-утилитах и отдельных компонентах остаются цвета, заданные hex-значениями, что нарушает правило `cf-*` из `docs/design-system.md`.
-11. Функциональных e2e-тестов для создания, редактирования, лайков, шаринга и editorial notes нет; нет и unit-тестов для `findTextRange`.
+1. `findTextRange` не поддерживает выделения, пересекающие несколько текстовых узлов или HTML-тегов; такие цитаты не размечаются.
+2. `release-book-reader.tsx` содержит собственные копии части DOM-логики вместо полного переиспользования `lib/reader/highlights-dom.ts`.
+3. В DOM-утилитах и отдельных компонентах остаются цвета, заданные hex-значениями, что нарушает правило `cf-*` из `docs/design-system.md`.
+4. Функциональных e2e-тестов для создания, редактирования, лайков, шаринга и editorial notes недостаточно; нет изолированной проверки `findTextRange`.

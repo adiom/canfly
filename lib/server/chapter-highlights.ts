@@ -1,12 +1,15 @@
-import { dbQuery, dbQueryOne } from '@/lib/db'
+import { dbQuery, dbQueryOne, withTransaction } from '@/lib/db'
+import { sanitizePlainText } from '@/lib/sanitize'
 import type { ChapterHighlight, ChapterHighlightInput, ChapterEditorialNote, EditorialNoteStatus } from '@/lib/releases-types'
 
 const highlightColumns = `
   h.id, h.chapter_id, h.user_id,
   h.text_content, h.paragraph_index,
   h.context_before, h.context_after,
+  h.client_request_id, h.start_offset, h.end_offset,
+  h.source_chapter_updated_at,
   h.note, h.is_public, h.likes_count,
-  h.created_at,
+  h.created_at, h.updated_at,
   u.display_name AS user_name,
   u.avatar AS user_avatar
 `
@@ -109,7 +112,7 @@ export async function fetchChapterHighlightById(id: string, currentUserId: strin
 }
 
 export async function fetchUserHighlights(userId: string, limit = 100): Promise<ChapterHighlight[]> {
-  const rows = await fetchChapterHighlights({ userId, limit })
+  const rows = await fetchChapterHighlights({ userId, currentUserId: userId, limit })
   if (rows.length === 0) return rows
 
   // Подгружаем release_slug для каждой главы одним запросом
@@ -135,23 +138,35 @@ export async function fetchUserHighlights(userId: string, limit = 100): Promise<
 }
 
 export async function createChapterHighlight(userId: string, data: ChapterHighlightInput): Promise<ChapterHighlight | null> {
+  const textContent = sanitizePlainText(data.text_content)
+  const note = data.note == null ? null : sanitizePlainText(data.note)
+  const contextBefore = data.context_before == null ? null : sanitizePlainText(data.context_before)
+  const contextAfter = data.context_after == null ? null : sanitizePlainText(data.context_after)
   const row = await dbQueryOne<ChapterHighlight>(
     `INSERT INTO chapter_highlights (
        chapter_id, user_id, text_content,
        paragraph_index, context_before, context_after,
+       client_request_id, start_offset, end_offset, source_chapter_updated_at,
        note, is_public
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, ch.updated_at, $10, $11
+     FROM chapters ch WHERE ch.id = $1
+     ON CONFLICT (user_id, client_request_id) WHERE client_request_id IS NOT NULL
+     DO UPDATE SET client_request_id = EXCLUDED.client_request_id
      RETURNING id, chapter_id, user_id, text_content, paragraph_index,
-       context_before, context_after, note, is_public, likes_count, created_at`,
+       context_before, context_after, client_request_id, start_offset, end_offset,
+       source_chapter_updated_at, note, is_public, likes_count, created_at, updated_at`,
     [
       data.chapter_id,
       userId,
-      data.text_content,
+      textContent,
       data.paragraph_index ?? null,
-      data.context_before ?? null,
-      data.context_after ?? null,
-      data.note ?? null,
+      contextBefore,
+      contextAfter,
+      data.client_request_id ?? null,
+      data.start_offset ?? null,
+      data.end_offset ?? null,
+      note,
       data.is_public,
     ],
   )
@@ -171,7 +186,7 @@ export async function updateChapterHighlight(id: string, userId: string, isAdmin
   const params: unknown[] = [id]
 
   if (data.note !== undefined) {
-    params.push(data.note)
+    params.push(data.note == null ? null : sanitizePlainText(data.note))
     fields.push(`note = $${params.length}`)
   }
   if (data.is_public !== undefined) {
@@ -197,44 +212,44 @@ export async function deleteChapterHighlight(id: string, userId: string, isAdmin
 
 // === Likes ===
 
-export async function toggleHighlightLike(highlightId: string, userId: string): Promise<{ liked: boolean; likes_count: number } | null> {
-  const highlight = await dbQueryOne<{ id: string; user_id: string; is_public: boolean }>(
-    `SELECT id, user_id, is_public FROM chapter_highlights WHERE id = $1 LIMIT 1`,
-    [highlightId],
-  )
-  if (!highlight) return null
-  if (!highlight.is_public && highlight.user_id !== userId) return null
-
-  const existing = await dbQueryOne<{ highlight_id: string }>(
-    `SELECT highlight_id FROM chapter_highlight_likes WHERE highlight_id = $1 AND user_id = $2 LIMIT 1`,
-    [highlightId, userId],
-  )
-
-  if (existing) {
-    await dbQuery(
-      `DELETE FROM chapter_highlight_likes WHERE highlight_id = $1 AND user_id = $2`,
-      [highlightId, userId],
-    )
-    await dbQuery(
-      `UPDATE chapter_highlights SET likes_count = GREATEST(0, likes_count - 1) WHERE id = $1`,
+export async function setHighlightLike(highlightId: string, userId: string, liked?: boolean): Promise<{ liked: boolean; likes_count: number } | null> {
+  return withTransaction(async client => {
+    const highlightResult = await client.query<{ user_id: string; is_public: boolean }>(
+      `SELECT user_id, is_public FROM chapter_highlights WHERE id = $1 FOR UPDATE`,
       [highlightId],
     )
-  } else {
-    await dbQuery(
-      `INSERT INTO chapter_highlight_likes (highlight_id, user_id) VALUES ($1, $2)`,
+    const highlight = highlightResult.rows[0]
+    if (!highlight || (!highlight.is_public && highlight.user_id !== userId)) return null
+
+    const existing = await client.query(
+      `SELECT 1 FROM chapter_highlight_likes WHERE highlight_id = $1 AND user_id = $2`,
       [highlightId, userId],
     )
-    await dbQuery(
-      `UPDATE chapter_highlights SET likes_count = likes_count + 1 WHERE id = $1`,
+    const nextLiked = liked ?? existing.rowCount === 0
+    if (nextLiked) {
+      await client.query(
+        `INSERT INTO chapter_highlight_likes (highlight_id, user_id) VALUES ($1, $2)
+         ON CONFLICT DO NOTHING`,
+        [highlightId, userId],
+      )
+    } else {
+      await client.query(
+        `DELETE FROM chapter_highlight_likes WHERE highlight_id = $1 AND user_id = $2`,
+        [highlightId, userId],
+      )
+    }
+    const count = await client.query<{ likes_count: number }>(
+      `UPDATE chapter_highlights h SET likes_count = (
+         SELECT COUNT(*)::integer FROM chapter_highlight_likes l WHERE l.highlight_id = h.id
+       ) WHERE h.id = $1 RETURNING likes_count`,
       [highlightId],
     )
-  }
+    return { liked: nextLiked, likes_count: count.rows[0]?.likes_count ?? 0 }
+  })
+}
 
-  const updated = await dbQueryOne<{ likes_count: number }>(
-    `SELECT likes_count FROM chapter_highlights WHERE id = $1`,
-    [highlightId],
-  )
-  return { liked: !existing, likes_count: updated?.likes_count ?? 0 }
+export async function toggleHighlightLike(highlightId: string, userId: string) {
+  return setHighlightLike(highlightId, userId)
 }
 
 // === Editorial Notes (только Studio) ===
@@ -243,8 +258,10 @@ const editorialColumns = `
   n.id, n.chapter_id, n.author_id,
   n.text_content, n.paragraph_index,
   n.context_before, n.context_after,
+  n.client_request_id, n.start_offset, n.end_offset,
+  n.source_chapter_updated_at,
   n.note, n.status,
-  n.created_at, n.resolved_at,
+  n.created_at, n.resolved_at, n.updated_at,
   u.display_name AS author_name,
   u.avatar AS author_avatar
 `
@@ -260,21 +277,54 @@ export async function fetchChapterEditorialNotes(chapterId: string): Promise<Cha
   )
 }
 
+export async function canManageChapterEditorialNotes(
+  chapterId: string,
+  userId: string,
+  isAdmin: boolean,
+): Promise<boolean> {
+  if (isAdmin) return true
+  const row = await dbQueryOne<{ allowed: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM chapters ch
+       JOIN editions e ON e.id = ch.edition_id
+       JOIN release_collaborators rc ON rc.release_id = e.release_id
+       WHERE ch.id = $1 AND rc.user_id = $2 AND rc.role = 'owner'
+     ) AS allowed`,
+    [chapterId, userId],
+  )
+  return row?.allowed ?? false
+}
+
+export async function fetchEditorialNoteChapterId(id: string): Promise<string | null> {
+  const row = await dbQueryOne<{ chapter_id: string }>(
+    `SELECT chapter_id FROM chapter_editorial_notes WHERE id = $1`,
+    [id],
+  )
+  return row?.chapter_id ?? null
+}
+
 export async function createEditorialNote(authorId: string, data: {
   chapter_id: string
   text_content: string
   paragraph_index?: number | null
   context_before?: string | null
   context_after?: string | null
+  client_request_id?: string
+  start_offset?: number | null
+  end_offset?: number | null
   note: string
 }): Promise<ChapterEditorialNote | null> {
   return dbQueryOne<ChapterEditorialNote>(
     `WITH inserted AS (
        INSERT INTO chapter_editorial_notes (
          chapter_id, author_id, text_content,
-         paragraph_index, context_before, context_after, note
+       paragraph_index, context_before, context_after,
+       client_request_id, start_offset, end_offset, source_chapter_updated_at, note
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, ch.updated_at, $10
+       FROM chapters ch WHERE ch.id = $1
+       ON CONFLICT (author_id, client_request_id) WHERE client_request_id IS NOT NULL
+       DO UPDATE SET client_request_id = EXCLUDED.client_request_id
        RETURNING *
      )
      SELECT ${editorialColumns}
@@ -283,11 +333,14 @@ export async function createEditorialNote(authorId: string, data: {
     [
       data.chapter_id,
       authorId,
-      data.text_content,
+      sanitizePlainText(data.text_content),
       data.paragraph_index ?? null,
-      data.context_before ?? null,
-      data.context_after ?? null,
-      data.note,
+      data.context_before == null ? null : sanitizePlainText(data.context_before),
+      data.context_after == null ? null : sanitizePlainText(data.context_after),
+      data.client_request_id ?? null,
+      data.start_offset ?? null,
+      data.end_offset ?? null,
+      sanitizePlainText(data.note),
     ],
   )
 }
@@ -310,15 +363,12 @@ export async function updateEditorialNoteStatus(id: string, status: EditorialNot
  */
 export async function deleteEditorialNote(
   id: string,
-  userId: string,
-  isAdmin: boolean,
+  _userId: string,
+  _isAdmin: boolean,
 ): Promise<boolean> {
-  const existing = await dbQueryOne<{ author_id: string }>(
-    `SELECT author_id FROM chapter_editorial_notes WHERE id = $1`,
+  const rows = await dbQuery<{ id: string }>(
+    `DELETE FROM chapter_editorial_notes WHERE id = $1 RETURNING id`,
     [id],
   )
-  if (!existing) return false
-  if (!isAdmin && existing.author_id !== userId) return false
-  await dbQuery(`DELETE FROM chapter_editorial_notes WHERE id = $1`, [id])
-  return true
+  return rows.length > 0
 }

@@ -115,6 +115,7 @@ export function EditorialNotesPanel({ chapterId, onNoteFocus, editorialNotes: ex
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           chapter_id: chapterId,
+          client_request_id: crypto.randomUUID(),
           text_content: selection.text,
           paragraph_index: selection.paragraphIndex,
           context_before: selection.contextBefore,

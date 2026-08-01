@@ -70,6 +70,7 @@ export function HighlightArtifact({
   isEditor,
   onSaveEditorial,
 }: HighlightArtifactProps) {
+  const [clientRequestId] = useState(() => crypto.randomUUID())
   const [phase, setPhase] = useState<ArtifactPhase>('save')
   const [savedHighlight, setSavedHighlight] = useState<ChapterHighlight | null>(null)
 
@@ -273,6 +274,7 @@ export function HighlightArtifact({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           chapter_id: chapterId,
+          client_request_id: clientRequestId,
           text_content: text,
           paragraph_index: paragraphIndex,
           context_before: contextBefore,

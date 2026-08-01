@@ -1,4 +1,5 @@
 import { dbQueryOne } from '@/lib/db'
+import { NextResponse } from 'next/server'
 
 export interface RateLimitOptions {
   /** Логическая группа лимита, напр. 'llm' или 'chat' */
@@ -50,8 +51,8 @@ export async function checkRateLimit(options: RateLimitOptions): Promise<RateLim
 }
 
 /** 429 с корректным Retry-After */
-export function rateLimitResponse(result: RateLimitResult): Response {
-  return Response.json(
+export function rateLimitResponse(result: RateLimitResult): NextResponse {
+  return NextResponse.json(
     { error: 'Слишком много запросов. Попробуйте позже.' },
     { status: 429, headers: { 'Retry-After': String(result.resetAfter) } },
   )

@@ -29,6 +29,9 @@ async function loadHighlightContext(slug: string, highlightId: string) {
   const chapter = await fetchChapterById(highlight.chapter_id)
   if (!chapter) return null
 
+  const editions = await fetchEditionsByRelease(release.id)
+  if (!editions.some(edition => edition.id === chapter.edition_id)) return null
+
   return { release, highlight, chapter }
 }
 

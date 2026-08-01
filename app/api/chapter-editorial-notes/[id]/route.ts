@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser, getUserRoles } from '@/lib/server/session'
-import { deleteEditorialNote } from '@/lib/server/chapter-highlights'
+import { deleteEditorialNote, canManageChapterEditorialNotes, fetchEditorialNoteChapterId } from '@/lib/server/chapter-highlights'
 import { apiHandler } from '@/lib/api-handler'
+import { checkRateLimit, rateLimitResponse } from '@/lib/server/rate-limit'
 
 async function deleteEditorialNoteHandler(
   _request: NextRequest,
@@ -13,8 +14,12 @@ async function deleteEditorialNoteHandler(
 
   const roles = await getUserRoles(user.id)
   const isAdmin = roles.includes('admin')
-  const canEdit = isAdmin || roles.includes('editor') || roles.includes('author')
-  if (!canEdit) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const chapterId = await fetchEditorialNoteChapterId(id)
+  if (!chapterId) return NextResponse.json({ error: 'Not Found' }, { status: 404 })
+  const allowed = await canManageChapterEditorialNotes(chapterId, user.id, isAdmin)
+  if (!allowed) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const limit = await checkRateLimit({ bucket: 'editorial:update', subject: user.id, limit: 120, windowSeconds: 3600 })
+  if (!limit.allowed) return rateLimitResponse(limit)
 
   const deleted = await deleteEditorialNote(id, user.id, isAdmin)
   if (!deleted) return NextResponse.json({ error: 'Not Found' }, { status: 404 })

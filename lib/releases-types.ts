@@ -212,10 +212,15 @@ export interface ChapterHighlight {
   paragraph_index: number | null
   context_before: string | null
   context_after: string | null
+  client_request_id?: string | null
+  start_offset?: number | null
+  end_offset?: number | null
+  source_chapter_updated_at?: string | null
   note: string | null
   is_public: boolean
   likes_count: number
   created_at: string
+  updated_at?: string
   // Joins
   user_name?: string | null
   user_avatar?: string | null
@@ -230,6 +235,9 @@ export interface ChapterHighlightInput {
   paragraph_index?: number | null
   context_before?: string | null
   context_after?: string | null
+  client_request_id?: string
+  start_offset?: number | null
+  end_offset?: number | null
   note?: string | null
   is_public: boolean
 }
@@ -246,10 +254,15 @@ export interface ChapterEditorialNote {
   paragraph_index: number | null
   context_before: string | null
   context_after: string | null
+  client_request_id?: string | null
+  start_offset?: number | null
+  end_offset?: number | null
+  source_chapter_updated_at?: string | null
   note: string
   status: EditorialNoteStatus
   created_at: string
   resolved_at: string | null
+  updated_at?: string
   // Joins
   author_name?: string | null
   author_avatar?: string | null

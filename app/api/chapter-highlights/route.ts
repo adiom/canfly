@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/server/session'
 import { fetchChapterHighlights, createChapterHighlight } from '@/lib/server/chapter-highlights'
 import { apiHandler } from '@/lib/api-handler'
+import { createHighlightSchema } from '@/lib/schemas/highlights'
+import { checkRateLimit, rateLimitResponse } from '@/lib/server/rate-limit'
 
 async function getChapterHighlights(request: NextRequest) {
   const { searchParams } = new URL(request.url)
@@ -31,24 +33,15 @@ async function createChapterHighlightHandler(request: NextRequest) {
   const user = await getCurrentUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const body = await request.json()
-  const { chapter_id, text_content, paragraph_index, context_before, context_after, note, is_public } = body
-
-  if (!chapter_id || !text_content) {
-    return NextResponse.json({ error: 'chapter_id and text_content are required' }, { status: 400 })
-  }
-  if (text_content.length > 5000) {
-    return NextResponse.json({ error: 'text_content too long' }, { status: 400 })
-  }
+  const limit = await checkRateLimit({ bucket: 'highlights:create', subject: user.id, limit: 60, windowSeconds: 3600 })
+  if (!limit.allowed) return rateLimitResponse(limit)
+  const parsed = createHighlightSchema.safeParse(await request.json())
+  if (!parsed.success) return NextResponse.json({ error: 'Invalid highlight', details: parsed.error.flatten() }, { status: 400 })
+  const body = parsed.data
 
   const highlight = await createChapterHighlight(user.id, {
-    chapter_id,
-    text_content,
-    paragraph_index: paragraph_index ?? null,
-    context_before: context_before ?? null,
-    context_after: context_after ?? null,
-    note: note ?? null,
-    is_public: !!is_public,
+    ...body,
+    client_request_id: body.client_request_id ?? crypto.randomUUID(),
   })
 
   if (!highlight) return NextResponse.json({ error: 'Failed to create' }, { status: 500 })
