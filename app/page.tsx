@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { Suspense } from 'react'
-import { BookOpen, Boxes, UserRound } from 'lucide-react'
+import { BookOpen, UserRound } from 'lucide-react'
 
 import { HomeHeroSlider } from '@/components/home-hero-slider'
 import { HomeIssuesSection } from '@/components/home-issues-section'
@@ -134,7 +134,7 @@ export default async function Home() {
             </h2>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2">
             <Link href="/releases/" className="group border border-cf-text-1/10 bg-cf-bg p-4 hover:border-cf-warm/45 sm:p-6">
               <BookOpen className="mb-8 h-7 w-7 text-cf-warm sm:mb-10" />
               <h3 className="text-xl font-black uppercase text-cf-text-heading sm:text-2xl">Книги</h3>
@@ -144,11 +144,6 @@ export default async function Home() {
               <UserRound className="mb-8 h-7 w-7 text-cf-blue sm:mb-10" />
               <h3 className="text-xl font-black uppercase text-cf-text-heading sm:text-2xl">Персонажи</h3>
               <p className="mt-3 leading-7 text-cf-text-caption sm:mt-4">Люди функции: швеи, инженеры, операторы, сотрудники ПВЗ.</p>
-            </Link>
-            <Link href="/markdown" className="group border border-cf-text-1/10 bg-cf-bg p-4 hover:border-cf-tan/45 sm:p-6">
-              <Boxes className="mb-8 h-7 w-7 text-cf-tan sm:mb-10" />
-              <h3 className="text-xl font-black uppercase text-cf-text-heading sm:text-2xl">Архив</h3>
-              <p className="mt-3 leading-7 text-cf-text-caption sm:mt-4">Старая главная и большой markdown-путеводитель по системе мира.</p>
             </Link>
           </div>
         </div>
