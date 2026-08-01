@@ -81,7 +81,8 @@
 | GET | `/[id]` | публично, приватная — только владельцу |
 | PATCH | `/[id]` — `note`, `is_public` | владелец или admin |
 | DELETE | `/[id]` | владелец или admin |
-| POST | `/[id]/like` | авторизация, toggle |
+| POST | `/[id]/like` | авторизация, совместимый toggle |
+| PUT | `/[id]/like` — `{ liked: boolean }` | авторизация, идемпотентная установка состояния |
 
 ### Правки — `/api/chapter-editorial-notes`
 | метод | путь | доступ |
@@ -122,7 +123,7 @@
 `lib/reader/highlights-dom.ts` — рендер выделений поверх готового HTML главы, без изменения исходной разметки.
 
 - `collectParagraphs(root)` — TreeWalker по `p, blockquote, h1..h4, li`.
-- `findTextRange(paragraph, text, contextBefore)` — ищет Range: сначала прямое вхождение `text`, затем fallback по `context_before` + первые 20 символов. Узлы внутри уже созданного `<mark>` пропускаются. Кросс-узловые выделения (текст, разорванный тегом) не находятся — молча пропускаются.
+- `findTextRange(...)` сначала использует сохранённые `start_offset`/`end_offset`, затем контекст и точный поиск. Range работает через несколько текстовых узлов, включая вложенные `<strong>`, `<em>` и ссылки.
 - `wrapHighlight` → `<mark data-cf-hl="id">`, `data-cf-mine` для своих приватных.
 - `wrapEditorialNote` → `<mark data-cf-en="id">`, цвет по статусу: open `#e97316`, resolved `#16a34a`, ignored `#6b7280`.
 - `clearHighlightMarks(root)` — разворачивает все `<mark>` обратно и `normalize()`.
@@ -194,7 +195,5 @@ Pull-quote в hero: `fetchPublicHighlightsByRelease(release.id, 6)`, по умо
 
 Отсортировано по влиянию.
 
-1. `findTextRange` не поддерживает выделения, пересекающие несколько текстовых узлов или HTML-тегов; такие цитаты не размечаются.
-2. `release-book-reader.tsx` содержит собственные копии части DOM-логики вместо полного переиспользования `lib/reader/highlights-dom.ts`.
-3. В DOM-утилитах и отдельных компонентах остаются цвета, заданные hex-значениями, что нарушает правило `cf-*` из `docs/design-system.md`.
-4. Функциональных e2e-тестов для создания, редактирования, лайков, шаринга и editorial notes недостаточно; нет изолированной проверки `findTextRange`.
+1. В DOM-утилитах и отдельных компонентах остаются цвета, заданные hex-значениями, что нарушает правило `cf-*` из `docs/design-system.md`.
+2. Функциональных e2e-тестов для создания, редактирования, лайков, шаринга и editorial notes недостаточно; нет изолированной проверки `findTextRange`.

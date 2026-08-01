@@ -10,6 +10,8 @@ export interface EditorialSelection {
   paragraphIndex: number
   contextBefore: string
   contextAfter: string
+  startOffset: number
+  endOffset: number
 }
 
 interface UseEditorialNotesOptions {
@@ -47,7 +49,8 @@ export function useEditorialNotes({ chapterId, enabled }: UseEditorialNotesOptio
     loadedChapters.current.add(chapterId)
 
     let cancelled = false
-    fetch(`/api/chapter-editorial-notes?chapterId=${chapterId}`)
+    const controller = new AbortController()
+    fetch(`/api/chapter-editorial-notes?chapterId=${chapterId}`, { signal: controller.signal })
       .then(res => (res.ok ? res.json() : null))
       .then(data => {
         if (cancelled || !data?.data) return
@@ -56,10 +59,12 @@ export function useEditorialNotes({ chapterId, enabled }: UseEditorialNotesOptio
           return [...prev, ...(data.data as ChapterEditorialNote[]).filter(n => !ids.has(n.id))]
         })
       })
-      .catch(() => {
+      .catch(error => {
         loadedChapters.current.delete(chapterId)
+        if (error instanceof DOMException && error.name === 'AbortError') return
+        toast.error('Не удалось загрузить редакторские замечания')
       })
-    return () => { cancelled = true }
+    return () => { cancelled = true; controller.abort() }
   }, [chapterId, enabled])
 
   const createNote = useCallback(
@@ -75,6 +80,8 @@ export function useEditorialNotes({ chapterId, enabled }: UseEditorialNotesOptio
           paragraph_index: selection.paragraphIndex,
           context_before: selection.contextBefore,
           context_after: selection.contextAfter,
+          start_offset: selection.startOffset,
+          end_offset: selection.endOffset,
           note: noteText,
         }),
       })

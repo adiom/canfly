@@ -10,6 +10,7 @@ import type { UserRole } from '@/lib/types'
 import { useEditorialNotes } from '@/lib/reader/use-editorial-notes'
 import { BookmarksPanel } from '@/components/bookmarks-panel'
 import { HighlightArtifact } from '@/components/highlight-artifact'
+import { collectParagraphs, clearHighlightMarks, wrapHighlight, wrapEditorialNote, PARAGRAPH_TAGS } from '@/lib/reader/highlights-dom'
 
 interface ReleaseBookReaderProps {
   release: Release
@@ -29,6 +30,8 @@ interface SelectionData {
   paragraphIndex: number
   contextBefore: string
   contextAfter: string
+  startOffset: number
+  endOffset: number
 }
 
 export function ReleaseBookReader({
@@ -96,7 +99,8 @@ export function ReleaseBookReader({
     if (!currentChapter) return
     if (highlights.some(h => h.chapter_id === currentChapter.id)) return
     let cancelled = false
-    fetch(`/api/chapter-highlights?chapterId=${currentChapter.id}`)
+    const controller = new AbortController()
+    fetch(`/api/chapter-highlights?chapterId=${currentChapter.id}`, { signal: controller.signal })
       .then(res => res.ok ? res.json() : null)
       .then(data => {
         if (cancelled || !data?.data) return
@@ -105,8 +109,11 @@ export function ReleaseBookReader({
           return [...prev, ...data.data.filter((h: ChapterHighlight) => !ids.has(h.id))]
         })
       })
-      .catch(() => {})
-    return () => { cancelled = true }
+      .catch(error => {
+        if (error instanceof DOMException && error.name === 'AbortError') return
+        toast.error('Не удалось загрузить цитаты главы')
+      })
+    return () => { cancelled = true; controller.abort() }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- highlights refetch only on chapter change
   }, [currentChapter?.id])
 
@@ -118,31 +125,10 @@ export function ReleaseBookReader({
     let cancelled = false
 
     // Снимаем старые подсветки (highlights + editorial notes)
-    root.querySelectorAll('mark[data-cf-hl], mark[data-cf-en]').forEach(el => {
-      const parent = el.parentNode
-      if (!parent) return
-      while (el.firstChild) parent.insertBefore(el.firstChild, el)
-      parent.removeChild(el)
-      parent.normalize()
-    })
+    clearHighlightMarks(root)
 
     // Собираем параграфы в порядке DOM
-    const paragraphs: HTMLElement[] = []
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, {
-      acceptNode: (node) => {
-        if (!(node instanceof HTMLElement)) return NodeFilter.FILTER_REJECT
-        const tag = node.tagName.toLowerCase()
-        if (['p', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'li'].includes(tag)) {
-          return NodeFilter.FILTER_ACCEPT
-        }
-        return NodeFilter.FILTER_SKIP
-      },
-    })
-    let node: Node | null = walker.nextNode()
-    while (node) {
-      paragraphs.push(node as HTMLElement)
-      node = walker.nextNode()
-    }
+    const paragraphs = collectParagraphs(root)
     if (cancelled) return
 
     // Группируем highlights по параграфу
@@ -157,7 +143,7 @@ export function ReleaseBookReader({
     paragraphs.forEach((p, idx) => {
       const list = hlByParagraph.get(idx)
       if (!list) return
-      for (const hl of list) wrapHighlight(p, hl, currentUserId)
+      for (const hl of list) wrapHighlight(p, hl, currentUserId, accent)
     })
 
     // Группируем editorial notes по параграфу (editor/admin only)
@@ -270,7 +256,7 @@ export function ReleaseBookReader({
     while (node && node !== contentRef.current) {
       if (node instanceof HTMLElement) {
         const tag = node.tagName.toLowerCase()
-        if (['p', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'li'].includes(tag)) {
+        if (PARAGRAPH_TAGS.includes(tag)) {
           paragraphEl = node
           break
         }
@@ -283,7 +269,7 @@ export function ReleaseBookReader({
         acceptNode: (n) => {
           if (!(n instanceof HTMLElement)) return NodeFilter.FILTER_REJECT
           const t = n.tagName.toLowerCase()
-          if (['p', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'li'].includes(t)) {
+          if (PARAGRAPH_TAGS.includes(t)) {
             return NodeFilter.FILTER_ACCEPT
           }
           return NodeFilter.FILTER_SKIP
@@ -303,7 +289,7 @@ export function ReleaseBookReader({
     const contextBefore = offset >= 0 ? fullText.slice(Math.max(0, offset - 30), offset) : ''
     const contextAfter = offset >= 0 ? fullText.slice(offset + text.length, offset + text.length + 30) : ''
 
-    setSelection({ text, rect, paragraphIndex, contextBefore, contextAfter })
+    setSelection({ text, rect, paragraphIndex, contextBefore, contextAfter, startOffset: Math.max(0, offset), endOffset: Math.max(0, offset) + text.length })
     // eslint-disable-next-line react-hooks/exhaustive-deps -- currentUserId checked inside, stable callback
   }, [])
 
@@ -382,15 +368,23 @@ export function ReleaseBookReader({
       toast.error('Войдите чтобы ставить лайки')
       return
     }
-    const res = await fetch(`/api/chapter-highlights/${id}/like`, { method: 'POST' })
+    const target = highlights.find(h => h.id === id)
+    if (!target) return
+    const res = await fetch(`/api/chapter-highlights/${id}/like`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ liked: !target.is_liked_by_me }),
+    })
     if (res.ok) {
       const data = await res.json()
-      setHighlights(highlights.map(h =>
+      setHighlights(prev => prev.map(h =>
         h.id === id ? { ...h, is_liked_by_me: data.data.liked, likes_count: data.data.likes_count } : h,
       ))
       if (activeHighlight?.id === id) {
-        setActiveHighlight({ ...activeHighlight, is_liked_by_me: data.data.liked, likes_count: data.data.likes_count })
+        setActiveHighlight(prev => prev ? { ...prev, is_liked_by_me: data.data.liked, likes_count: data.data.likes_count } : null)
       }
+    } else {
+      toast.error('Не удалось обновить лайк')
     }
   }
 
@@ -634,6 +628,8 @@ export function ReleaseBookReader({
           paragraphIndex={selection.paragraphIndex}
           contextBefore={selection.contextBefore}
           contextAfter={selection.contextAfter}
+          startOffset={selection.startOffset}
+          endOffset={selection.endOffset}
           currentUserId={currentUserId}
           onSaved={hl => {
             setHighlights(prev => [hl, ...prev])
@@ -960,108 +956,4 @@ export function ReleaseBookReader({
       )}
     </div>
   )
-}
-
-/**
- * Общий поиск текстового диапазона для обёртки в <mark>. Используется и хайлайтами,
- * и редакторскими замечаниями — устраняет дублирование TreeWalker-логики.
- *
- * Ищет точное совпадение text, при промахе пробует контекстный fallback
- * (context_before + префикс text). Возвращает Range или null.
- */
-function findTextRange(
-  paragraph: HTMLElement,
-  text: string,
-  contextBefore?: string | null,
-): Range | null {
-  const walker = document.createTreeWalker(paragraph, NodeFilter.SHOW_TEXT, null)
-  const textNodes: Text[] = []
-  let n: Node | null = walker.nextNode()
-  while (n) {
-    textNodes.push(n as Text)
-    n = walker.nextNode()
-  }
-
-  for (const node of textNodes) {
-    if (node.parentElement?.tagName === 'MARK') continue
-    const nodeText = node.textContent ?? ''
-    let idx = nodeText.indexOf(text)
-    if (idx === -1 && contextBefore) {
-      // Контекстный fallback: нашли context_before → сверяем префикс text
-      const foundAt = nodeText.indexOf(contextBefore)
-      if (foundAt >= 0) {
-        const tail = nodeText.slice(foundAt + contextBefore.length, foundAt + contextBefore.length + text.length + 10)
-        if (tail.startsWith(text.slice(0, 20))) {
-          idx = foundAt + contextBefore.length
-        }
-      }
-    }
-    if (idx === -1) continue
-
-    try {
-      const range = document.createRange()
-      range.setStart(node, idx)
-      range.setEnd(node, idx + text.length)
-      return range
-    } catch {
-      // кросс-узел / невалидный offset — пробуем следующий узел
-    }
-  }
-  return null
-}
-
-/** Применяет общие стили <mark> + hover-эффект. */
-function styleMark(mark: HTMLElement, color: string, idleOpacity: string) {
-  mark.style.cursor = 'pointer'
-  mark.style.borderRadius = '2px'
-  mark.style.padding = '0 1px'
-  mark.style.transition = 'background-color 0.15s'
-  const idle = `${color}${idleOpacity}`
-  mark.style.backgroundColor = idle
-  mark.addEventListener('mouseenter', () => { mark.style.backgroundColor = `${color}88` })
-  mark.addEventListener('mouseleave', () => { mark.style.backgroundColor = idle })
-}
-
-// Обёртывает найденный текст в <mark>
-function wrapHighlight(paragraph: HTMLElement, hl: ChapterHighlight, currentUserId: string | null) {
-  const text = hl.text_content
-  if (!text) return
-
-  const range = findTextRange(paragraph, text, hl.context_before)
-  if (!range) return
-
-  try {
-    const mark = document.createElement('mark')
-    mark.dataset.cfHl = hl.id
-    mark.dataset.cfMine = hl.user_id === currentUserId && !hl.is_public ? 'true' : ''
-    styleMark(mark, accent_for_hl(hl), '44')
-    range.surroundContents(mark)
-  } catch {
-    // не получилось окружить — пропускаем
-  }
-}
-
-function wrapEditorialNote(paragraph: HTMLElement, en: ChapterEditorialNote) {
-  const text = en.text_content
-  if (!text) return
-
-  const range = findTextRange(paragraph, text, en.context_before)
-  if (!range) return
-
-  try {
-    const mark = document.createElement('mark')
-    mark.dataset.cfEn = en.id
-    const statusColor = en.status === 'open' ? '#e97316' : en.status === 'resolved' ? '#16a34a' : '#6b7280'
-    const bgOpacity = en.status === 'open' ? '44' : en.status === 'resolved' ? '28' : '18'
-    styleMark(mark, statusColor, bgOpacity)
-    range.surroundContents(mark)
-  } catch {
-    // skip
-  }
-}
-
-function accent_for_hl(_hl: ChapterHighlight): string {
-  // Пока единый акцентный цвет проекта; зарезервировано под детерминированный
-  // цвет по user_id в будущем.
-  return '#d52525'
 }

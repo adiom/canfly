@@ -20,6 +20,8 @@ interface HighlightArtifactProps {
   paragraphIndex: number
   contextBefore: string
   contextAfter: string
+  startOffset: number
+  endOffset: number
   currentUserId: string | null
   onSaved: (highlight: ChapterHighlight) => void
   onClose: () => void
@@ -61,6 +63,8 @@ export function HighlightArtifact({
   paragraphIndex,
   contextBefore,
   contextAfter,
+  startOffset,
+  endOffset,
   currentUserId,
   onSaved,
   onClose,
@@ -279,6 +283,8 @@ export function HighlightArtifact({
           paragraph_index: paragraphIndex,
           context_before: contextBefore,
           context_after: contextAfter,
+          start_offset: startOffset,
+          end_offset: endOffset,
           note: note.trim() || null,
           is_public: isPublic,
         }),

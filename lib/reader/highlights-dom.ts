@@ -33,39 +33,56 @@ export function findTextRange(
   paragraph: HTMLElement,
   text: string,
   contextBefore?: string | null,
+  startOffset?: number | null,
+  endOffset?: number | null,
 ): Range | null {
   const walker = document.createTreeWalker(paragraph, NodeFilter.SHOW_TEXT, null)
   const textNodes: Text[] = []
+  let fullText = ''
   let n: Node | null = walker.nextNode()
   while (n) {
-    textNodes.push(n as Text)
+    const node = n as Text
+    if (node.parentElement?.closest('mark[data-cf-hl], mark[data-cf-en]')) {
+      n = walker.nextNode()
+      continue
+    }
+    textNodes.push(node)
+    fullText += node.textContent ?? ''
     n = walker.nextNode()
   }
 
-  for (const node of textNodes) {
-    if (node.parentElement?.tagName === 'MARK') continue
-    const nodeText = node.textContent ?? ''
-    let idx = nodeText.indexOf(text)
-    if (idx === -1 && contextBefore) {
-      const foundAt = nodeText.indexOf(contextBefore)
-      if (foundAt >= 0) {
-        const tail = nodeText.slice(foundAt + contextBefore.length, foundAt + contextBefore.length + text.length + 10)
-        if (tail.startsWith(text.slice(0, 20))) {
-          idx = foundAt + contextBefore.length
-        }
-      }
-    }
-    if (idx === -1) continue
-    try {
-      const range = document.createRange()
-      range.setStart(node, idx)
-      range.setEnd(node, idx + text.length)
-      return range
-    } catch {
-      // кросс-узел / невалидный offset
-    }
+  let start = -1
+  let end = -1
+  if (startOffset != null && endOffset != null && fullText.slice(startOffset, endOffset) === text) {
+    start = startOffset
+    end = endOffset
+  } else if (contextBefore) {
+    const needle = contextBefore + text
+    const contextual = fullText.indexOf(needle)
+    if (contextual >= 0) start = contextual + contextBefore.length
   }
-  return null
+  if (start < 0) start = fullText.indexOf(text)
+  if (start < 0) return null
+  if (end < 0) end = start + text.length
+
+  const locate = (offset: number, isEnd: boolean) => {
+    let cursor = 0
+    for (const node of textNodes) {
+      const length = node.textContent?.length ?? 0
+      if (offset < cursor + length || (isEnd && offset === cursor + length)) {
+        return { node, offset: offset - cursor }
+      }
+      cursor += length
+    }
+    return null
+  }
+  const from = locate(start, false)
+  const to = locate(end, true)
+  if (!from || !to) return null
+  const range = document.createRange()
+  range.setStart(from.node, from.offset)
+  range.setEnd(to.node, to.offset)
+  return range
 }
 
 /** Применяет стили и hover-эффекты к <mark>. */
@@ -80,6 +97,12 @@ export function styleMark(mark: HTMLElement, color: string, idleOpacity: string)
   mark.addEventListener('mouseleave', () => { mark.style.backgroundColor = idle })
 }
 
+function applyMark(range: Range, mark: HTMLElement) {
+  const contents = range.extractContents()
+  mark.appendChild(contents)
+  range.insertNode(mark)
+}
+
 /** Обёртывает highlight в <mark data-cf-hl> внутри paragraph. */
 export function wrapHighlight(
   paragraph: HTMLElement,
@@ -89,14 +112,14 @@ export function wrapHighlight(
 ) {
   const text = hl.text_content
   if (!text) return
-  const range = findTextRange(paragraph, text, hl.context_before)
+  const range = findTextRange(paragraph, text, hl.context_before, hl.start_offset, hl.end_offset)
   if (!range) return
   try {
     const mark = document.createElement('mark')
     mark.dataset.cfHl = hl.id
     mark.dataset.cfMine = hl.user_id === currentUserId && !hl.is_public ? 'true' : ''
     styleMark(mark, accent, '44')
-    range.surroundContents(mark)
+    applyMark(range, mark)
   } catch {
     // skip on cross-node selections
   }
@@ -106,7 +129,7 @@ export function wrapHighlight(
 export function wrapEditorialNote(paragraph: HTMLElement, en: ChapterEditorialNote) {
   const text = en.text_content
   if (!text) return
-  const range = findTextRange(paragraph, text, en.context_before)
+  const range = findTextRange(paragraph, text, en.context_before, en.start_offset, en.end_offset)
   if (!range) return
   try {
     const mark = document.createElement('mark')
@@ -114,7 +137,7 @@ export function wrapEditorialNote(paragraph: HTMLElement, en: ChapterEditorialNo
     const statusColor = en.status === 'open' ? '#e97316' : en.status === 'resolved' ? '#16a34a' : '#6b7280'
     const bgOpacity = en.status === 'open' ? '44' : en.status === 'resolved' ? '28' : '18'
     styleMark(mark, statusColor, bgOpacity)
-    range.surroundContents(mark)
+    applyMark(range, mark)
   } catch {
     // skip
   }

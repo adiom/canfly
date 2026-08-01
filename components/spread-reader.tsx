@@ -39,6 +39,8 @@ interface SelectionData {
   paragraphIndex: number
   contextBefore: string
   contextAfter: string
+  startOffset: number
+  endOffset: number
 }
 
 export interface SpreadReaderProps {
@@ -182,7 +184,8 @@ export function SpreadReader({
     if (!currentChapter) return
     if (highlights.some(h => h.chapter_id === currentChapter.id)) return
     let cancelled = false
-    fetch(`/api/chapter-highlights?chapterId=${currentChapter.id}`)
+    const controller = new AbortController()
+    fetch(`/api/chapter-highlights?chapterId=${currentChapter.id}`, { signal: controller.signal })
       .then(res => res.ok ? res.json() : null)
       .then(data => {
         if (cancelled || !data?.data) return
@@ -191,8 +194,11 @@ export function SpreadReader({
           return [...prev, ...data.data.filter((h: ChapterHighlight) => !ids.has(h.id))]
         })
       })
-      .catch(() => {})
-    return () => { cancelled = true }
+      .catch(error => {
+        if (error instanceof DOMException && error.name === 'AbortError') return
+        toast.error('Не удалось загрузить цитаты главы')
+      })
+    return () => { cancelled = true; controller.abort() }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- highlights refetch only on chapter change
   }, [currentChapter?.id])
 
@@ -395,7 +401,7 @@ export function SpreadReader({
     const contextBefore = offset >= 0 ? fullText.slice(Math.max(0, offset - 30), offset) : ''
     const contextAfter = offset >= 0 ? fullText.slice(offset + text.length, offset + text.length + 30) : ''
 
-    setSelection({ text, rect, paragraphIndex, contextBefore, contextAfter })
+    setSelection({ text, rect, paragraphIndex, contextBefore, contextAfter, startOffset: Math.max(0, offset), endOffset: Math.max(0, offset) + text.length })
   }, [currentUserId])
 
   // ── Навигация к закладке ──
@@ -449,7 +455,13 @@ export function SpreadReader({
 
   const toggleLike = async (id: string) => {
     if (!currentUserId) { toast.error('Войдите чтобы ставить лайки'); return }
-    const res = await fetch(`/api/chapter-highlights/${id}/like`, { method: 'POST' })
+    const target = highlights.find(h => h.id === id)
+    if (!target) return
+    const res = await fetch(`/api/chapter-highlights/${id}/like`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ liked: !target.is_liked_by_me }),
+    })
     if (res.ok) {
       const data = await res.json()
       setHighlights(prev => prev.map(h =>
@@ -458,6 +470,8 @@ export function SpreadReader({
       if (activeHighlight?.id === id) {
         setActiveHighlight(prev => prev ? { ...prev, is_liked_by_me: data.data.liked, likes_count: data.data.likes_count } : null)
       }
+    } else {
+      toast.error('Не удалось обновить лайк')
     }
   }
 
@@ -844,6 +858,8 @@ export function SpreadReader({
           paragraphIndex={selection.paragraphIndex}
           contextBefore={selection.contextBefore}
           contextAfter={selection.contextAfter}
+          startOffset={selection.startOffset}
+          endOffset={selection.endOffset}
           currentUserId={currentUserId}
           onSaved={hl => {
             setHighlights(prev => [hl, ...prev])
