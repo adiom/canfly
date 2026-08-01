@@ -2,10 +2,13 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import type { ChapterEditorialNote } from '@/lib/releases-types'
+import { collectParagraphs } from '@/lib/studio/paragraphs'
 
 interface EditorialNotesOverlayProps {
   editorContainer: HTMLDivElement | null
   notes: ChapterEditorialNote[]
+  /** Клик по индикатору — открыть первую правку группы. */
+  onIndicatorClick?: (note: ChapterEditorialNote) => void
 }
 
 interface Indicator {
@@ -14,6 +17,7 @@ interface Indicator {
   height: number
   status: ChapterEditorialNote['status']
   count: number
+  note: ChapterEditorialNote
 }
 
 function findParagraphForNote(paragraphs: HTMLElement[], note: ChapterEditorialNote): HTMLElement | null {
@@ -38,7 +42,7 @@ function findParagraphForNote(paragraphs: HTMLElement[], note: ChapterEditorialN
   return null
 }
 
-export function EditorialNotesOverlay({ editorContainer, notes }: EditorialNotesOverlayProps) {
+export function EditorialNotesOverlay({ editorContainer, notes, onIndicatorClick }: EditorialNotesOverlayProps) {
   const [indicators, setIndicators] = useState<Indicator[]>([])
   const rafRef = useRef<number | null>(null)
 
@@ -48,23 +52,7 @@ export function EditorialNotesOverlay({ editorContainer, notes }: EditorialNotes
     const proseMirror = editorContainer.querySelector('.ProseMirror')
     if (!proseMirror) return
 
-    const paragraphs: HTMLElement[] = []
-    const walker = document.createTreeWalker(proseMirror, NodeFilter.SHOW_ELEMENT, {
-      acceptNode: (node) => {
-        if (!(node instanceof HTMLElement)) return NodeFilter.FILTER_REJECT
-        const tag = node.tagName.toLowerCase()
-        if (['p', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'li'].includes(tag)) {
-          return NodeFilter.FILTER_ACCEPT
-        }
-        return NodeFilter.FILTER_SKIP
-      },
-    })
-    let n: Node | null = walker.nextNode()
-    while (n) {
-      paragraphs.push(n as HTMLElement)
-      n = walker.nextNode()
-    }
-
+    const paragraphs = collectParagraphs(proseMirror)
     const editorRect = editorContainer.getBoundingClientRect()
 
     // Группируем по найденному параграфу (HTMLElement)
@@ -93,6 +81,7 @@ export function EditorialNotesOverlay({ editorContainer, notes }: EditorialNotes
         height,
         status,
         count: group.notes.length,
+        note: group.notes[0],
       })
     }
 
@@ -106,17 +95,27 @@ export function EditorialNotesOverlay({ editorContainer, notes }: EditorialNotes
     compute()
   }, [compute])
 
+  // Позиции зависят от layout: пересчитываем на resize, scroll и правках текста.
   useEffect(() => {
-    const handler = () => {
+    const schedule = () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
       rafRef.current = requestAnimationFrame(compute)
     }
-    window.addEventListener('resize', handler)
+
+    window.addEventListener('resize', schedule)
+    window.addEventListener('scroll', schedule, true)
+
+    const proseMirror = editorContainer?.querySelector('.ProseMirror')
+    const observer = proseMirror ? new MutationObserver(schedule) : null
+    observer?.observe(proseMirror as Node, { childList: true, subtree: true, characterData: true })
+
     return () => {
-      window.removeEventListener('resize', handler)
+      window.removeEventListener('resize', schedule)
+      window.removeEventListener('scroll', schedule, true)
+      observer?.disconnect()
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
     }
-  }, [compute])
+  }, [compute, editorContainer])
 
   if (!editorContainer || indicators.length === 0) return null
 
@@ -129,9 +128,13 @@ export function EditorialNotesOverlay({ editorContainer, notes }: EditorialNotes
   return (
     <div className="absolute top-0 left-0 right-0 bottom-0 pointer-events-none overflow-hidden">
       {indicators.map(ind => (
-        <div
+        <button
           key={ind.id}
-          className="absolute left-0 pointer-events-auto"
+          type="button"
+          onClick={() => onIndicatorClick?.(ind.note)}
+          disabled={!onIndicatorClick}
+          aria-label={`Правок в абзаце: ${ind.count}`}
+          className="absolute left-0 pointer-events-auto disabled:cursor-default"
           style={{
             top: `${ind.top}px`,
             height: `${ind.height}px`,
@@ -149,7 +152,7 @@ export function EditorialNotesOverlay({ editorContainer, notes }: EditorialNotes
               {ind.count}
             </span>
           )}
-        </div>
+        </button>
       ))}
     </div>
   )

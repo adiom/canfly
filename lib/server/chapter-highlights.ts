@@ -269,13 +269,17 @@ export async function createEditorialNote(authorId: string, data: {
   note: string
 }): Promise<ChapterEditorialNote | null> {
   return dbQueryOne<ChapterEditorialNote>(
-    `INSERT INTO chapter_editorial_notes (
-       chapter_id, author_id, text_content,
-       paragraph_index, context_before, context_after, note
+    `WITH inserted AS (
+       INSERT INTO chapter_editorial_notes (
+         chapter_id, author_id, text_content,
+         paragraph_index, context_before, context_after, note
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING *
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
-     RETURNING id, chapter_id, author_id, text_content, paragraph_index,
-       context_before, context_after, note, status, created_at, resolved_at`,
+     SELECT ${editorialColumns}
+     FROM inserted n
+     LEFT JOIN users u ON u.id = n.author_id`,
     [
       data.chapter_id,
       authorId,
@@ -300,6 +304,21 @@ export async function updateEditorialNoteStatus(id: string, status: EditorialNot
   )
 }
 
-export async function deleteEditorialNote(id: string): Promise<void> {
+/**
+ * Удаляет замечание. Разрешено автору замечания и админу.
+ * Возвращает `false`, если записи нет или прав недостаточно.
+ */
+export async function deleteEditorialNote(
+  id: string,
+  userId: string,
+  isAdmin: boolean,
+): Promise<boolean> {
+  const existing = await dbQueryOne<{ author_id: string }>(
+    `SELECT author_id FROM chapter_editorial_notes WHERE id = $1`,
+    [id],
+  )
+  if (!existing) return false
+  if (!isAdmin && existing.author_id !== userId) return false
   await dbQuery(`DELETE FROM chapter_editorial_notes WHERE id = $1`, [id])
+  return true
 }

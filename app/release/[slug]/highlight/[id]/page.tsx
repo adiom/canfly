@@ -122,7 +122,7 @@ export default async function HighlightSharePage({ params }: PageProps) {
           <div className="p-8 text-center text-cf-text-3">Издание недоступно</div>
         )}
       </div>
-      <HighlightScroller highlightId={highlight.id} />
+      <HighlightScroller highlightId={highlight.id} paragraphIndex={highlight.paragraph_index} />
     </>
   )
 }

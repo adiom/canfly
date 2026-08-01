@@ -3,10 +3,11 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { ChevronLeft, ChevronRight, X, AlignJustify, Heart, Quote, MessageCircle, Check, Bookmark, BookmarkPlus } from 'lucide-react'
+import { ChevronLeft, ChevronRight, X, AlignJustify, Heart, Quote, MessageCircle, Check, Bookmark, BookmarkPlus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
-import type { Release, Edition, Chapter, ChapterHighlight, ChapterEditorialNote, EditorialNoteStatus } from '@/lib/releases-types'
+import type { Release, Edition, Chapter, ChapterHighlight, ChapterEditorialNote } from '@/lib/releases-types'
 import type { UserRole } from '@/lib/types'
+import { useEditorialNotes } from '@/lib/reader/use-editorial-notes'
 import { BookmarksPanel } from '@/components/bookmarks-panel'
 import { HighlightArtifact } from '@/components/highlight-artifact'
 
@@ -49,10 +50,8 @@ export function ReleaseBookReader({
   const [showToc, setShowToc] = useState(false)
   const [fontSize, setFontSize] = useState(18)
   const [highlights, setHighlights] = useState<ChapterHighlight[]>(initialHighlights)
-  const [editorialNotes, setEditorialNotes] = useState<ChapterEditorialNote[]>([])
   const [selection, setSelection] = useState<SelectionData | null>(null)
   const [activeHighlight, setActiveHighlight] = useState<ChapterHighlight | null>(null)
-  const [activeEditorialNote, setActiveEditorialNote] = useState<ChapterEditorialNote | null>(null)
   const [showBookmarks, setShowBookmarks] = useState(false)
   const [artifactOpen, setArtifactOpen] = useState(false)
   const [artifactRect, setArtifactRect] = useState<DOMRect | null>(null)
@@ -72,11 +71,15 @@ export function ReleaseBookReader({
     [highlights, currentChapter],
   )
 
-  // Editorial notes текущей главы
-  const chapterEditorialNotes = useMemo(
-    () => editorialNotes.filter(n => n.chapter_id === currentChapter?.id),
-    [editorialNotes, currentChapter],
-  )
+  // Editorial notes текущей главы (загрузка/мутации — в общем хуке)
+  const {
+    chapterNotes: chapterEditorialNotes,
+    activeNote: activeEditorialNote,
+    setActiveNote: setActiveEditorialNote,
+    createNote: createEditorialNote,
+    updateStatus: updateEditorialNoteStatus,
+    deleteNote: deleteEditorialNote,
+  } = useEditorialNotes({ chapterId: currentChapter?.id, enabled: isEditor })
 
   // Мои хайлайты (все главы, отсортированные по позиции)
   const myHighlights = useMemo(
@@ -106,25 +109,6 @@ export function ReleaseBookReader({
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- highlights refetch only on chapter change
   }, [currentChapter?.id])
-
-  // Подгружаем editorial notes при смене главы (editor/admin)
-  useEffect(() => {
-    if (!currentChapter || !isEditor) return
-    if (editorialNotes.some(n => n.chapter_id === currentChapter.id)) return
-    let cancelled = false
-    fetch(`/api/chapter-editorial-notes?chapterId=${currentChapter.id}`)
-      .then(res => res.ok ? res.json() : null)
-      .then(data => {
-        if (cancelled || !data?.data) return
-        setEditorialNotes(prev => {
-          const ids = new Set(prev.map(n => n.id))
-          return [...prev, ...data.data.filter((n: ChapterEditorialNote) => !ids.has(n.id))]
-        })
-      })
-      .catch(() => {})
-    return () => { cancelled = true }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- editorialNotes refetch only on chapter change
-  }, [currentChapter?.id, isEditor])
 
   // Применяем подсветки к DOM после рендера
   useEffect(() => {
@@ -262,7 +246,7 @@ export function ReleaseBookReader({
     }
     root.addEventListener('click', onClick)
     return () => root.removeEventListener('click', onClick)
-  }, [chapterHighlights, chapterEditorialNotes])
+  }, [chapterHighlights, chapterEditorialNotes, setActiveEditorialNote])
 
   const handleMouseUp = useCallback(() => {
     if (!currentUserId) return
@@ -365,48 +349,31 @@ export function ReleaseBookReader({
     }
   }, [])
 
+  const updateHighlight = useCallback(
+    async (id: string, patch: { note?: string | null; is_public?: boolean }) => {
+      const res = await fetch(`/api/chapter-highlights/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok || !data?.data) {
+        toast.error(data?.error ?? 'Не удалось обновить цитату')
+        return
+      }
+      const updated = data.data as ChapterHighlight
+      setHighlights(prev => prev.map(h => (h.id === id ? updated : h)))
+      setActiveHighlight(prev => (prev?.id === id ? updated : prev))
+    },
+    [],
+  )
+
   const saveEditorialFromArtifact = async (noteText: string) => {
     if (!selection || !currentChapter) return
-    const res = await fetch('/api/chapter-editorial-notes', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chapter_id: currentChapter.id,
-        text_content: selection.text,
-        paragraph_index: selection.paragraphIndex,
-        context_before: selection.contextBefore,
-        context_after: selection.contextAfter,
-        note: noteText,
-      }),
-    })
-    const data = await res.json()
-    if (res.ok && data.data) {
-      setEditorialNotes([data.data, ...editorialNotes])
-      toast.success('Замечание отправлено')
+    const ok = await createEditorialNote(selection, noteText)
+    if (ok) {
       setSelection(null)
       window.getSelection()?.removeAllRanges()
-    } else {
-      toast.error(data.error ?? 'Ошибка сохранения')
-    }
-  }
-
-  const updateEditorialNoteStatus = async (id: string, status: EditorialNoteStatus) => {
-    const res = await fetch(`/api/chapter-editorial-notes/${id}/status`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status }),
-    })
-    if (res.ok) {
-      const data = await res.json()
-      setEditorialNotes(editorialNotes.map(n =>
-        n.id === id ? data.data : n,
-      ))
-      if (activeEditorialNote?.id === id) {
-        setActiveEditorialNote(data.data)
-      }
-      toast.success(status === 'resolved' ? 'Замечание решено' : 'Замечание проигнорировано')
-    } else {
-      toast.error('Ошибка')
     }
   }
 
@@ -815,21 +782,44 @@ export function ReleaseBookReader({
 
             <p className="mt-4 text-sm leading-relaxed">{activeEditorialNote.note}</p>
 
-            {isEditor && activeEditorialNote.status === 'open' && (
+            {isEditor && (
               <div className="mt-5 flex gap-2">
+                {activeEditorialNote.status === 'open' ? (
+                  <>
+                    <button
+                      onClick={() => updateEditorialNoteStatus(activeEditorialNote.id, 'resolved')}
+                      className="flex-1 h-8 text-xs font-black uppercase tracking-[0.1em] flex items-center justify-center gap-1.5"
+                      style={{ backgroundColor: '#16a34a', color: bg }}
+                    >
+                      <Check className="h-3 w-3" /> Решено
+                    </button>
+                    <button
+                      onClick={() => updateEditorialNoteStatus(activeEditorialNote.id, 'ignored')}
+                      className="flex-1 h-8 text-xs border transition-opacity hover:opacity-60"
+                      style={{ borderColor: `${textColor}20` }}
+                    >
+                      Игнорировать
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => updateEditorialNoteStatus(activeEditorialNote.id, 'open')}
+                    className="flex-1 h-8 text-xs border transition-opacity hover:opacity-60"
+                    style={{ borderColor: `${textColor}20` }}
+                  >
+                    Вернуть в работу
+                  </button>
+                )}
                 <button
-                  onClick={() => updateEditorialNoteStatus(activeEditorialNote.id, 'resolved')}
-                  className="flex-1 h-8 text-xs font-black uppercase tracking-[0.1em] flex items-center justify-center gap-1.5"
-                  style={{ backgroundColor: '#16a34a', color: bg }}
-                >
-                  <Check className="h-3 w-3" /> Решено
-                </button>
-                <button
-                  onClick={() => updateEditorialNoteStatus(activeEditorialNote.id, 'ignored')}
-                  className="flex-1 h-8 text-xs border transition-opacity hover:opacity-60"
+                  onClick={() => {
+                    if (!confirm('Удалить замечание?')) return
+                    deleteEditorialNote(activeEditorialNote.id)
+                  }}
+                  className="h-8 w-8 shrink-0 border flex items-center justify-center transition-opacity hover:opacity-60"
                   style={{ borderColor: `${textColor}20` }}
+                  aria-label="Удалить замечание"
                 >
-                  Игнорировать
+                  <Trash2 className="h-3.5 w-3.5" />
                 </button>
               </div>
             )}
@@ -921,6 +911,7 @@ export function ReleaseBookReader({
           highlights={myHighlights}
           currentChapterId={currentChapter?.id ?? ''}
           onDelete={deleteHighlight}
+          onUpdate={updateHighlight}
           onScrollTo={scrollToHighlight}
           accent={accent}
           bg={bg}

@@ -14,6 +14,7 @@ import { ComicPagesEditor } from '@/components/studio/comic-pages-editor'
 import { VersionHistory } from '@/components/studio/version-history'
 import { EditorialNotesPanel } from '@/components/studio/editorial-notes-panel'
 import { EditorialNotesOverlay } from '@/components/studio/editorial-notes-overlay'
+import { collectParagraphs } from '@/lib/studio/paragraphs'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -71,22 +72,7 @@ export function ChapterEditorPage({ chapter, editionId, editionFormat }: { chapt
     const proseMirror = container.querySelector('.ProseMirror')
     if (!proseMirror) return
 
-    const paragraphs: HTMLElement[] = []
-    const walker = document.createTreeWalker(proseMirror, NodeFilter.SHOW_ELEMENT, {
-      acceptNode: (node) => {
-        if (!(node instanceof HTMLElement)) return NodeFilter.FILTER_REJECT
-        const tag = node.tagName.toLowerCase()
-        if (['p', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'li'].includes(tag)) {
-          return NodeFilter.FILTER_ACCEPT
-        }
-        return NodeFilter.FILTER_SKIP
-      },
-    })
-    let n: Node | null = walker.nextNode()
-    while (n) {
-      paragraphs.push(n as HTMLElement)
-      n = walker.nextNode()
-    }
+    const paragraphs = collectParagraphs(proseMirror)
 
     let target: HTMLElement | null = null
 
@@ -300,6 +286,7 @@ export function ChapterEditorPage({ chapter, editionId, editionFormat }: { chapt
               <EditorialNotesOverlay
                 editorContainer={editorContainer}
                 notes={editorialNotes}
+                onIndicatorClick={handleNoteFocus}
               />
               <TelegraphEditor
                 ref={editorCallbackRef}

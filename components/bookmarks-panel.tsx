@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { X, Trash2, Eye, EyeOff, Heart, ChevronRight, ArrowUpRight } from 'lucide-react'
+import { X, Trash2, Eye, EyeOff, Heart, ChevronRight, ArrowUpRight, Pencil, Check } from 'lucide-react'
 import type { ChapterHighlight } from '@/lib/releases-types'
 
 interface BookmarksPanelProps {
@@ -10,6 +10,7 @@ interface BookmarksPanelProps {
   highlights: ChapterHighlight[]
   currentChapterId: string
   onDelete: (id: string) => void
+  onUpdate: (id: string, patch: { note?: string | null; is_public?: boolean }) => Promise<void>
   onScrollTo: (paragraphIndex: number, chapterId: string) => void
   accent: string
   bg: string
@@ -22,6 +23,7 @@ export function BookmarksPanel({
   highlights,
   currentChapterId,
   onDelete,
+  onUpdate,
   onScrollTo,
   accent,
   bg,
@@ -33,6 +35,7 @@ export function BookmarksPanel({
   const otherHighlights = highlights.filter(h => h.chapter_id !== currentChapterId)
 
   const handleDelete = async (id: string) => {
+    if (!confirm('Удалить цитату?')) return
     setDeletingId(id)
     try {
       await onDelete(id)
@@ -147,6 +150,7 @@ export function BookmarksPanel({
                         textColor={textColor}
                         onScrollTo={() => handleScrollTo(h)}
                         onDelete={() => handleDelete(h.id)}
+                        onUpdate={patch => onUpdate(h.id, patch)}
                       />
                     ))}
                   </div>
@@ -171,6 +175,7 @@ export function BookmarksPanel({
                         textColor={textColor}
                         onScrollTo={() => handleScrollTo(h)}
                         onDelete={() => handleDelete(h.id)}
+                        onUpdate={patch => onUpdate(h.id, patch)}
                       />
                     ))}
                   </div>
@@ -186,7 +191,7 @@ export function BookmarksPanel({
           style={{ borderTop: `1px solid ${textColor}0a` }}
         >
           <p className="font-[family-name:var(--font-cormorant)] text-xs italic opacity-25" style={{ color: textColor }}>
-            Только вы видите свои закладки
+            Приватные закладки видны только вам
           </p>
         </div>
       </aside>
@@ -203,6 +208,7 @@ function BookmarkCard({
   textColor,
   onScrollTo,
   onDelete,
+  onUpdate,
 }: {
   highlight: ChapterHighlight
   isCurrent: boolean
@@ -212,10 +218,39 @@ function BookmarkCard({
   textColor: string
   onScrollTo: () => void
   onDelete: () => void
+  onUpdate: (patch: { note?: string | null; is_public?: boolean }) => Promise<void>
 }) {
   const [hovered, setHovered] = useState(false)
+  const [editingNote, setEditingNote] = useState(false)
+  const [noteDraft, setNoteDraft] = useState(h.note ?? '')
+  const [saving, setSaving] = useState(false)
 
   const borderColor = h.is_public ? accent : `${textColor}30`
+  const busy = isDeleting || saving
+
+  const togglePublic = async () => {
+    setSaving(true)
+    try {
+      await onUpdate({ is_public: !h.is_public })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const saveNote = async () => {
+    const next = noteDraft.trim()
+    if (next === (h.note ?? '')) {
+      setEditingNote(false)
+      return
+    }
+    setSaving(true)
+    try {
+      await onUpdate({ note: next === '' ? null : next })
+      setEditingNote(false)
+    } finally {
+      setSaving(false)
+    }
+  }
 
   return (
     <div
@@ -226,7 +261,7 @@ function BookmarkCard({
         transform: hovered ? 'translateX(-2px)' : 'translateX(0)',
         transition: 'all 0.18s ease',
         boxShadow: hovered ? `2px 4px 20px rgba(0,0,0,0.3)` : 'none',
-        opacity: isDeleting ? 0.4 : 1,
+        opacity: busy ? 0.4 : 1,
       }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -238,11 +273,11 @@ function BookmarkCard({
         style={{ background: `linear-gradient(225deg, ${bg} 50%, ${textColor}10 50%)` }}
       />
 
-      {/* Основной контент */}
+      {/* Цитата — переход к месту в тексте */}
       <button
-        className="w-full px-4 pb-3 pt-3 text-left"
+        className="w-full px-4 pt-3 text-left"
         onClick={onScrollTo}
-        disabled={isDeleting}
+        disabled={busy}
         aria-label={isCurrent ? 'Перейти к цитате' : 'Перейти к главе с цитатой'}
       >
         {/* Заголовок главы для других глав */}
@@ -262,55 +297,107 @@ function BookmarkCard({
         >
           «{h.text_content}»
         </p>
+      </button>
 
-        {h.note && (
-          <p className="mt-2 text-[11px] leading-snug opacity-60 line-clamp-2" style={{ color: textColor }}>
-            {h.note}
-          </p>
+      {/* Заметка — просмотр / правка */}
+      <div className="px-4">
+        {editingNote ? (
+          <div className="mt-2">
+            <textarea
+              value={noteDraft}
+              onChange={e => setNoteDraft(e.target.value)}
+              rows={3}
+              autoFocus
+              placeholder="Ваша заметка…"
+              className="w-full resize-none rounded-sm bg-transparent px-2 py-1.5 text-[11px] leading-snug outline-none"
+              style={{ color: textColor, border: `1px solid ${textColor}20` }}
+            />
+            <div className="mt-1.5 flex items-center gap-2">
+              <button
+                onClick={saveNote}
+                disabled={busy}
+                className="inline-flex items-center gap-1 rounded-sm px-2 py-1 text-[9px] font-black uppercase tracking-[0.14em]"
+                style={{ backgroundColor: `${accent}20`, color: accent }}
+              >
+                <Check className="h-2.5 w-2.5" />
+                Сохранить
+              </button>
+              <button
+                onClick={() => { setNoteDraft(h.note ?? ''); setEditingNote(false) }}
+                className="text-[9px] font-black uppercase tracking-[0.14em] opacity-40"
+                style={{ color: textColor }}
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        ) : (
+          h.note && (
+            <p className="mt-2 text-[11px] leading-snug opacity-60 line-clamp-2" style={{ color: textColor }}>
+              {h.note}
+            </p>
+          )
+        )}
+      </div>
+
+      {/* Метаданные и действия */}
+      <div className="flex items-center gap-3 px-4 pb-3 pt-2.5">
+        {/* Публичность — тумблер */}
+        <button
+          onClick={togglePublic}
+          disabled={busy}
+          className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-[0.18em] transition-opacity hover:opacity-80"
+          style={{ color: h.is_public ? accent : `${textColor}35` }}
+          aria-pressed={h.is_public}
+          title={h.is_public ? 'Сделать приватной' : 'Сделать публичной'}
+        >
+          {h.is_public ? <Eye className="h-2.5 w-2.5" /> : <EyeOff className="h-2.5 w-2.5" />}
+          {h.is_public ? 'публичная' : 'приватная'}
+        </button>
+
+        {/* Лайки */}
+        {h.likes_count > 0 && (
+          <span className="inline-flex items-center gap-1 text-[9px] opacity-50" style={{ color: textColor }}>
+            <Heart className="h-2.5 w-2.5" />
+            {h.likes_count}
+          </span>
         )}
 
-        <div className="mt-2.5 flex items-center gap-3">
-          {/* Публичность */}
-          <span
-            className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-[0.18em]"
-            style={{ color: h.is_public ? accent : `${textColor}35` }}
-          >
-            {h.is_public ? <Eye className="h-2.5 w-2.5" /> : <EyeOff className="h-2.5 w-2.5" />}
-            {h.is_public ? 'публичная' : 'приватная'}
-          </span>
-
-          {/* Лайки */}
-          {h.likes_count > 0 && (
-            <span className="inline-flex items-center gap-1 text-[9px] opacity-50" style={{ color: textColor }}>
-              <Heart className="h-2.5 w-2.5" />
-              {h.likes_count}
-            </span>
+        <div className="ml-auto flex items-center gap-1">
+          {/* Правка заметки */}
+          {!editingNote && (
+            <button
+              onClick={() => setEditingNote(true)}
+              disabled={busy}
+              className="flex h-6 w-6 items-center justify-center rounded-full transition-opacity"
+              style={{ backgroundColor: `${textColor}10`, color: textColor, opacity: hovered ? 0.5 : 0 }}
+              aria-label={h.note ? 'Изменить заметку' : 'Добавить заметку'}
+            >
+              <Pencil className="h-3 w-3" />
+            </button>
           )}
+
+          {/* Удаление */}
+          <button
+            onClick={onDelete}
+            disabled={busy}
+            className="flex h-6 w-6 items-center justify-center rounded-full transition-opacity"
+            style={{ backgroundColor: `${textColor}10`, color: textColor, opacity: hovered ? 0.5 : 0 }}
+            aria-label="Удалить закладку"
+          >
+            <Trash2 className="h-3 w-3" />
+          </button>
 
           {/* Стрелка «перейти» */}
           <span
-            className="ml-auto transition-opacity"
+            className="transition-opacity"
             style={{ color: isCurrent ? accent : `${textColor}60`, opacity: hovered ? 0.8 : 0 }}
+            aria-hidden
           >
             <ChevronRight className="h-3.5 w-3.5" />
           </span>
         </div>
-      </button>
-
-      {/* Кнопка удаления — появляется при hover */}
-      <button
-        onClick={e => { e.stopPropagation(); onDelete() }}
-        disabled={isDeleting}
-        className="absolute bottom-2.5 right-2.5 flex h-6 w-6 items-center justify-center rounded-full transition-all"
-        style={{
-          backgroundColor: `${textColor}10`,
-          color: textColor,
-          opacity: hovered ? 0.5 : 0,
-        }}
-        aria-label="Удалить закладку"
-      >
-        <Trash2 className="h-3 w-3" />
-      </button>
+      </div>
     </div>
   )
 }

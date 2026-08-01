@@ -3,20 +3,22 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { X, AlignJustify, Bookmark, BookmarkPlus, Heart, ChevronLeft, ChevronRight, Sun, Moon, Palette } from 'lucide-react'
+import { X, AlignJustify, Bookmark, BookmarkPlus, Heart, ChevronLeft, ChevronRight, Sun, Moon, Palette, MessageCircle, Check, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useColumnPagination } from '@/lib/reader/use-column-pagination'
+import { useEditorialNotes } from '@/lib/reader/use-editorial-notes'
 import {
   collectParagraphs,
   clearHighlightMarks,
   wrapHighlight,
+  wrapEditorialNote,
   pageOfElement,
   findTextRange,
   PARAGRAPH_TAGS,
 } from '@/lib/reader/highlights-dom'
 import { BookmarksPanel } from '@/components/bookmarks-panel'
 import { HighlightArtifact } from '@/components/highlight-artifact'
-import type { Release, Edition, Chapter, ChapterHighlight } from '@/lib/releases-types'
+import type { Release, Edition, Chapter, ChapterHighlight, ChapterEditorialNote } from '@/lib/releases-types'
 import type { UserRole } from '@/lib/types'
 
 // ─── Темы ────────────────────────────────────────────────────────────────────
@@ -62,6 +64,7 @@ export function SpreadReader({
   initialChapterIndex = 0,
 }: SpreadReaderProps) {
   const accent = release.design_config?.accent_color ?? '#d52525'
+  const isEditor = userRole === 'editor' || userRole === 'admin'
 
   // Тема и шрифт (сохраняем в localStorage)
   const [theme, setTheme] = useState<Theme>('dark')
@@ -160,6 +163,16 @@ export function SpreadReader({
     [highlights, currentUserId],
   )
 
+  // Редакторские правки текущей главы (editor/admin)
+  const {
+    chapterNotes: chapterEditorialNotes,
+    activeNote: activeEditorialNote,
+    setActiveNote: setActiveEditorialNote,
+    createNote: createEditorialNote,
+    updateStatus: updateEditorialNoteStatus,
+    deleteNote: deleteEditorialNote,
+  } = useEditorialNotes({ chapterId: currentChapter?.id, enabled: isEditor })
+
   // Прогресс
   const intraChapter = pageCount > 1 ? currentPage / (pageCount - 1) : 1
   const progress = Math.round(((currentIndex + intraChapter) / chapters.length) * 100)
@@ -201,8 +214,24 @@ export function SpreadReader({
       if (!list) return
       for (const hl of list) wrapHighlight(p, hl, currentUserId, accent)
     })
+
+    // Редакторские правки поверх — только для команды
+    if (isEditor && chapterEditorialNotes.length > 0) {
+      const enByParagraph = new Map<number, ChapterEditorialNote[]>()
+      for (const en of chapterEditorialNotes) {
+        if (en.paragraph_index == null) continue
+        const arr = enByParagraph.get(en.paragraph_index) ?? []
+        arr.push(en)
+        enByParagraph.set(en.paragraph_index, arr)
+      }
+      paragraphs.forEach((p, idx) => {
+        const list = enByParagraph.get(idx)
+        if (!list) return
+        for (const en of list) wrapEditorialNote(p, en)
+      })
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- DOM highlight sync, avoids re-render loop
-  }, [currentChapter?.id, chapterHighlights, currentIndex, accent, currentUserId])
+  }, [currentChapter?.id, chapterHighlights, chapterEditorialNotes, currentIndex, accent, currentUserId, isEditor])
 
   // ── Клик по <mark> ──
   useEffect(() => {
@@ -214,11 +243,14 @@ export function SpreadReader({
       if (target.dataset.cfHl) {
         const hl = chapterHighlights.find(h => h.id === target.dataset.cfHl)
         if (hl) setActiveHighlight(hl)
+      } else if (target.dataset.cfEn) {
+        const en = chapterEditorialNotes.find(n => n.id === target.dataset.cfEn)
+        if (en) setActiveEditorialNote(en)
       }
     }
     root.addEventListener('click', onClick)
     return () => root.removeEventListener('click', onClick)
-  }, [chapterHighlights])
+  }, [chapterHighlights, chapterEditorialNotes, setActiveEditorialNote])
 
   // ── Сохранение прогресса ──
   useEffect(() => {
@@ -395,6 +427,25 @@ export function SpreadReader({
     const res = await fetch(`/api/chapter-highlights/${id}`, { method: 'DELETE' })
     if (res.ok) setHighlights(prev => prev.filter(h => h.id !== id))
   }, [])
+
+  const updateHighlight = useCallback(
+    async (id: string, patch: { note?: string | null; is_public?: boolean }) => {
+      const res = await fetch(`/api/chapter-highlights/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok || !data?.data) {
+        toast.error(data?.error ?? 'Не удалось обновить цитату')
+        return
+      }
+      const updated = data.data as ChapterHighlight
+      setHighlights(prev => prev.map(h => (h.id === id ? updated : h)))
+      setActiveHighlight(prev => (prev?.id === id ? updated : prev))
+    },
+    [],
+  )
 
   const toggleLike = async (id: string) => {
     if (!currentUserId) { toast.error('Войдите чтобы ставить лайки'); return }
@@ -806,9 +857,118 @@ export function SpreadReader({
           accent={accent}
           bg={t.bg2}
           textColor={t.text}
-          isEditor={userRole === 'editor' || userRole === 'admin'}
-          onSaveEditorial={async () => {}}
+          isEditor={isEditor}
+          onSaveEditorial={async noteText => {
+            if (!selection) return
+            const ok = await createEditorialNote(selection, noteText)
+            if (ok) {
+              setArtifactOpen(false)
+              setSelection(null)
+              window.getSelection()?.removeAllRanges()
+            }
+          }}
         />
+      )}
+
+      {/* ── Попап редакторской правки ── */}
+      {activeEditorialNote && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          onClick={() => setActiveEditorialNote(null)}
+        >
+          <div className="absolute inset-0 bg-black/40" />
+          <div
+            className="relative w-full max-w-md border p-6 shadow-2xl"
+            style={{ backgroundColor: t.bg2, borderColor: '#e9731640', color: t.text }}
+            onClick={e => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setActiveEditorialNote(null)}
+              className="absolute right-3 top-3 p-1 opacity-40 hover:opacity-100"
+              aria-label="Закрыть"
+            >
+              <X className="h-4 w-4" />
+            </button>
+
+            <div className="mb-3 flex items-center gap-2">
+              <MessageCircle className="h-4 w-4" style={{ color: '#e97316' }} />
+              <span className="text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: '#e97316' }}>
+                {activeEditorialNote.status === 'open' ? 'Открытое замечание'
+                  : activeEditorialNote.status === 'resolved' ? 'Решённое замечание'
+                  : 'Проигнорированное замечание'}
+              </span>
+            </div>
+
+            <div className="mb-4 flex items-center gap-3">
+              {activeEditorialNote.author_avatar ? (
+                <div className="relative h-10 w-10">
+                  <Image src={activeEditorialNote.author_avatar} alt={activeEditorialNote.author_name ?? ''} fill sizes="40px" className="rounded-full object-cover" />
+                </div>
+              ) : (
+                <div className="flex h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: '#e9731633', color: '#e97316' }}>
+                  <span className="text-sm font-black">{(activeEditorialNote.author_name ?? '?')[0]}</span>
+                </div>
+              )}
+              <div>
+                <p className="text-sm font-bold">{activeEditorialNote.author_name ?? 'Редактор'}</p>
+                <p className="text-[10px] opacity-50">
+                  {new Date(activeEditorialNote.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}
+                </p>
+              </div>
+            </div>
+
+            <blockquote
+              className="border-l-2 pl-3 text-sm italic leading-relaxed opacity-80"
+              style={{ borderColor: '#e97316' }}
+            >
+              «{activeEditorialNote.text_content}»
+            </blockquote>
+
+            <p className="mt-4 text-sm leading-relaxed">{activeEditorialNote.note}</p>
+
+            {isEditor && (
+              <div className="mt-5 flex gap-2">
+                {activeEditorialNote.status === 'open' ? (
+                  <>
+                    <button
+                      onClick={() => updateEditorialNoteStatus(activeEditorialNote.id, 'resolved')}
+                      className="flex h-8 flex-1 items-center justify-center gap-1.5 text-xs font-black uppercase tracking-[0.1em]"
+                      style={{ backgroundColor: '#16a34a', color: t.bg }}
+                    >
+                      <Check className="h-3 w-3" /> Решено
+                    </button>
+                    <button
+                      onClick={() => updateEditorialNoteStatus(activeEditorialNote.id, 'ignored')}
+                      className="h-8 flex-1 border text-xs transition-opacity hover:opacity-60"
+                      style={{ borderColor: `${t.text}20` }}
+                    >
+                      Игнорировать
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => updateEditorialNoteStatus(activeEditorialNote.id, 'open')}
+                    className="h-8 flex-1 border text-xs transition-opacity hover:opacity-60"
+                    style={{ borderColor: `${t.text}20` }}
+                  >
+                    Вернуть в работу
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    if (!confirm('Удалить замечание?')) return
+                    deleteEditorialNote(activeEditorialNote.id)
+                  }}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center border transition-opacity hover:opacity-60"
+                  style={{ borderColor: `${t.text}20` }}
+                  aria-label="Удалить замечание"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {/* ── Попап хайлайта ── */}
@@ -931,6 +1091,7 @@ export function SpreadReader({
           highlights={myHighlights}
           currentChapterId={currentChapter?.id ?? ''}
           onDelete={deleteHighlight}
+          onUpdate={updateHighlight}
           onScrollTo={scrollToHighlight}
           accent={accent}
           bg={t.bg2}

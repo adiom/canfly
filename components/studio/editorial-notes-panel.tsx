@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
-import { Plus, Check, X, MessageCircle, RefreshCw } from 'lucide-react'
+import { Plus, Check, X, MessageCircle, RefreshCw, Trash2, RotateCcw } from 'lucide-react'
 import type { ChapterEditorialNote, EditorialNoteStatus } from '@/lib/releases-types'
+import { closestParagraph, collectParagraphs } from '@/lib/studio/paragraphs'
 
 interface EditorialNotesPanelProps {
   chapterId: string
@@ -76,18 +77,15 @@ export function EditorialNotesPanel({ chapterId, onNoteFocus, editorialNotes: ex
     const text = sel.toString().trim()
     if (text.length < 2) { setSelection(null); return }
 
-    let paragraphEl: HTMLElement | null = null
-    let node: Node | null = sel.anchorNode
-    while (node && node !== document.body) {
-      if (node instanceof HTMLElement) {
-        const tag = node.tagName.toLowerCase()
-        if (['p', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'li'].includes(tag)) {
-          paragraphEl = node
-          break
-        }
-      }
-      node = node.parentNode
+    // Считаем только внутри редактора: иначе индекс расходится с оверлеем,
+    // который обходит .ProseMirror.
+    const root = document.querySelector('.ProseMirror')
+    if (!root || !sel.anchorNode || !root.contains(sel.anchorNode)) {
+      setSelection(null)
+      return
     }
+
+    const paragraphEl = closestParagraph(sel.anchorNode, root)
     if (!paragraphEl) return
 
     const fullText = paragraphEl.textContent ?? ''
@@ -95,9 +93,7 @@ export function EditorialNotesPanel({ chapterId, onNoteFocus, editorialNotes: ex
     const contextBefore = offset >= 0 ? fullText.slice(Math.max(0, offset - 30), offset) : ''
     const contextAfter = offset >= 0 ? fullText.slice(offset + text.length, offset + text.length + 30) : ''
 
-    // paragraph index среди всех p/blockquote/... в document
-    const all = document.querySelectorAll('p, blockquote, h1, h2, h3, h4, li')
-    const idx = Array.from(all).indexOf(paragraphEl)
+    const idx = collectParagraphs(root).indexOf(paragraphEl)
 
     setSelection({ text, paragraphIndex: idx, contextBefore, contextAfter })
   }, [])
@@ -154,10 +150,28 @@ export function EditorialNotesPanel({ chapterId, onNoteFocus, editorialNotes: ex
       const updated = notes.map(n => n.id === id ? data.data : n)
       setNotes(updated)
       onNotesUpdate?.(updated)
-      toast.success(status === 'resolved' ? 'Решено' : 'Проигнорировано')
+      toast.success(
+        status === 'resolved' ? 'Решено'
+          : status === 'ignored' ? 'Проигнорировано'
+          : 'Снова открыто',
+      )
     } else {
       toast.error('Ошибка')
     }
+  }
+
+  const removeNote = async (id: string) => {
+    if (!confirm('Удалить правку?')) return
+    const res = await fetch(`/api/chapter-editorial-notes/${id}`, { method: 'DELETE' })
+    if (!res.ok) {
+      const data = await res.json().catch(() => null)
+      toast.error(data?.error ?? 'Не удалось удалить правку')
+      return
+    }
+    const updated = notes.filter(n => n.id !== id)
+    setNotes(updated)
+    onNotesUpdate?.(updated)
+    toast.success('Правка удалена')
   }
 
   const filtered = filter === 'all' ? notes : notes.filter(n => n.status === filter)
@@ -263,7 +277,7 @@ export function EditorialNotesPanel({ chapterId, onNoteFocus, editorialNotes: ex
                 </span>
               </div>
               {n.status === 'open' && (
-                <div className="flex gap-1.5 pt-1">
+                <div className="flex gap-1.5 pt-1" onClick={e => e.stopPropagation()}>
                   <button
                     onClick={() => updateStatus(n.id, 'resolved')}
                     className="flex-1 h-7 text-xs bg-green-600 text-white hover:bg-green-700 flex items-center justify-center gap-1"
@@ -275,6 +289,30 @@ export function EditorialNotesPanel({ chapterId, onNoteFocus, editorialNotes: ex
                     className="flex-1 h-7 text-xs border hover:bg-muted flex items-center justify-center gap-1"
                   >
                     <X className="h-3 w-3" /> Игнорировать
+                  </button>
+                  <button
+                    onClick={() => removeNote(n.id)}
+                    className="h-7 w-7 text-xs border hover:bg-muted flex items-center justify-center"
+                    aria-label="Удалить правку"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </div>
+              )}
+              {n.status !== 'open' && (
+                <div className="flex gap-1.5 pt-1" onClick={e => e.stopPropagation()}>
+                  <button
+                    onClick={() => updateStatus(n.id, 'open')}
+                    className="flex-1 h-7 text-xs border hover:bg-muted flex items-center justify-center gap-1"
+                  >
+                    <RotateCcw className="h-3 w-3" /> Вернуть в работу
+                  </button>
+                  <button
+                    onClick={() => removeNote(n.id)}
+                    className="h-7 w-7 text-xs border hover:bg-muted flex items-center justify-center"
+                    aria-label="Удалить правку"
+                  >
+                    <Trash2 className="h-3 w-3" />
                   </button>
                 </div>
               )}
