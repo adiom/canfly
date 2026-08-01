@@ -4,7 +4,7 @@
   "private": true,
   "packageManager": "pnpm@11.5.0",
   "scripts": {
-    "dev": "NODE_OPTIONS='--no-deprecation' next dev",
+    "dev": "NODE_OPTIONS='--no-deprecation --max-old-space-size=3072' next dev",
     "build": "next build",
     "start": "next start",
     "db:structure": "node scripts/read-db-structure.mjs",

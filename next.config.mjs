@@ -2,6 +2,8 @@
 const nextConfig = {
   experimental: {
     serverComponentsHmrCache: true,
+    webpackMemoryOptimizations: true,
+    preloadEntriesOnStart: false,
   },
   images: {
     remotePatterns: [
