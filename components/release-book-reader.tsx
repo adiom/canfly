@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { ChevronLeft, ChevronRight, X, AlignJustify, Heart, Quote, MessageCircle, Check, Bookmark, BookmarkPlus, Trash2 } from 'lucide-react'
+import { getEditionFullUrl, getEditionLabel, getEditionTocUrl } from '@/lib/utils/editions'
+import { ChevronLeft, ChevronRight, X, AlignJustify, Heart, Quote, MessageCircle, Check, Bookmark, BookmarkPlus, Trash2, List } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Release, Edition, Chapter, ChapterHighlight, ChapterEditorialNote } from '@/lib/releases-types'
 import type { UserRole } from '@/lib/types'
@@ -883,10 +884,16 @@ export function ReleaseBookReader({
                 </button>
               ))}
               <Link
-                href={edition.format === 'book'
-                  ? `/release/${release.slug}/book/${edition.quality_tier}/full`
-                  : `/release/${release.slug}/${edition.slug}/full`
-                }
+                href={getEditionTocUrl(release.slug, edition)}
+                onClick={() => setShowToc(false)}
+                className="flex w-full items-center gap-3 border-b px-4 py-3 text-left text-sm font-bold uppercase tracking-[0.1em] transition-opacity hover:opacity-80"
+                style={{ color: accent, borderColor: `${textColor}08` }}
+              >
+                <List className="h-4 w-4" />
+                Страница издания
+              </Link>
+              <Link
+                href={getEditionFullUrl(release.slug, edition)}
                 onClick={() => setShowToc(false)}
                 className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-bold uppercase tracking-[0.1em] transition-opacity hover:opacity-80"
                 style={{ color: accent }}
@@ -929,27 +936,20 @@ export function ReleaseBookReader({
               Также доступно:
             </span>
             <div className="flex gap-2">
-              {otherBookEditions.map(other => {
-                const tierLabel: Record<string, string> = {
-                  draft: 'Черновик',
-                  standard: 'Книга',
-                  premium: 'Иллюстрированная',
-                }
-                return (
-                  <Link
-                    key={other.id}
-                    href={`/release/${release.slug}/book/${other.quality_tier}/1`}
-                    className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition-colors hover:border-current"
-                    style={{
-                      borderColor: `${textColor}20`,
-                      color: other.quality_tier === edition.quality_tier ? accent : textColor,
-                      backgroundColor: other.quality_tier === edition.quality_tier ? `${accent}15` : 'transparent',
-                    }}
-                  >
-                    {tierLabel[other.quality_tier] ?? other.quality_tier}
-                  </Link>
-                )
-              })}
+              {otherBookEditions.map(other => (
+                <Link
+                  key={other.id}
+                  href={getEditionTocUrl(release.slug, other)}
+                  className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition-colors hover:border-current"
+                  style={{
+                    borderColor: `${textColor}20`,
+                    color: other.quality_tier === edition.quality_tier ? accent : textColor,
+                    backgroundColor: other.quality_tier === edition.quality_tier ? `${accent}15` : 'transparent',
+                  }}
+                >
+                  {getEditionLabel(other)}
+                </Link>
+              ))}
             </div>
           </div>
         </div>

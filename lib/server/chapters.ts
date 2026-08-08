@@ -45,6 +45,20 @@ export async function fetchPublishedChaptersByEdition(editionId: string) {
   return rows.map(withSafeContent)
 }
 
+/**
+ * Список опубликованных глав без `content` — для оглавления издания.
+ * Отдельно от fetchPublishedChaptersByEdition: та тянет текст всех глав
+ * и прогоняет каждую через санитайзер, что для списка лишняя работа.
+ */
+export async function fetchPublishedChapterListByEdition(editionId: string) {
+  return dbQuery<Omit<Chapter, 'content'>>(
+    `SELECT ${chapterListColumns} FROM chapters
+     WHERE edition_id = $1 AND status = 'published'
+     ORDER BY chapter_index ASC`,
+    [editionId],
+  )
+}
+
 export async function fetchChapterById(id: string) {
   const row = await dbQueryOne<Chapter>(
     `SELECT ${chapterColumns} FROM chapters WHERE id = $1 LIMIT 1`,

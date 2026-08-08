@@ -41,6 +41,22 @@ export async function fetchEditionByReleaseFormatTier(
   )
 }
 
+/**
+ * Опубликованные издания опубликованных релизов вместе со слагом релиза —
+ * для sitemap: без слага релиза URL оглавления не собрать.
+ */
+export async function fetchPublishedEditionsForSitemap() {
+  return dbQuery<Edition & { release_slug: string; release_updated_at: string }>(
+    `SELECT e.id, e.release_id, e.format, e.platform, e.external_url,
+            e.slug, e.status, e.is_primary, e.quality_tier, e.created_at, e.updated_at,
+            r.slug AS release_slug, r.updated_at AS release_updated_at
+     FROM editions e
+     JOIN releases r ON r.id = e.release_id
+     WHERE e.status = 'published' AND r.status = 'published'
+     ORDER BY r.slug ASC, e.created_at ASC`,
+  )
+}
+
 export async function createEdition(data: Record<string, unknown>) {
   const baseSlug = (data.slug as string)?.trim() || 'edition'
   const uniqueSlug = await makeUniqueEditionSlugGlobal(baseSlug)

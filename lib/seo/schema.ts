@@ -30,8 +30,13 @@ export function generateBookEditionSchema(
   release: Release,
   edition: Edition,
   baseUrl: string,
+  /**
+   * Канонический URL издания. Оглавление (/book/[tier]) передаёт себя, чтобы
+   * сущность Book указывала на титул издания, а не на первую главу.
+   */
+  editionUrl?: string,
 ) {
-  const url = baseUrl + '/release/' + release.slug + '/book/' + edition.quality_tier + '/1'
+  const url = editionUrl ?? baseUrl + '/release/' + release.slug + '/book/' + edition.quality_tier + '/1'
   const nameSuffix = tierNameSuffixes[edition.quality_tier] ?? ''
   const workUrl = baseUrl + '/release/' + release.slug
 
@@ -182,6 +187,30 @@ export function generateBreadcrumbSchema(
       position: index + 1,
       name: item.label,
       item: item.url,
+    })),
+  }
+}
+
+/**
+ * Оглавление издания: список глав со ссылками. Даёт краулеру структуру
+ * произведения — до этого главы глубже первой были доступны только из ридера.
+ */
+export function generateChapterListSchema(
+  chapters: Array<{ title: string; url: string }>,
+  editionUrl: string,
+) {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'ItemList',
+    '@id': editionUrl + '#toc',
+    name: 'Оглавление',
+    numberOfItems: chapters.length,
+    itemListOrder: 'https://schema.org/ItemListOrderAscending',
+    itemListElement: chapters.map((chapter, index) => ({
+      '@type': 'ListItem',
+      position: index + 1,
+      name: chapter.title,
+      url: chapter.url,
     })),
   }
 }

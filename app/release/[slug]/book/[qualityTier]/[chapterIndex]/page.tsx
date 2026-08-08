@@ -88,7 +88,10 @@ export default async function ChapterPublicPage({
     e => e.format === 'book' && e.status === 'published' && e.id !== edition.id
   )
 
-  const editionSchema = generateBookEditionSchema(release, edition, BASE_URL)
+  // @id издания — оглавление, а не текущая глава: иначе одна сущность Book
+  // получала бы разные @id со страницы оглавления и со страницы главы.
+  const editionUrl = `${BASE_URL}/release/${release.slug}/book/${qualityTier}`
+  const editionSchema = generateBookEditionSchema(release, edition, BASE_URL, editionUrl)
   const tierBreadcrumbLabel: Record<string, string> = {
     draft: 'Черновик',
     standard: 'Книга',
@@ -98,7 +101,7 @@ export default async function ChapterPublicPage({
     { label: 'canfly', url: `${BASE_URL}/` },
     { label: 'Релизы', url: `${BASE_URL}/releases/` },
     { label: release.title, url: `${BASE_URL}/release/${release.slug}` },
-    { label: tierBreadcrumbLabel[qualityTier] ?? 'Книга', url: `${BASE_URL}/release/${release.slug}/book/${qualityTier}/1` },
+    { label: tierBreadcrumbLabel[qualityTier] ?? 'Книга', url: editionUrl },
     { label: `Глава ${chapterNumber}`, url: `${BASE_URL}/release/${release.slug}/book/${qualityTier}/${chapterNumber}` },
   ])
 

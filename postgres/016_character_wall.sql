@@ -1,19 +1,16 @@
--- 007: Character social enhancements
--- 1. character_posts: scheduled publication + author audit
--- 2. character_wall_posts: public messages from readers to a character
+-- 016: Character wall — reader→character public messages
+-- Перенесено из scripts/007_character_social.sql (было вне postgres/ миграций).
+-- Идемпотентная миграция.
 
-BEGIN;
-
--- ── character_posts: add scheduled_at + author_user_id ─────────────────────────
+-- Отложенная публикация постов персонажа
 ALTER TABLE public.character_posts
   ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ NULL,
   ADD COLUMN IF NOT EXISTS author_user_id UUID NULL REFERENCES public.users(id) ON DELETE SET NULL;
 
--- Index for "visible posts" queries (where scheduled_at is null or in the past)
 CREATE INDEX IF NOT EXISTS idx_character_posts_visible
   ON public.character_posts (character_id, COALESCE(scheduled_at, created_at) DESC);
 
--- ── character_wall_posts: reader → character public messages ──────────────────
+-- Стена: публичные сообщения читателей на стену персонажа
 CREATE TABLE IF NOT EXISTS public.character_wall_posts (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   character_id UUID NOT NULL REFERENCES public.characters(id) ON DELETE CASCADE,
@@ -35,5 +32,3 @@ CREATE TRIGGER update_character_wall_posts_updated_at
   BEFORE UPDATE ON public.character_wall_posts
   FOR EACH ROW
   EXECUTE FUNCTION public.update_updated_at_column();
-
-COMMIT;

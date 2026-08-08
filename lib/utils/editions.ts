@@ -1,4 +1,4 @@
-import type { Edition, EditionFormat } from '@/lib/releases-types'
+import type { Edition, EditionFormat, QualityTier } from '@/lib/releases-types'
 
 const FORMAT_PRIORITY: EditionFormat[] = [
   'book',
@@ -40,6 +40,84 @@ export function getChapterUrl(
     return `/release/${releaseSlug}/book/${edition.quality_tier}/${chapterNumber}`
   }
   return `/release/${releaseSlug}/${edition.slug}/${chapterNumber}`
+}
+
+/**
+ * Ссылка на оглавление издания — публичный «титул» с составом глав.
+ * У book это /book/[qualityTier], у остальных форматов /[editionSlug].
+ */
+export function getEditionTocUrl(
+  releaseSlug: string,
+  edition: { format: EditionFormat; slug: string; quality_tier: string },
+): string {
+  if (edition.format === 'book') {
+    return `/release/${releaseSlug}/book/${edition.quality_tier}`
+  }
+  return `/release/${releaseSlug}/${edition.slug}`
+}
+
+/** Ссылка на чтение издания целиком, одним файлом. */
+export function getEditionFullUrl(
+  releaseSlug: string,
+  edition: { format: EditionFormat; slug: string; quality_tier: string },
+): string {
+  return `${getEditionTocUrl(releaseSlug, edition)}/full`
+}
+
+export const EDITION_FORMAT_LABELS: Record<EditionFormat, string> = {
+  book: 'Книга',
+  comic: 'Комикс',
+  magazine: 'Журнал',
+  audiobook: 'Аудиокнига',
+  audiorelease: 'Аудиорелиз',
+  album: 'Альбом',
+}
+
+export const QUALITY_TIER_LABELS: Record<QualityTier, string> = {
+  draft: 'Черновик',
+  standard: 'Полная версия',
+  premium: 'Иллюстрированная',
+}
+
+/** Подпись издания в кнопках и переключателях: у book — тираж, у остальных — формат. */
+export function getEditionLabel(edition: {
+  format: EditionFormat
+  quality_tier: QualityTier
+}): string {
+  if (edition.format === 'book' && edition.quality_tier) {
+    return QUALITY_TIER_LABELS[edition.quality_tier] ?? EDITION_FORMAT_LABELS.book
+  }
+  return EDITION_FORMAT_LABELS[edition.format] ?? edition.format
+}
+
+const AUDIO_FORMATS: EditionFormat[] = ['audiobook', 'audiorelease', 'album']
+
+export function isAudioFormat(format: EditionFormat): boolean {
+  return AUDIO_FORMATS.includes(format)
+}
+
+export interface EditionMeta {
+  chapterCount: number
+  wordCount: number
+  readingMinutes: number
+  durationSeconds: number
+}
+
+/**
+ * Агрегаты по главам издания. Считалось инлайном в app/release/[slug]/page.tsx —
+ * вынесено, чтобы страница релиза и оглавление издания не расходились в цифрах.
+ */
+export function computeEditionMeta(
+  chapters: Array<{ word_count?: number | null; duration_seconds?: number | null }>,
+): EditionMeta {
+  const wordCount = chapters.reduce((sum, c) => sum + (c.word_count ?? 0), 0)
+  const durationSeconds = chapters.reduce((sum, c) => sum + (c.duration_seconds ?? 0), 0)
+  return {
+    chapterCount: chapters.length,
+    wordCount,
+    readingMinutes: wordCount > 0 ? Math.max(1, Math.round(wordCount / 200)) : 0,
+    durationSeconds,
+  }
 }
 
 export function formatDuration(seconds: number): string {

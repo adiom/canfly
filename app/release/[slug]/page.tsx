@@ -2,12 +2,12 @@ import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { fetchReleaseBySlug, fetchReleaseCharacters, fetchReleaseSeries } from '@/lib/server/releases'
 import { fetchEditionsByRelease } from '@/lib/server/editions'
-import { fetchPublishedChaptersByEdition } from '@/lib/server/chapters'
+import { fetchPublishedChapterListByEdition } from '@/lib/server/chapters'
 import { fetchSeriesById } from '@/lib/server/series'
 import { fetchCharactersList } from '@/lib/server/characters'
 import { fetchPublicHighlightsByRelease } from '@/lib/server/chapter-highlights'
 import { ReleasePagePublic } from '@/components/release-page'
-import { getPrimaryEdition } from '@/lib/utils/editions'
+import { computeEditionMeta, getPrimaryEdition } from '@/lib/utils/editions'
 import { generateReleaseSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
@@ -46,15 +46,7 @@ export default async function ReleasePublicPage({ params }: { params: Promise<{ 
   // Мета по главному изданию (число глав, объём, время чтения)
   let meta = { chapterCount: 0, wordCount: 0, readingMinutes: 0, durationSeconds: 0 }
   if (primaryEdition) {
-    const chapters = await fetchPublishedChaptersByEdition(primaryEdition.id)
-    const wordCount = chapters.reduce((sum, c) => sum + (c.word_count ?? 0), 0)
-    const durationSeconds = chapters.reduce((sum, c) => sum + (c.duration_seconds ?? 0), 0)
-    meta = {
-      chapterCount: chapters.length,
-      wordCount,
-      readingMinutes: wordCount > 0 ? Math.max(1, Math.round(wordCount / 200)) : 0,
-      durationSeconds,
-    }
+    meta = computeEditionMeta(await fetchPublishedChapterListByEdition(primaryEdition.id))
   }
 
   const [releaseChars, allCharacters, seriesLinks, highlights] = await Promise.all([

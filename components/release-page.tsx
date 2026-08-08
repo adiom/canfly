@@ -8,53 +8,18 @@ import {
   BookOpen, ArrowRight, Heart, Pen,
 } from 'lucide-react'
 import type {
-  Release, Edition, EditionFormat, QualityTier, ReleaseDesignConfig, Series, ChapterHighlight,
+  Release, Edition, ReleaseDesignConfig, Series, ChapterHighlight,
 } from '@/lib/releases-types'
 import { SiteHeader } from '@/components/site-header'
 import { SiteFooter } from '@/components/site-footer'
+import {
+  formatTotalDuration, getEditionLabel, getEditionTocUrl, isAudioFormat,
+} from '@/lib/utils/editions'
+import { formatChapterCount, formatReadingTime, formatWordCount, pluralRu } from '@/lib/utils/format'
 
 const defaultConfig: ReleaseDesignConfig = {
   accent_color: '#d52525',
   show_series: true,
-}
-
-const formatLabels: Record<EditionFormat, string> = {
-  book: 'Книга', comic: 'Комикс', audiobook: 'Аудиокнига',
-  audiorelease: 'Аудиорелиз', album: 'Альбом', magazine: 'Журнал',
-}
-
-const tierLabels: Record<QualityTier, string> = {
-  draft: 'Черновик',
-  standard: 'Полная версия',
-  premium: 'Иллюстрированная',
-}
-
-function formatReadingTime(minutes: number): string {
-  if (minutes <= 0) return ''
-  if (minutes < 60) return `${minutes} мин`
-  const h = Math.floor(minutes / 60)
-  const m = minutes % 60
-  return m > 0 ? `${h} ч ${m} мин` : `${h} ч`
-}
-
-function pluralRu(n: number, one: string, few: string, many: string): string {
-  const mod10 = n % 10
-  const mod100 = n % 100
-  if (mod10 === 1 && mod100 !== 11) return one
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return few
-  return many
-}
-
-function formatWordCount(words: number): string {
-  if (words >= 1000) return `${(words / 1000).toFixed(words >= 10000 ? 0 : 1)} тыс. слов`
-  return `${words} слов`
-}
-
-function getEditionReadUrl(release: { slug: string }, edition: Edition): string {
-  if (edition.format === 'book') {
-    return `/release/${release.slug}/book/${edition.quality_tier}/1`
-  }
-  return `/release/${release.slug}/${edition.slug}/1`
 }
 
 interface ReleasePagePublicProps {
@@ -84,21 +49,15 @@ export function ReleasePagePublic({
   const published = editions.filter(e => e.status === 'published')
 
   const primaryEdition = published.find(e => e.slug === primaryEditionSlug) ?? null
-  const primaryIsAudio = primaryEdition ? ['audiobook', 'audiorelease', 'album'].includes(primaryEdition.format) : false
+  const primaryIsAudio = primaryEdition ? isAudioFormat(primaryEdition.format) : false
 
   const metaItems: string[] = []
-  if (meta.chapterCount > 0) {
-    const unit = primaryIsAudio
-      ? pluralRu(meta.chapterCount, 'трек', 'трека', 'треков')
-      : pluralRu(meta.chapterCount, 'глава', 'главы', 'глав')
-    metaItems.push(`${meta.chapterCount} ${unit}`)
-  }
-  if (meta.wordCount > 0 && !primaryIsAudio) metaItems.push(formatWordCount(meta.wordCount))
-  if (meta.readingMinutes > 0 && !primaryIsAudio) metaItems.push(formatReadingTime(meta.readingMinutes))
-  if (primaryIsAudio && meta.durationSeconds > 0) {
-    const h = Math.floor(meta.durationSeconds / 3600)
-    const m = Math.floor((meta.durationSeconds % 3600) / 60)
-    metaItems.push(h > 0 ? `${h} ч ${m} мин` : `${m} мин`)
+  if (meta.chapterCount > 0) metaItems.push(formatChapterCount(meta.chapterCount, primaryIsAudio))
+  if (primaryIsAudio) {
+    if (meta.durationSeconds > 0) metaItems.push(formatTotalDuration(meta.durationSeconds))
+  } else {
+    if (meta.wordCount > 0) metaItems.push(formatWordCount(meta.wordCount))
+    if (meta.readingMinutes > 0) metaItems.push(formatReadingTime(meta.readingMinutes))
   }
 
   const visibleQuotes = showAllQuotes ? highlights : highlights.slice(0, 1)
@@ -193,15 +152,11 @@ export function ReleasePagePublic({
             {published.length > 0 && (
               <div className="mt-8 flex flex-wrap items-center justify-center gap-3 md:justify-start">
                 {published.map(edition => {
-                  const url = getEditionReadUrl(release, edition)
-                  const tierLabel = edition.format === 'book' && edition.quality_tier
-                    ? tierLabels[edition.quality_tier as QualityTier]
-                    : null
-                  const label = tierLabel ?? formatLabels[edition.format]
+                  const label = getEditionLabel(edition)
                   return (
                     <Link
                       key={edition.id}
-                      href={url}
+                      href={getEditionTocUrl(release.slug, edition)}
                       className="inline-flex items-center gap-2 rounded-full border border-cf-text-1/15 px-5 py-2.5 text-sm font-bold text-cf-text-1 transition-colors hover:bg-cf-text-1/8"
                     >
                       {label}

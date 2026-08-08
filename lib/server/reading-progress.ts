@@ -1,4 +1,4 @@
-import { dbQueryOne } from '@/lib/db'
+import { dbQuery, dbQueryOne } from '@/lib/db'
 
 /**
  * Прогресс чтения пользователя по главе внутри издания.
@@ -43,4 +43,26 @@ export async function fetchReadingProgress(editionId: string, userId: string) {
      LIMIT 1`,
     [editionId, userId],
   )
+}
+
+/**
+ * Прогресс по всем главам издания — для отметок в оглавлении.
+ * progress_percent приходит из NUMERIC строкой, поэтому приводим к числу здесь.
+ */
+export async function fetchEditionProgressMap(
+  editionId: string,
+  userId: string,
+): Promise<Record<string, number>> {
+  const rows = await dbQuery<{ chapter_id: string; progress_percent: string }>(
+    `SELECT chapter_id, progress_percent
+     FROM reading_progress
+     WHERE edition_id = $1 AND user_id = $2`,
+    [editionId, userId],
+  )
+
+  const map: Record<string, number> = {}
+  for (const row of rows) {
+    map[row.chapter_id] = Number(row.progress_percent)
+  }
+  return map
 }

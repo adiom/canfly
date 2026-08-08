@@ -2,6 +2,39 @@
 
 ---
 
+## [8 августа 2026] Cleanup: удаление устаревших seed-скриптов и схемы в `scripts/`
+
+### Что изменено
+
+Удалены ранние SQL-скрипты из `scripts/`, которые дублировали актуальную схему из `postgres/` и содержали вымышленные тестовые данные. Схема БД теперь правится строго миграциями в `postgres/` (см. AGENTS.md: «Схема БД правится только миграцией в postgres/»).
+
+Жёстко удалены (без применения в коде):
+- `scripts/001_create_tables.sql` — дубль `postgres/schema.sql` (books, characters, orders, homepage_slides, admins + триггеры/индексы).
+- `scripts/002_seed_data.sql` — вымышленный seed: книги «Крылья Судьбы» / «Тени Небес» / «Падение Ангелов» / «Голоса Бездны» / «Артбук: Мир Canfly» и персонажи `kira-volkova` / `dmitry-cherny` / `liza-svetlova` / `arseniy-gromov` / `mira`. Ни один slug из seed не встречается в кодовой базе.
+- `scripts/003_homepage_slides.sql` — дубль DDL `homepage_slides` из `schema.sql` + `INSERT` тех же 4 слайдов (они уже в БД и в `data/homepage-slides.json`).
+- `scripts/004_import_homepage_slides_from_local.sql` — одноразовый импорт из JSON; слайды управляются через админку и fallback в `lib/homepage-slide-store.ts`.
+- `scripts/005_social_roles_characters.sql` — дубль `users` / `user_roles` / `character_friendships` / `character_conversations` / `character_messages` / `character_user_memories` и ALTER `characters`/`book_characters` из `schema.sql`.
+- `scripts/006_advanced_reader.sql` — устаревшее: `highlights`, `chapter_ratings`, `book_reviews`. `chapter_ratings` и `book_reviews` сознательно удалены `postgres/highlights-migration.sql:55-56` (`DROP TABLE`), а активная сущность — `chapter_highlights`.
+
+Перенесена в миграцию (а файл удалён):
+- `scripts/007_character_social.sql` → **`postgres/016_character_wall.sql`**. Содержимое было активно: таблица `character_wall_posts` (`lib/server/character-wall.ts`) и колонки `character_posts.scheduled_at` / `author_user_id` (≈53 упоминаний в `lib/server/character-posts.ts`, `lib/actions/studio-characters.ts`, `app/api/characters/posts/route.ts`, UI). Раньше эти объекты создавались **только** скриптом вне цепочки миграций — чистая БД, развёрнутая только по `postgres/`, ломала стену и отложенные посты. Миграция идемпотентна (`IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`), как остальные в `postgres/`.
+
+### Зачем
+
+В репозитории сосуществствовали две ветки схемы: `postgres/` (актуальные миграции, применяемые в прод/CI) и `scripts/00x*.sql` (их ранние клоны + вымышленные данные). Скрипты в `scripts/` ни разу не вызываются из `package.json`, `docs/` или e2e — они просто лежали и вводили в заблуждение: кто-то мог бы применить `002_seed_data.sql`, создав вымышленные «Крылья Судьбы» в `books`, либо, не зная про `007`, не создал `character_wall_posts` при раскатке новой БД.
+
+### Как использовать
+
+1. Перед деплоем применить новую миграцию: `psql $DATABASE_URL -f postgres/016_character_wall.sql` (или через ваш деплой-пайплайн миграций). Она безопасна на уже применённой БД (CREATE TABLE IF NOT EXISTS / ADD COLUMN IF NOT EXISTS).
+2. Старые скрипты больше не нужны — удалить локально, если кто-то их применял вручную.
+3. `pnpm build` и `pnpm lint` — без новых ошибок (3 pre-existing warnings в `app/series/[slug]/page.tsx` и `components/release-page.tsx`, не связанные с этим рефакторингом).
+
+### Примечание
+
+В `docs/UPDATES.md` в истории (строки ~1129/1142) сохранились ссылки на `scripts/005_social_roles_characters.sql` — это архив прошлых записей и не менялся, чтобы не нарушать workflow `pnpm sync:tasks`.
+
+---
+
 ## [8 августа 2026] Профиль читателя: `/user`, `/user-settings`, `/user/[handle]`
 
 ### Что изменено
