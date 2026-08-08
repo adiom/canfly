@@ -1,11 +1,17 @@
 'use client'
 
 import { useState, useEffect, useCallback, useActionState, startTransition } from 'react'
-import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
 import { createMagicLink, type CreateMagicLinkState } from '@/app/(auth)/actions'
 import { signIn, useSession } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { safeInternalPath } from '@/lib/safe-redirect'
+import {
+  LOGIN_FIELD,
+  LOGIN_GHOST,
+  LOGIN_LABEL,
+  LOGIN_NOTE,
+  LOGIN_PRIMARY,
+} from '@/lib/login-ui'
 
 interface MagicLinkFormProps {
   onFocus?: () => void
@@ -24,7 +30,9 @@ export function MagicLinkForm({ onFocus, onBlur }: MagicLinkFormProps) {
   const { update: updateSession } = useSession()
   const router = useRouter()
   const searchParams = useSearchParams()
-  const redirectTo = searchParams.get('redirect') || '/profile'
+  // Без safeInternalPath ?redirect=https://example.com уносил наружу
+  // сразу после успешного входа по коду.
+  const redirectTo = safeInternalPath(searchParams.get('redirect'))
 
   useEffect(() => {
     if (cooldown <= 0) return
@@ -100,33 +108,33 @@ export function MagicLinkForm({ onFocus, onBlur }: MagicLinkFormProps) {
   // В production magicCode не приходит вовсе: код уходит только на почту.
   if (isSuccess && !showCodeInput) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-5">
+        <p className="text-sm leading-6 text-cf-text-3">
+          Письмо ушло на <span className="text-cf-text-1">{email}</span>. В нём восьмизначный код.
+        </p>
+
         {magicCode && (
-          <div className="border border-[#f4efe5]/10 bg-[#1b1c19] px-4 py-3 text-sm text-[#ded7cc]">
-            <span className="font-bold text-[#d7c6ad]">Код создан: </span>
-            <span className="font-mono text-[#f6d6a8] tracking-widest">{magicCode}</span>
+          <div className="border border-cf-text-1/12 bg-cf-bg-2 px-4 py-3">
+            <p className={LOGIN_LABEL}>код создан · только в dev</p>
+            <p
+              className="mt-2 font-mono text-xl tracking-[0.4em] text-cf-warm"
+              data-testid="magic-code"
+            >
+              {magicCode}
+            </p>
           </div>
         )}
 
-        <Button
-          onClick={() => setShowCodeInput(true)}
-          className="w-full h-11 bg-[#d52525] text-sm font-black uppercase text-white hover:bg-[#b91f1f]"
-        >
+        <button type="button" onClick={() => setShowCodeInput(true)} className={LOGIN_PRIMARY}>
           Ввести код
-        </Button>
+        </button>
 
         {cooldown > 0 ? (
-          <p className="text-center text-xs uppercase tracking-[0.18em] text-[#ded7cc]/50">
-            Отправить повторно через {cooldown} сек
-          </p>
+          <p className={`text-center ${LOGIN_LABEL}`}>отправить повторно через {cooldown} сек</p>
         ) : (
-          <Button
-            variant="outline"
-            onClick={handleResend}
-            className="w-full h-11 border-[#f4efe5]/10 text-sm font-bold uppercase text-[#ded7cc] hover:bg-[#f4efe5]/5"
-          >
+          <button type="button" onClick={handleResend} className={LOGIN_GHOST}>
             Отправить повторно
-          </Button>
+          </button>
         )}
       </div>
     )
@@ -135,61 +143,48 @@ export function MagicLinkForm({ onFocus, onBlur }: MagicLinkFormProps) {
   // Форма ввода кода
   if (showCodeInput) {
     return (
-      <div className="space-y-4">
-        <form onSubmit={handleCodeSubmit} className="space-y-4">
-          <label className="block space-y-2 text-sm text-[#ded7cc]">
-            <span>Код из письма</span>
-            <Input
+      <div className="space-y-5">
+        <form onSubmit={handleCodeSubmit} className="space-y-5">
+          <label className="block">
+            <span className={LOGIN_LABEL}>код из письма</span>
+            <input
               type="text"
+              inputMode="numeric"
               value={code}
               onChange={(e) => setCode(e.target.value)}
               placeholder="12345678"
               maxLength={8}
               required
-              className="border-[#f4efe5]/10 bg-[#111210] text-center text-lg tracking-widest text-[#f4efe5]"
+              className={`${LOGIN_FIELD} mt-2 text-center font-mono text-2xl tracking-[0.45em]`}
               onFocus={onFocus}
               onBlur={onBlur}
             />
           </label>
 
-          {codeError && (
-            <div className="border border-red-900/60 bg-red-950/40 px-4 py-3 text-sm text-red-200">
-              {codeError}
-            </div>
-          )}
+          {codeError && <p className={LOGIN_NOTE}>{codeError}</p>}
 
-          <Button
-            type="submit"
-            disabled={codeLoading}
-            className="w-full h-11 bg-[#d52525] text-sm font-black uppercase text-white hover:bg-[#b91f1f]"
-          >
-            {codeLoading ? 'Проверка...' : 'Войти по коду'}
-          </Button>
+          <button type="submit" disabled={codeLoading} className={LOGIN_PRIMARY}>
+            {codeLoading ? 'Проверка…' : 'Войти по коду'}
+          </button>
         </form>
 
-        <Button
-          variant="outline"
-          onClick={() => setShowCodeInput(false)}
-          className="w-full h-11 border-[#f4efe5]/10 text-sm font-bold uppercase text-[#ded7cc] hover:bg-[#f4efe5]/5"
-        >
+        <button type="button" onClick={() => setShowCodeInput(false)} className={LOGIN_GHOST}>
           Назад
-        </Button>
+        </button>
       </div>
     )
   }
 
   // Основная форма
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-5">
       {state.status === 'failed' && (
-        <div className="border border-red-900/60 bg-red-950/40 px-4 py-3 text-sm text-red-200">
-          {state.message || 'Ошибка. Попробуйте снова.'}
-        </div>
+        <p className={LOGIN_NOTE}>{state.message || 'Ошибка. Попробуйте снова.'}</p>
       )}
 
-      <label className="block space-y-2 text-sm text-[#ded7cc]">
-        <span>Email</span>
-        <Input
+      <label className="block">
+        <span className={LOGIN_LABEL}>email</span>
+        <input
           type="email"
           name="email"
           autoComplete="email"
@@ -198,19 +193,15 @@ export function MagicLinkForm({ onFocus, onBlur }: MagicLinkFormProps) {
           onChange={(e) => setEmail(e.target.value)}
           placeholder="your@email.com"
           disabled={isLoading}
-          className="border-[#f4efe5]/10 bg-[#111210] text-[#f4efe5] placeholder-[#ded7cc]/40"
+          className={`${LOGIN_FIELD} mt-2`}
           onFocus={onFocus}
           onBlur={onBlur}
         />
       </label>
 
-      <Button
-        type="submit"
-        disabled={isLoading}
-        className="w-full h-11 bg-[#d52525] text-sm font-black uppercase text-white hover:bg-[#b91f1f]"
-      >
-        {isLoading ? 'Отправка...' : 'Получить ссылку для входа'}
-      </Button>
+      <button type="submit" disabled={isLoading} className={LOGIN_PRIMARY}>
+        {isLoading ? 'Отправка…' : 'Получить ссылку для входа'}
+      </button>
     </form>
   )
 }

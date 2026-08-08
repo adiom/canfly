@@ -17,7 +17,7 @@ export async function loginViaMagicLink(page: Page, email: string) {
   await submitButton.click()
 
   // Step 2: wait for the dev-mode code display and "Ввести код" button
-  const codeElement = page.locator('.font-mono.text-\\[\\#f6d6a8\\]')
+  const codeElement = page.getByTestId('magic-code')
   await expect(codeElement).toBeVisible({ timeout: 15_000 })
   const code = await codeElement.textContent()
   expect(code).not.toBeNull()
