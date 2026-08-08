@@ -1,9 +1,29 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { CANFLY_COLORS, type CanflyColor } from './data'
 
 const SERIF = "var(--font-cormorant, 'Cormorant Garamond', Georgia, serif)"
+
+function CopyHex({ hex, className, lightText }: { hex: string; className?: string; lightText?: boolean }) {
+  const [copied, setCopied] = useState(false)
+  const handleCopy = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+    navigator.clipboard.writeText(hex)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }, [hex])
+  return (
+    <button
+      onClick={handleCopy}
+      className={`cursor-pointer transition-colors hover:text-cf-text-1 ${className ?? ''}`}
+      style={lightText !== undefined ? { color: lightText ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.3)' } : undefined}
+      title="Скопировать"
+    >
+      {copied ? 'скопировано' : hex}
+    </button>
+  )
+}
 
 export function PaletteStrip({ onSelect }: { onSelect: (c: CanflyColor) => void }) {
   return (
@@ -50,12 +70,11 @@ export function ColorModal({
       <div className="grid w-[min(92vw,860px)] max-h-[88vh] overflow-hidden shadow-2xl md:grid-cols-[260px_1fr]">
         {/* Swatch */}
         <div className="relative min-h-[200px] md:min-h-0" style={{ background: color.hex }}>
-          <span
+          <CopyHex
+            hex={color.hex}
+            lightText={color.lightText}
             className="absolute bottom-5 left-5 font-mono text-[10px] tracking-[0.1em]"
-            style={{ color: color.lightText ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.3)' }}
-          >
-            {color.hex}
-          </span>
+          />
           <span
             className="absolute top-5 right-5 font-mono text-[9px] tracking-[0.14em]"
             style={{ color: color.lightText ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.2)' }}
@@ -99,7 +118,7 @@ export function ColorModal({
           </div>
 
           <div className="mt-8 flex flex-wrap gap-4 border-t border-cf-text-1/10 pt-5 font-mono text-[10px] tracking-[0.1em] text-cf-text-4">
-            <span>{color.hex}</span>
+            <CopyHex hex={color.hex} className="font-mono text-[10px] tracking-[0.1em]" />
             <span>·</span>
             <span>{color.id}</span>
             <span>·</span>
@@ -138,12 +157,11 @@ export function ColorEntry({
           className="absolute inset-0 transition-transform duration-700 ease-out group-hover:scale-[1.025]"
           style={{ background: color.hex }}
         />
-        <span
+        <CopyHex
+          hex={color.hex}
+          lightText={color.lightText}
           className="absolute bottom-5 left-5 font-mono text-[10px] tracking-[0.1em] opacity-60 transition-opacity duration-300 group-hover:opacity-100"
-          style={{ color: color.lightText ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.4)' }}
-        >
-          {color.hex}
-        </span>
+        />
         <span
           className="absolute top-5 right-5 font-mono text-[9px] tracking-[0.14em]"
           style={{ color: color.lightText ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)' }}
@@ -182,7 +200,7 @@ export function ColorEntry({
 
         <div className="mt-8 flex items-center justify-between border-t border-cf-text-1/8 pt-5">
           <div>
-            <p className="font-mono text-[10px] tracking-[0.08em] text-cf-text-4">{color.hex}</p>
+            <CopyHex hex={color.hex} className="font-mono text-[10px] tracking-[0.08em] text-cf-text-4" />
             <p className="mt-1 font-mono text-[9px] tracking-[0.06em] text-cf-text-4/60">{color.usedIn}</p>
           </div>
           <div className="flex items-center gap-3">
