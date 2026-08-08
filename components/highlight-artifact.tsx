@@ -1,12 +1,24 @@
 'use client'
 
-import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react'
 import Image from 'next/image'
-import { X, Globe, Lock, Check, RotateCcw, Loader2, ImageOff, Sparkles } from 'lucide-react'
 import Link from 'next/link'
+import {
+  BookmarkPlus,
+  Check,
+  CircleAlert,
+  Globe,
+  ImageOff,
+  Loader2,
+  Lock,
+  PencilLine,
+  RotateCcw,
+  Sparkles,
+  X,
+} from 'lucide-react'
 import type { ChapterHighlight } from '@/lib/releases-types'
 
-type ArtifactPhase = 'save' | 'tools'
+type ArtifactView = 'menu' | 'note' | 'editorial' | 'tools'
 type Tab = 'explain' | 'rewrite' | 'meaning' | 'illustrate'
 type RewriteMode = 'другой-финал' | 'другая-эпоха' | 'другой-стиль'
 
@@ -32,18 +44,10 @@ interface HighlightArtifactProps {
   onSaveEditorial: (note: string) => Promise<void>
 }
 
-function uuidToHsl(id: string): string {
-  let hash = 0
-  for (let i = 0; i < Math.min(id.length, 8); i++) {
-    hash = (hash * 31 + id.charCodeAt(i)) & 0xffff
-  }
-  return `hsl(${hash % 360}, 20%, 8%)`
-}
-
 const AI_TABS: { id: Tab; label: string }[] = [
-  { id: 'explain',    label: 'Объясни' },
-  { id: 'rewrite',    label: 'Перепиши' },
-  { id: 'meaning',    label: 'Смысл' },
+  { id: 'explain', label: 'Объясни' },
+  { id: 'rewrite', label: 'Перепиши' },
+  { id: 'meaning', label: 'Смысл' },
   { id: 'illustrate', label: 'Нарисуй' },
 ]
 
@@ -60,6 +64,90 @@ const AI_ERROR_MESSAGES: Record<string, string> = {
   provider_error: 'AI-сервис временно недоступен',
   unavailable: 'Функция пока недоступна',
   invalid_response: 'Сервис вернул некорректный ответ',
+}
+
+type ArtifactState = {
+  view: ArtifactView
+  savedHighlight: ChapterHighlight | null
+  note: string
+  isPublic: boolean
+  editorialNote: string
+  aiText: string
+  aiLoading: boolean
+  aiError: string
+  rewriteMode: RewriteMode | null
+  imageUrl: string | null
+  imageLoading: boolean
+  imageError: string
+}
+
+type ArtifactAction =
+  | { type: 'RESET_ALL' }
+  | { type: 'RESET_AI' }
+  | { type: 'SET_VIEW'; view: ArtifactView }
+  | { type: 'SET_SAVED_HIGHLIGHT'; highlight: ChapterHighlight | null }
+  | { type: 'SET_NOTE'; note: string }
+  | { type: 'SET_IS_PUBLIC'; pub: boolean }
+  | { type: 'SET_EDITORIAL_NOTE'; note: string }
+  | { type: 'APPEND_AI_TEXT'; text: string }
+  | { type: 'SET_AI_TEXT'; text: string }
+  | { type: 'SET_AI_LOADING'; loading: boolean }
+  | { type: 'SET_AI_ERROR'; error: string }
+  | { type: 'SET_REWRITE_MODE'; mode: RewriteMode | null }
+  | { type: 'SET_IMAGE_URL'; url: string | null }
+  | { type: 'SET_IMAGE_LOADING'; loading: boolean }
+  | { type: 'SET_IMAGE_ERROR'; error: string }
+
+const initialArtifactState: ArtifactState = {
+  view: 'menu',
+  savedHighlight: null,
+  note: '',
+  isPublic: false,
+  editorialNote: '',
+  aiText: '',
+  aiLoading: false,
+  aiError: '',
+  rewriteMode: null,
+  imageUrl: null,
+  imageLoading: false,
+  imageError: '',
+}
+
+function artifactReducer(state: ArtifactState, action: ArtifactAction): ArtifactState {
+  switch (action.type) {
+    case 'RESET_ALL':
+      return initialArtifactState
+    case 'RESET_AI':
+      return { ...state, aiText: '', aiLoading: false, aiError: '', rewriteMode: null, imageUrl: null, imageLoading: false, imageError: '' }
+    case 'SET_VIEW':
+      return { ...state, view: action.view }
+    case 'SET_SAVED_HIGHLIGHT':
+      return { ...state, savedHighlight: action.highlight }
+    case 'SET_NOTE':
+      return { ...state, note: action.note }
+    case 'SET_IS_PUBLIC':
+      return { ...state, isPublic: action.pub }
+    case 'SET_EDITORIAL_NOTE':
+      return { ...state, editorialNote: action.note }
+    case 'APPEND_AI_TEXT':
+      return { ...state, aiText: state.aiText + action.text }
+    case 'SET_AI_TEXT':
+      return { ...state, aiText: action.text }
+    case 'SET_AI_LOADING':
+      return { ...state, aiLoading: action.loading }
+    case 'SET_AI_ERROR':
+      return { ...state, aiError: action.error }
+    case 'SET_REWRITE_MODE':
+      return { ...state, rewriteMode: action.mode }
+    case 'SET_IMAGE_URL':
+      return { ...state, imageUrl: action.url }
+    case 'SET_IMAGE_LOADING':
+      return { ...state, imageLoading: action.loading }
+    case 'SET_IMAGE_ERROR':
+      return { ...state, imageError: action.error }
+    default:
+      return state
+  }
 }
 
 export function HighlightArtifact({
@@ -84,213 +172,179 @@ export function HighlightArtifact({
   onSaveEditorial,
 }: HighlightArtifactProps) {
   const [clientRequestId] = useState(() => crypto.randomUUID())
-  const [phase, setPhase] = useState<ArtifactPhase>('save')
-  const [savedHighlight, setSavedHighlight] = useState<ChapterHighlight | null>(null)
-
-  // Save form state
-  const [note, setNote] = useState('')
-  const [isPublic, setIsPublic] = useState(false)
+  const [state, dispatch] = useReducer(artifactReducer, initialArtifactState)
+  const {
+    view, savedHighlight, note, isPublic, editorialNote,
+    aiText, aiLoading, aiError, rewriteMode,
+    imageUrl, imageLoading, imageError,
+  } = state
   const [isSaving, setIsSaving] = useState(false)
-  const [editorialNote, setEditorialNote] = useState('')
-
-  // AI state
   const [activeTab, setActiveTab] = useState<Tab>('explain')
-  const [aiText, setAiText] = useState('')
-  const [aiLoading, setAiLoading] = useState(false)
-  const [aiError, setAiError] = useState('')
-  const [rewriteMode, setRewriteMode] = useState<RewriteMode | null>(null)
-  const [imageUrl, setImageUrl] = useState<string | null>(null)
-  const [imageLoading, setImageLoading] = useState(false)
-  const [imageError, setImageError] = useState('')
-
-  // Positioning
   const [cardStyle, setCardStyle] = useState<React.CSSProperties>({})
-  const cardRef = useRef<HTMLDivElement>(null)
+
   const abortRef = useRef<AbortController | null>(null)
 
-  // Стабильный temp-ID для tint-цвета и shortId (до сохранения highlight).
-  // Lazy-init вместо useRef(Math.random()) — React Compiler принимает.
-  const [tempId] = useState(() => Math.random().toString(16).slice(2, 14))
-  const tintColor = uuidToHsl(tempId)
-
-  // Пересчёт позиции при открытии и ресайзе
   useLayoutEffect(() => {
     if (!open) return
 
     const calcPosition = () => {
-      const CARD_W = 296
-      const margin = 12
+      const width = 352
+      const margin = 16
+      const isMobile = window.innerWidth < 640
 
-      if (!anchorRect) {
-        setCardStyle({ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)' })
-        return
-      }
-
-      const vw = window.innerWidth
-      const vh = window.innerHeight
-
-      // Мобайл — снизу по центру
-      if (vw < 640) {
+      if (isMobile) {
         setCardStyle({
           position: 'fixed',
+          insetInline: 0,
           bottom: 0,
-          left: 0,
-          right: 0,
-          top: 'auto',
-          borderRadius: '16px 16px 0 0',
-          maxHeight: '82vh',
+          width: 'auto',
+          maxHeight: '82dvh',
+          borderRadius: '18px 18px 0 0',
         })
         return
       }
 
-      // Центр выделения по горизонтали
-      let left = anchorRect.left + anchorRect.width / 2 - CARD_W / 2
-      left = Math.max(margin, Math.min(vw - CARD_W - margin, left))
-
-      // Попытка показать над выделением
-      const spaceAbove = anchorRect.top - 60 // 60px header
-      const cardH = 420
-      let top: number
-
-      if (spaceAbove >= cardH + margin) {
-        top = anchorRect.top - cardH - margin
-      } else {
-        // Под выделением
-        top = anchorRect.bottom + margin
-        if (top + cardH > vh - margin) {
-          // Всё равно не влезает — показываем посередине
-          top = Math.max(margin + 50, (vh - cardH) / 2)
-        }
+      if (!anchorRect) {
+        setCardStyle({
+          position: 'fixed',
+          top: '50%',
+          left: '50%',
+          width,
+          transform: 'translate(-50%, -50%)',
+        })
+        return
       }
+
+      const viewportWidth = window.innerWidth
+      const viewportHeight = window.innerHeight
+      const estimatedHeight = 430
+      let left = anchorRect.left + anchorRect.width / 2 - width / 2
+      left = Math.max(margin, Math.min(viewportWidth - width - margin, left))
+
+      const above = anchorRect.top - 60
+      const top = above >= estimatedHeight + margin
+        ? anchorRect.top - estimatedHeight - margin
+        : Math.min(viewportHeight - estimatedHeight - margin, anchorRect.bottom + margin)
 
       setCardStyle({
         position: 'fixed',
-        top,
+        top: Math.max(64, top),
         left,
-        width: CARD_W,
-        borderRadius: '6px',
+        width,
+        borderRadius: 8,
       })
     }
 
     calcPosition()
     window.addEventListener('resize', calcPosition)
     return () => window.removeEventListener('resize', calcPosition)
-  }, [open, anchorRect])
+  }, [anchorRect, open])
 
-  // Сброс при закрытии диалога. setState в effect — синхронизация internal
-  // state с prop (`open`). remount-by-key сломал бы анимацию закрытия.
   useEffect(() => {
-    if (!open) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset state on dialog close (sync with open prop)
-      setPhase('save')
-      setSavedHighlight(null)
-      setNote('')
-      setIsPublic(false)
-      setEditorialNote('')
-      setAiText('')
-      setAiLoading(false)
-      setAiError('')
-      setRewriteMode(null)
-      setImageUrl(null)
-      setImageLoading(false)
-      setImageError('')
-      abortRef.current?.abort()
-    }
+    if (open) return
+    dispatch({ type: 'SET_VIEW', view: 'menu' })
+    dispatch({ type: 'SET_SAVED_HIGHLIGHT', highlight: null })
+    dispatch({ type: 'SET_NOTE', note: '' })
+    dispatch({ type: 'SET_IS_PUBLIC', pub: false })
+    dispatch({ type: 'SET_EDITORIAL_NOTE', note: '' })
+    dispatch({ type: 'SET_AI_TEXT', text: '' })
+    dispatch({ type: 'SET_AI_LOADING', loading: false })
+    dispatch({ type: 'SET_AI_ERROR', error: '' })
+    dispatch({ type: 'SET_REWRITE_MODE', mode: null })
+    dispatch({ type: 'SET_IMAGE_URL', url: null })
+    dispatch({ type: 'SET_IMAGE_LOADING', loading: false })
+    dispatch({ type: 'SET_IMAGE_ERROR', error: '' })
+    abortRef.current?.abort()
   }, [open])
 
-  // Сброс UI при смене вкладки (без abort — streamAI сам отменяет предыдущий)
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset AI state on tab change
-    setAiText('')
-    setAiLoading(false)
-    setAiError('')
-    setRewriteMode(null)
-    setImageUrl(null)
-    setImageLoading(false)
-    setImageError('')
+    dispatch({ type: 'SET_AI_TEXT', text: '' })
+    dispatch({ type: 'SET_AI_LOADING', loading: false })
+    dispatch({ type: 'SET_AI_ERROR', error: '' })
+    dispatch({ type: 'SET_REWRITE_MODE', mode: null })
+    dispatch({ type: 'SET_IMAGE_URL', url: null })
+    dispatch({ type: 'SET_IMAGE_LOADING', loading: false })
+    dispatch({ type: 'SET_IMAGE_ERROR', error: '' })
   }, [activeTab])
 
   const streamAI = useCallback(async (endpoint: string, body: object) => {
     abortRef.current?.abort()
-    const ctrl = new AbortController()
-    abortRef.current = ctrl
-    setAiLoading(true)
-    setAiText('')
-    setAiError('')
+    const controller = new AbortController()
+    abortRef.current = controller
+    dispatch({ type: 'SET_AI_LOADING', loading: true })
+    dispatch({ type: 'SET_AI_TEXT', text: '' })
+    dispatch({ type: 'SET_AI_ERROR', error: '' })
     try {
-      const res = await fetch(endpoint, {
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-        signal: ctrl.signal,
+        signal: controller.signal,
       })
-      if (!res.ok || !res.body) {
-        const data = await res.json().catch(() => null) as { error?: string } | null
-        setAiError(AI_ERROR_MESSAGES[data?.error ?? ''] ?? 'Ошибка запроса')
+      if (!response.ok || !response.body) {
+        const data = await response.json().catch(() => null) as { error?: string } | null
+        dispatch({ type: 'SET_AI_ERROR', error: AI_ERROR_MESSAGES[data?.error ?? ''] ?? 'Ошибка запроса' })
         return
       }
-      const reader = res.body.getReader()
+      const reader = response.body.getReader()
       const decoder = new TextDecoder()
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-        setAiText(prev => prev + decoder.decode(value, { stream: true }))
+        dispatch({ type: 'APPEND_AI_TEXT', text: decoder.decode(value, { stream: true }) })
       }
-    } catch (e: unknown) {
-      if ((e as Error)?.name !== 'AbortError') setAiError('Ошибка сети')
+    } catch (error: unknown) {
+      if ((error as Error).name !== 'AbortError') dispatch({ type: 'SET_AI_ERROR', error: 'Ошибка сети' })
     } finally {
-      setAiLoading(false)
+      dispatch({ type: 'SET_AI_LOADING', loading: false })
     }
-  }, [])
+  }, [dispatch])
 
   const runExplain = useCallback(() => streamAI('/api/highlights/explain', { text }), [streamAI, text])
   const runMeaning = useCallback(() => streamAI('/api/highlights/meaning', { text }), [streamAI, text])
   const runRewrite = useCallback((mode: RewriteMode) => {
-    setRewriteMode(mode)
+    dispatch({ type: 'SET_REWRITE_MODE', mode })
     streamAI('/api/highlights/rewrite', { text, mode })
   }, [streamAI, text])
 
-  // Автозапуск при смене вкладки (explain / meaning) — вызовы запускают
-  // streamAI, который внутри делает setState. Sync с activeTab-пропсом.
   useEffect(() => {
-    if (phase !== 'tools') return
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- auto-trigger AI on tab change
+    if (view !== 'tools') return
     if (activeTab === 'explain') runExplain()
     if (activeTab === 'meaning') runMeaning()
-  }, [activeTab, phase, runExplain, runMeaning])
+  }, [activeTab, runExplain, runMeaning, view])
 
   const handleIllustrate = async () => {
-    setImageLoading(true)
-    setImageError('')
-    setImageUrl(null)
+    dispatch({ type: 'SET_IMAGE_LOADING', loading: true })
+    dispatch({ type: 'SET_IMAGE_ERROR', error: '' })
+    dispatch({ type: 'SET_IMAGE_URL', url: null })
     try {
       abortRef.current?.abort()
-      const ctrl = new AbortController()
-      abortRef.current = ctrl
-      const res = await fetch('/api/highlights/illustrate', {
+      const controller = new AbortController()
+      abortRef.current = controller
+      const response = await fetch('/api/highlights/illustrate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text }),
-        signal: ctrl.signal,
+        signal: controller.signal,
       })
-      const data = await res.json() as { imageUrl?: string; prompt?: string; error?: string }
-      if (!res.ok || data.error) {
-        setImageError(AI_ERROR_MESSAGES[data.error ?? ''] ?? 'Не удалось сгенерировать')
+      const data = await response.json() as { imageUrl?: string; error?: string }
+      if (!response.ok || data.error) {
+        dispatch({ type: 'SET_IMAGE_ERROR', error: AI_ERROR_MESSAGES[data.error ?? ''] ?? 'Не удалось сгенерировать' })
       } else {
-        setImageUrl(data.imageUrl ?? null)
+        dispatch({ type: 'SET_IMAGE_URL', url: data.imageUrl ?? null })
       }
     } catch (error) {
-      if (!(error instanceof DOMException && error.name === 'AbortError')) setImageError('Ошибка сети')
+      if (!(error instanceof DOMException && error.name === 'AbortError')) dispatch({ type: 'SET_IMAGE_ERROR', error: 'Ошибка сети' })
     } finally {
-      setImageLoading(false)
+      dispatch({ type: 'SET_IMAGE_LOADING', loading: false })
     }
   }
 
-  const saveCite = async () => {
+  const saveHighlight = async () => {
     if (!currentUserId) return
     setIsSaving(true)
     try {
-      const res = await fetch('/api/chapter-highlights', {
+      const response = await fetch('/api/chapter-highlights', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -306,12 +360,11 @@ export function HighlightArtifact({
           is_public: isPublic,
         }),
       })
-      const data = await res.json() as { data?: ChapterHighlight; error?: string }
-      if (res.ok && data.data) {
-        setSavedHighlight(data.data)
-        onSaved(data.data)
-        setPhase('tools') // useEffect([activeTab, phase]) запустит explain автоматически
-      }
+      const data = await response.json().catch(() => null) as { data?: ChapterHighlight; error?: string } | null
+      if (!response.ok || !data?.data) return
+      dispatch({ type: 'SET_SAVED_HIGHLIGHT', highlight: data.data })
+      onSaved(data.data)
+      dispatch({ type: 'SET_VIEW', view: 'tools' })
     } finally {
       setIsSaving(false)
     }
@@ -330,397 +383,225 @@ export function HighlightArtifact({
 
   if (!open) return null
 
-  const shortId = (savedHighlight?.id ?? tempId).slice(0, 6).toUpperCase()
-  const cardTint = savedHighlight ? uuidToHsl(savedHighlight.id) : tintColor
+  const colorVars = {
+    '--artifact-accent': accent,
+    '--artifact-bg': bg,
+    '--artifact-text': textColor,
+  } as React.CSSProperties
+  const quote = text.length > 210 ? `${text.slice(0, 210)}…` : text
 
   return (
     <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 z-[98]"
-        style={{ background: 'rgba(0,0,0,0.35)' }}
+      <button
+        type="button"
+        aria-label="Закрыть меню фрагмента"
+        className="fixed inset-0 z-[98] hidden bg-black/25 max-sm:block"
         onClick={onClose}
       />
-
-      {/* Карточка */}
-      <div
-        ref={cardRef}
-        className="fixed z-[99] flex flex-col overflow-hidden"
-        style={{
-          ...cardStyle,
-          background: bg,
-          backgroundImage: `radial-gradient(ellipse at top left, ${cardTint} 0%, transparent 65%)`,
-          border: `1px solid ${textColor}18`,
-          boxShadow: '0 32px 80px rgba(0,0,0,0.65), 0 4px 20px rgba(0,0,0,0.4)',
-          animation: 'cf-artifact-in 0.18s cubic-bezier(0.34,1.56,0.64,1) both',
-          maxHeight: '82vh',
-        }}
-        onMouseDown={e => {
-          const tag = (e.target as HTMLElement).tagName
-          if (tag !== 'TEXTAREA' && tag !== 'INPUT') e.preventDefault()
-        }}
+      <section
+        aria-label="Действия с фрагментом"
+        className="fixed z-[99] flex flex-col overflow-hidden border border-cf-text-1/15 bg-[var(--artifact-bg)] text-[var(--artifact-text)] shadow-2xl max-sm:border-x-0 max-sm:border-b-0"
+        style={{ ...cardStyle, ...colorVars, animation: 'cf-artifact-in 180ms cubic-bezier(0.22, 0.61, 0.36, 1) both' }}
       >
-        {/* Шапка */}
-        <div
-          className="flex shrink-0 items-center justify-between px-4 py-2.5"
-          style={{ borderBottom: `1px solid ${textColor}0e`, backgroundColor: `${textColor}05` }}
-        >
-          {phase === 'save' ? (
-            <span className="font-mono text-[10px] tracking-wider opacity-30" style={{ color: textColor }}>
-              #{shortId} · {chapterTitle}
-            </span>
-          ) : (
-            <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.14em]" style={{ color: accent }}>
-              <Check className="h-3 w-3" />
-              #{shortId} сохранён
-            </span>
-          )}
+        <header className="flex shrink-0 items-center justify-between border-b border-cf-text-1/10 px-4 py-3">
+          <div className="min-w-0">
+            <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-cf-text-3">Фрагмент главы</p>
+            <p className="mt-0.5 truncate text-xs text-cf-text-2">{chapterTitle}</p>
+          </div>
           <button
+            type="button"
             onClick={onClose}
-            className="flex h-6 w-6 items-center justify-center opacity-30 transition-opacity hover:opacity-80"
-            style={{ color: textColor }}
+            className="ml-4 flex size-9 shrink-0 items-center justify-center text-cf-text-3 transition-colors hover:bg-cf-text-1/6 hover:text-cf-text-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cf-accent"
+            aria-label="Закрыть"
           >
-            <X className="h-3.5 w-3.5" />
+            <X className="size-4" />
           </button>
+        </header>
+
+        <div className="relative shrink-0 border-b border-cf-text-1/10 px-5 py-4 pl-6">
+          <span className="absolute inset-y-4 left-0 w-1 bg-[var(--artifact-accent)]" />
+          <p className="font-[family-name:var(--font-cormorant)] text-lg italic leading-snug text-cf-text-1">«{quote}»</p>
         </div>
 
-        {/* Цитата */}
-        <div
-          className="shrink-0 px-4 py-3"
-          style={{ borderBottom: `1px solid ${textColor}0a` }}
-        >
-          <p
-            className="font-[family-name:var(--font-cormorant)] text-[15px] italic leading-snug line-clamp-3 opacity-85"
-            style={{ color: textColor }}
-          >
-            «{text.length > 180 ? text.slice(0, 180) + '…' : text}»
-          </p>
-        </div>
-
-        {/* Контент — зависит от фазы */}
-        <div className="flex-1 overflow-y-auto">
-
-          {/* === ФАЗА СОХРАНЕНИЯ === */}
-          {phase === 'save' && (
-            <div className="flex flex-col gap-3 px-4 py-4">
-              {currentUserId ? (
-                <>
-                  <input
-                    type="text"
-                    value={note}
-                    onChange={e => setNote(e.target.value)}
-                    placeholder="Личная заметка (опционально)"
-                    className="w-full bg-transparent text-[13px] outline-none placeholder:opacity-25"
-                    style={{
-                      color: textColor,
-                      borderBottom: `1px solid ${textColor}15`,
-                      paddingBottom: '7px',
-                    }}
-                  />
-
-                  {/* Pub/private toggle */}
-                  <button
-                    type="button"
-                    onClick={() => setIsPublic(p => !p)}
-                    className="flex items-center justify-between rounded-sm px-3 py-2 text-xs transition-colors"
-                    style={{ backgroundColor: `${textColor}07` }}
-                  >
-                    <div className="flex items-center gap-2" style={{ color: isPublic ? textColor : `${textColor}50` }}>
-                      {isPublic
-                        ? <Globe className="h-3.5 w-3.5" style={{ color: accent }} />
-                        : <Lock className="h-3.5 w-3.5" />}
-                      <span className="text-[11px]">{isPublic ? 'Публичная — увидят все' : 'Только для меня'}</span>
-                    </div>
-                    <div
-                      className="relative h-5 w-9 shrink-0 rounded-full transition-colors duration-200"
-                      style={{ backgroundColor: isPublic ? accent : `${textColor}20` }}
-                    >
-                      <span
-                        className="absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all duration-200"
-                        style={{ left: isPublic ? '20px' : '2px' }}
-                      />
-                    </div>
-                  </button>
-
-                  {/* Редакторское замечание */}
-                  {isEditor && (
-                    <div className="border-t pt-3" style={{ borderColor: `${textColor}0e` }}>
-                      <p className="mb-1.5 text-[9px] font-black uppercase tracking-[0.16em]" style={{ color: '#e97316', opacity: 0.7 }}>
-                        Замечание редактора
-                      </p>
-                      <textarea
-                        value={editorialNote}
-                        onChange={e => setEditorialNote(e.target.value)}
-                        placeholder="Что нужно исправить (обязательно)"
-                        rows={2}
-                        className="w-full resize-none bg-transparent text-xs leading-6 outline-none placeholder:opacity-25"
-                        style={{
-                          color: textColor,
-                          borderBottom: `1px solid #e9731628`,
-                          paddingBottom: '5px',
-                        }}
-                      />
-                      <button
-                        onClick={saveEditorial}
-                        disabled={isSaving || !editorialNote.trim()}
-                        className="mt-2 flex w-full items-center justify-center gap-1.5 py-2 text-[10px] font-black uppercase tracking-[0.12em] transition-opacity disabled:opacity-30"
-                        style={{ backgroundColor: '#e97316', color: '#fff', borderRadius: '3px' }}
-                      >
-                        {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                        Отправить замечание
-                      </button>
-                    </div>
-                  )}
-
-                  <button
-                    onClick={saveCite}
-                    disabled={isSaving}
-                    className="flex w-full items-center justify-center gap-2 py-3 text-[11px] font-black uppercase tracking-[0.14em] transition-opacity disabled:opacity-40"
-                    style={{ backgroundColor: accent, color: '#fff', borderRadius: '3px' }}
-                  >
-                    {isSaving ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Check className="h-3.5 w-3.5" />
-                    )}
-                    {isSaving ? 'Сохраняем…' : 'Присвоить артефакт'}
-                  </button>
-                </>
-              ) : (
-                <Link
-                  href={`/login?redirect=/release/${releaseSlug}`}
-                  onClick={onClose}
-                  className="flex w-full items-center justify-center py-3 text-[11px] font-black uppercase tracking-[0.14em]"
-                  style={{ backgroundColor: accent, color: '#fff', borderRadius: '3px' }}
-                >
-                  Войти, чтобы сохранить
-                </Link>
+        <div className="min-h-0 overflow-y-auto">
+          {view === 'menu' && (
+            <div className="py-1">
+              <MenuAction
+                icon={<BookmarkPlus className="size-4" />}
+                title="Сделать highlight"
+                description="Личный фрагмент книги с уникальным номером"
+                onClick={saveHighlight}
+                loading={isSaving}
+                accent={accent}
+              />
+              <MenuAction
+                icon={<PencilLine className="size-4" />}
+                title="Добавить заметку"
+                description="Цитата с вашей пометкой — для профиля и коллекции"
+                onClick={() => dispatch({ type: 'SET_VIEW', view: 'note' })}
+                accent={accent}
+              />
+              {isEditor && (
+                <MenuAction
+                  icon={<CircleAlert className="size-4" />}
+                  title="Ошибка"
+                  description="Оставить редакторское замечание к фрагменту"
+                  onClick={() => dispatch({ type: 'SET_VIEW', view: 'editorial' })}
+                  accent={accent}
+                />
               )}
             </div>
           )}
 
-          {/* === ФАЗА ИНСТРУМЕНТОВ === */}
-          {phase === 'tools' && (
-            <div className="flex flex-col">
-              {/* Tab strip */}
-              <div
-                className="flex shrink-0 overflow-x-auto"
-                style={{ borderBottom: `1px solid ${textColor}0e` }}
+          {view === 'note' && (
+            <div className="p-4">
+              <BackButton onClick={() => dispatch({ type: 'SET_VIEW', view: 'menu' })} />
+              <label className="mt-3 block">
+                <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-cf-text-3">Ваша заметка</span>
+                <textarea
+                  value={note}
+                  onChange={event => dispatch({ type: 'SET_NOTE', note: event.target.value })}
+                  rows={3}
+                  autoFocus
+                  placeholder="Что вы хотите сохранить вместе с этой цитатой?"
+                  className="mt-2 w-full resize-none border border-cf-text-1/15 bg-transparent px-3 py-2.5 text-sm leading-6 text-cf-text-1 outline-none placeholder:text-cf-text-3 focus:border-cf-text-1/35"
+                />
+              </label>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <VisibilityButton active={!isPublic} onClick={() => dispatch({ type: 'SET_IS_PUBLIC', pub: false })} icon={<Lock className="size-3.5" />} title="Личная" description="только вам" />
+                <VisibilityButton active={isPublic} onClick={() => dispatch({ type: 'SET_IS_PUBLIC', pub: true })} icon={<Globe className="size-3.5" />} title="Публичная" description="видна в профиле" />
+              </div>
+              <button
+                type="button"
+                onClick={saveHighlight}
+                disabled={isSaving || !note.trim()}
+                className="mt-4 flex h-12 w-full items-center justify-center gap-2 bg-cf-accent px-5 text-xs font-black uppercase tracking-[0.14em] text-white transition-colors hover:bg-cf-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
               >
+                {isSaving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+                Сохранить цитату
+              </button>
+            </div>
+          )}
+
+          {view === 'editorial' && (
+            <div className="p-4">
+              <BackButton onClick={() => dispatch({ type: 'SET_VIEW', view: 'menu' })} />
+              <label className="mt-3 block">
+                <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-cf-accent">Что нужно исправить</span>
+                <textarea
+                  value={editorialNote}
+                  onChange={event => dispatch({ type: 'SET_EDITORIAL_NOTE', note: event.target.value })}
+                  rows={4}
+                  autoFocus
+                  placeholder="Опишите ошибку или правку конкретно"
+                  className="mt-2 w-full resize-none border border-cf-text-1/15 bg-transparent px-3 py-2.5 text-sm leading-6 text-cf-text-1 outline-none placeholder:text-cf-text-3 focus:border-cf-text-1/35"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={saveEditorial}
+                disabled={isSaving || !editorialNote.trim()}
+                className="mt-4 flex h-12 w-full items-center justify-center gap-2 bg-cf-accent px-5 text-xs font-black uppercase tracking-[0.14em] text-white transition-colors hover:bg-cf-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {isSaving && <Loader2 className="size-4 animate-spin" />}
+                Отправить замечание
+              </button>
+            </div>
+          )}
+
+          {view === 'tools' && (
+            <div>
+              <div className="flex items-center gap-2 border-b border-cf-text-1/10 px-4 py-3">
+                <Check className="size-4 text-cf-accent" />
+                <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-cf-text-2">
+                  Highlight #{savedHighlight?.id.slice(0, 6).toUpperCase()}
+                </p>
+              </div>
+              <div className="flex overflow-x-auto border-b border-cf-text-1/10 px-2">
                 {AI_TABS.map(tab => (
                   <button
                     key={tab.id}
+                    type="button"
                     onClick={() => setActiveTab(tab.id)}
-                    className="relative flex-1 px-2 py-2.5 text-[9px] font-black uppercase tracking-[0.08em] transition-colors"
-                    style={{
-                      color: activeTab === tab.id ? accent : `${textColor}40`,
-                      borderBottom: activeTab === tab.id ? `2px solid ${accent}` : '2px solid transparent',
-                      marginBottom: '-1px',
-                    }}
+                    className={`relative h-11 shrink-0 px-2.5 text-[9px] font-black uppercase tracking-[0.1em] transition-colors ${activeTab === tab.id ? 'text-cf-accent' : 'text-cf-text-3 hover:text-cf-text-1'}`}
                   >
                     {tab.label}
+                    {activeTab === tab.id && <span className="absolute inset-x-2.5 bottom-0 h-0.5 bg-cf-accent" />}
                   </button>
                 ))}
               </div>
-
-              {/* Контент вкладки */}
-              <div className="px-4 py-4">
-
-                {/* ОБЪЯСНИ */}
-                {activeTab === 'explain' && (
-                  <AiResult
-                    aiText={aiText}
-                    aiLoading={aiLoading}
-                    aiError={aiError}
-                    onRetry={runExplain}
-                    loadingLabel="Объясняю…"
-                    accent={accent}
-                    textColor={textColor}
-                  />
-                )}
-
-                {/* ПЕРЕПИШИ */}
+              <div className="p-4">
+                {activeTab === 'explain' && <AiResult aiText={aiText} aiLoading={aiLoading} aiError={aiError} onRetry={runExplain} loadingLabel="Объясняю…" />}
+                {activeTab === 'meaning' && <AiResult aiText={aiText} aiLoading={aiLoading} aiError={aiError} onRetry={runMeaning} loadingLabel="Раскрываю смысл…" />}
                 {activeTab === 'rewrite' && (
-                  <div className="flex flex-col gap-3">
+                  <div className="space-y-3">
                     {!rewriteMode ? (
-                      <>
-                        <p className="text-[10px] uppercase tracking-[0.16em] opacity-35" style={{ color: textColor }}>
-                          Выбери вариант
-                        </p>
-                        <div className="flex flex-col gap-1.5">
-                          {REWRITE_MODES.map(m => (
-                            <button
-                              key={m.id}
-                              onClick={() => runRewrite(m.id)}
-                              className="flex items-center gap-2.5 rounded-sm px-4 py-2.5 text-left text-[11px] font-bold uppercase tracking-[0.1em] transition-colors"
-                              style={{ backgroundColor: `${textColor}08`, color: textColor }}
-                            >
-                              <Sparkles className="h-3.5 w-3.5 shrink-0" style={{ color: accent }} />
-                              {m.label}
-                            </button>
-                          ))}
-                        </div>
-                      </>
+                      <div className="grid gap-2">
+                        {REWRITE_MODES.map(mode => (
+                          <button key={mode.id} type="button" onClick={() => runRewrite(mode.id)} className="flex h-11 items-center gap-2 border border-cf-text-1/10 px-3 text-left text-xs font-bold text-cf-text-1 transition-colors hover:border-cf-text-1/30 hover:bg-cf-text-1/6">
+                            <Sparkles className="size-3.5 text-cf-accent" />
+                            {mode.label}
+                          </button>
+                        ))}
+                      </div>
                     ) : (
                       <>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[9px] font-black uppercase tracking-[0.14em] opacity-35" style={{ color: textColor }}>
-                            {rewriteMode}
-                          </span>
-                          <button
-                            onClick={() => { setRewriteMode(null); setAiText('') }}
-                            className="ml-auto text-[9px] uppercase tracking-[0.1em] opacity-40 transition-opacity hover:opacity-80"
-                            style={{ color: accent }}
-                          >
-                            ← выбрать другое
-                          </button>
-                        </div>
-                        <AiResult
-                          aiText={aiText}
-                          aiLoading={aiLoading}
-                          aiError={aiError}
-                          onRetry={() => runRewrite(rewriteMode)}
-                          loadingLabel="Переписываю…"
-                          accent={accent}
-                          textColor={textColor}
-                        />
+                        <button type="button" onClick={() => { dispatch({ type: 'SET_REWRITE_MODE', mode: null }); dispatch({ type: 'SET_AI_TEXT', text: '' }) }} className="font-mono text-[9px] uppercase tracking-[0.16em] text-cf-text-3 hover:text-cf-text-1">← Другой вариант</button>
+                        <AiResult aiText={aiText} aiLoading={aiLoading} aiError={aiError} onRetry={() => runRewrite(rewriteMode)} loadingLabel="Переписываю…" />
                       </>
                     )}
                   </div>
                 )}
-
-                {/* СМЫСЛ */}
-                {activeTab === 'meaning' && (
-                  <AiResult
-                    aiText={aiText}
-                    aiLoading={aiLoading}
-                    aiError={aiError}
-                    onRetry={runMeaning}
-                    loadingLabel="Раскрываю смысл…"
-                    accent={accent}
-                    textColor={textColor}
-                  />
-                )}
-
-                {/* НАРИСУЙ */}
-                {activeTab === 'illustrate' && (
-                  <div className="flex flex-col gap-3">
-                    {!imageUrl && !imageLoading && !imageError && (
-                      <button
-                        onClick={handleIllustrate}
-                        className="flex w-full items-center justify-center gap-2 py-3 text-[11px] font-black uppercase tracking-[0.14em]"
-                        style={{ backgroundColor: accent, color: '#fff', borderRadius: '3px' }}
-                      >
-                        <Sparkles className="h-3.5 w-3.5" />
-                        Сгенерировать иллюстрацию
-                      </button>
-                    )}
-                    {imageLoading && (
-                      <div className="flex flex-col items-center gap-3 py-6">
-                        <div
-                          className="h-32 w-full rounded-sm"
-                          style={{
-                            background: `linear-gradient(90deg, ${textColor}06 25%, ${textColor}12 50%, ${textColor}06 75%)`,
-                            backgroundSize: '200% 100%',
-                            animation: 'cf-skeleton 1.5s ease infinite',
-                          }}
-                        />
-                        <p className="text-[10px] uppercase tracking-[0.16em] opacity-35" style={{ color: textColor }}>
-                          Создаю иллюстрацию…
-                        </p>
-                      </div>
-                    )}
-                    {imageError && (
-                      <div className="flex flex-col items-center gap-3 py-4">
-                        <ImageOff className="h-7 w-7 opacity-20" style={{ color: textColor }} />
-                        <p className="text-center text-xs opacity-45" style={{ color: textColor }}>{imageError}</p>
-                        {imageError !== 'Функция пока недоступна' && (
-                          <button
-                            onClick={handleIllustrate}
-                            className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.14em]"
-                            style={{ color: accent }}
-                          >
-                            <RotateCcw className="h-3 w-3" />
-                            Попробовать снова
-                          </button>
-                        )}
-                      </div>
-                    )}
-                    {imageUrl && (
-                      <div className="flex flex-col gap-2">
-                        <div className="relative w-full" style={{ aspectRatio: '1/1' }}>
-                          <Image src={imageUrl} alt="Иллюстрация" fill priority sizes="(max-width: 768px) 100vw, 50vw" className="rounded-sm object-cover" />
-                        </div>
-                        <button
-                          onClick={handleIllustrate}
-                          className="flex items-center justify-center gap-1.5 py-2 text-[10px] uppercase tracking-[0.14em] transition-opacity hover:opacity-70"
-                          style={{ color: accent, border: `1px solid ${accent}30`, borderRadius: '3px' }}
-                        >
-                          <RotateCcw className="h-3 w-3" />
-                          Ещё вариант
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
+                {activeTab === 'illustrate' && <Illustration imageUrl={imageUrl} loading={imageLoading} error={imageError} onGenerate={handleIllustrate} />}
               </div>
             </div>
           )}
+
+          {!currentUserId && view === 'menu' && (
+            <div className="border-t border-cf-text-1/10 p-4">
+              <Link href={`/login?redirect=/release/${releaseSlug}`} onClick={onClose} className="flex h-12 items-center justify-center bg-cf-accent px-5 text-xs font-black uppercase tracking-[0.14em] text-white">Войти, чтобы сохранить</Link>
+            </div>
+          )}
         </div>
-      </div>
+      </section>
     </>
   )
 }
 
-function AiResult({
-  aiText, aiLoading, aiError,
-  onRetry, loadingLabel,
-  accent, textColor,
-}: {
-  aiText: string; aiLoading: boolean; aiError: string
-  onRetry: () => void; loadingLabel: string
-  accent: string; textColor: string
-}) {
-  if (aiLoading && !aiText) {
-    return (
-      <div className="flex items-center gap-2 py-4">
-        <Loader2 className="h-4 w-4 animate-spin shrink-0" style={{ color: accent }} />
-        <span className="text-xs opacity-35" style={{ color: textColor }}>{loadingLabel}</span>
-      </div>
-    )
-  }
-  if (aiError && !aiText) {
-    return (
-      <div className="flex flex-col gap-2 py-2">
-        <p className="text-xs opacity-45" style={{ color: textColor }}>{aiError}</p>
-        <button onClick={onRetry} className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.14em]" style={{ color: accent }}>
-          <RotateCcw className="h-3 w-3" />
-          Попробовать снова
-        </button>
-      </div>
-    )
-  }
+function MenuAction({ icon, title, description, onClick, loading, accent }: { icon: React.ReactNode; title: string; description: string; onClick: () => void; loading?: boolean; accent: string }) {
   return (
-    <div className="flex flex-col gap-2">
-      {aiText && (
-        <p
-          className="font-[family-name:var(--font-cormorant)] text-[16px] italic leading-snug"
-          style={{ color: textColor, opacity: aiLoading ? 0.75 : 1 }}
-        >
-          {aiText}
-          {aiLoading && <span className="animate-pulse">▌</span>}
-        </p>
-      )}
-      {!aiLoading && aiText && (
-        <button
-          onClick={onRetry}
-          className="flex items-center gap-1.5 self-end text-[9px] uppercase tracking-[0.14em] opacity-35 transition-opacity hover:opacity-70"
-          style={{ color: textColor }}
-        >
-          <RotateCcw className="h-3 w-3" />
-          Ещё раз
-        </button>
-      )}
-    </div>
+    <button type="button" onClick={onClick} disabled={loading} className="group flex min-h-16 w-full items-center gap-3 border-b border-cf-text-1/10 px-4 py-3 text-left transition-colors hover:bg-cf-text-1/6 disabled:cursor-wait" style={{ '--artifact-accent': accent } as React.CSSProperties}>
+      <span className="flex size-9 shrink-0 items-center justify-center border border-cf-text-1/15 text-cf-text-2 transition-colors group-hover:border-[var(--artifact-accent)] group-hover:text-[var(--artifact-accent)]">{loading ? <Loader2 className="size-4 animate-spin" /> : icon}</span>
+      <span className="min-w-0">
+        <span className="block text-sm font-bold text-cf-text-1">{title}</span>
+        <span className="mt-0.5 block text-xs leading-4 text-cf-text-3">{description}</span>
+      </span>
+    </button>
   )
+}
+
+function BackButton({ onClick }: { onClick: () => void }) {
+  return <button type="button" onClick={onClick} className="font-mono text-[9px] uppercase tracking-[0.16em] text-cf-text-3 transition-colors hover:text-cf-text-1">← Все действия</button>
+}
+
+function VisibilityButton({ active, onClick, icon, title, description }: { active: boolean; onClick: () => void; icon: React.ReactNode; title: string; description: string }) {
+  return (
+    <button type="button" onClick={onClick} className={`flex min-h-12 items-center gap-2 border px-2.5 text-left transition-colors ${active ? 'border-cf-accent bg-cf-accent/10 text-cf-text-1' : 'border-cf-text-1/10 text-cf-text-3 hover:border-cf-text-1/30'}`}>
+      {icon}
+      <span><span className="block text-xs font-bold">{title}</span><span className="block text-[10px]">{description}</span></span>
+    </button>
+  )
+}
+
+function AiResult({ aiText, aiLoading, aiError, onRetry, loadingLabel }: { aiText: string; aiLoading: boolean; aiError: string; onRetry: () => void; loadingLabel: string }) {
+  if (aiLoading && !aiText) return <div className="flex items-center gap-2 py-5 text-sm text-cf-text-3"><Loader2 className="size-4 animate-spin text-cf-accent" />{loadingLabel}</div>
+  if (aiError && !aiText) return <div className="space-y-3 py-2"><p className="text-sm text-cf-text-3">{aiError}</p><button type="button" onClick={onRetry} className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.16em] text-cf-accent"><RotateCcw className="size-3" />Попробовать снова</button></div>
+  return <div className="space-y-3">{aiText && <p className="font-[family-name:var(--font-cormorant)] text-lg italic leading-snug text-cf-text-1">{aiText}{aiLoading && <span className="animate-pulse">▌</span>}</p>}{!aiLoading && aiText && <button type="button" onClick={onRetry} className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.16em] text-cf-text-3 hover:text-cf-text-1"><RotateCcw className="size-3" />Ещё раз</button>}</div>
+}
+
+function Illustration({ imageUrl, loading, error, onGenerate }: { imageUrl: string | null; loading: boolean; error: string; onGenerate: () => void }) {
+  if (loading) return <div className="space-y-3 py-2"><div className="h-40 animate-pulse bg-cf-text-1/10" /><p className="font-mono text-[9px] uppercase tracking-[0.16em] text-cf-text-3">Создаю иллюстрацию…</p></div>
+  if (error) return <div className="flex flex-col items-center gap-3 py-5 text-center"><ImageOff className="size-7 text-cf-text-3" /><p className="text-sm text-cf-text-3">{error}</p><button type="button" onClick={onGenerate} className="font-mono text-[9px] uppercase tracking-[0.16em] text-cf-accent">Попробовать снова</button></div>
+  if (imageUrl) return <div className="space-y-3"><div className="relative aspect-square overflow-hidden"><Image src={imageUrl} alt="Иллюстрация по мотивам фрагмента" fill priority sizes="(max-width: 639px) 100vw, 352px" className="object-cover" /></div><button type="button" onClick={onGenerate} className="flex h-10 w-full items-center justify-center gap-1.5 border border-cf-text-1/15 font-mono text-[9px] uppercase tracking-[0.16em] text-cf-text-2 hover:border-cf-text-1/30"><RotateCcw className="size-3" />Ещё вариант</button></div>
+  return <button type="button" onClick={onGenerate} className="flex h-12 w-full items-center justify-center gap-2 bg-cf-accent px-5 text-xs font-black uppercase tracking-[0.14em] text-white hover:bg-cf-accent-hover"><Sparkles className="size-4" />Создать иллюстрацию</button>
 }

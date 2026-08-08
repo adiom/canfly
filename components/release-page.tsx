@@ -26,15 +26,13 @@ interface ReleasePagePublicProps {
   release: Release
   editions: Edition[]
   primaryEditionSlug: string | null
-  primaryEditionTier: string | null
-  characters: { id: string; name: string; slug: string; avatar: string | null; role: string }[]
   seriesLink: { series: Series; phase_number: number | null } | null
   highlights: ChapterHighlight[]
   meta: { chapterCount: number; wordCount: number; readingMinutes: number; durationSeconds: number }
 }
 
 export function ReleasePagePublic({
-  release, editions, primaryEditionSlug, primaryEditionTier, characters, seriesLink, highlights, meta,
+  release, editions, primaryEditionSlug, seriesLink, highlights, meta,
 }: ReleasePagePublicProps) {
   const config = release.design_config ?? {}
   const accent = config.accent_color ?? defaultConfig.accent_color!

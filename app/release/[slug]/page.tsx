@@ -84,8 +84,6 @@ export default async function ReleasePublicPage({ params }: { params: Promise<{ 
     { label: release.title, url: `${BASE_URL}/release/${release.slug}` },
   ])
 
-  const primaryEditionTier = primaryEdition?.quality_tier ?? null
-
   return (
     <>
       <script
@@ -96,16 +94,14 @@ export default async function ReleasePublicPage({ params }: { params: Promise<{ 
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: serializeJsonLd(breadcrumbSchema) }}
       />
-      <ReleasePagePublic
-        release={release}
-        editions={editions}
-        primaryEditionSlug={primaryEdition?.slug ?? null}
-        primaryEditionTier={primaryEditionTier}
-        characters={characters}
-        seriesLink={validSeriesLink}
-        highlights={highlights}
-        meta={meta}
-      />
+       <ReleasePagePublic
+         release={release}
+         editions={editions}
+         primaryEditionSlug={primaryEdition?.slug ?? null}
+         seriesLink={validSeriesLink}
+         highlights={highlights}
+         meta={meta}
+       />
     </>
   )
 }

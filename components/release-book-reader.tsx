@@ -294,6 +294,12 @@ export function ReleaseBookReader({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- currentUserId checked inside, stable callback
   }, [])
 
+  // На touch-устройствах Selection обновляется после pointerup. Один кадр
+  // ожидания позволяет прочитать уже финальный Range и не ломает mouse-flow.
+  const handleSelectionEnd = useCallback(() => {
+    window.setTimeout(handleMouseUp, 0)
+  }, [handleMouseUp])
+
   const scrollToParagraph = useCallback((paragraphIndex: number) => {
     const root = contentRef.current
     if (!root) return
@@ -508,7 +514,7 @@ export function ReleaseBookReader({
         {currentChapter.content ? (
           <div
             ref={contentRef}
-            onMouseUp={handleMouseUp}
+            onPointerUp={handleSelectionEnd}
             className="prose max-w-none leading-8 prose-p:mb-5"
             style={{
               fontSize: `${fontSize}px`,
@@ -575,18 +581,18 @@ export function ReleaseBookReader({
       {selection && !artifactOpen && (
         <div
           ref={floatingMenuRef}
-          className="fixed z-[100] flex items-center overflow-hidden rounded-full shadow-2xl"
+          className="fixed z-[100] flex items-center overflow-hidden shadow-2xl max-sm:inset-x-4 max-sm:bottom-4 max-sm:justify-between max-sm:rounded-lg sm:rounded-full sm:top-[var(--selection-top)] sm:left-[var(--selection-left)]"
           style={{
-            top: Math.max(60, selection.rect.top - 52),
-            left: Math.max(8, Math.min(window.innerWidth - 200, selection.rect.left + selection.rect.width / 2 - 96)),
+            '--selection-top': `${Math.max(60, selection.rect.top - 52)}px`,
+            '--selection-left': `${Math.max(8, Math.min(window.innerWidth - 200, selection.rect.left + selection.rect.width / 2 - 96))}px`,
             backgroundColor: '#0e0d0c',
             border: '1px solid rgba(244,239,229,0.12)',
-          }}
+          } as React.CSSProperties}
           onMouseDown={e => e.preventDefault()}
         >
           {/* Метка цитаты */}
           <span
-            className="pl-4 pr-2 font-[family-name:var(--font-cormorant)] text-[13px] italic opacity-50 select-none"
+            className="max-w-[42vw] truncate pl-4 pr-2 font-[family-name:var(--font-cormorant)] text-[13px] italic opacity-50 select-none sm:max-w-[180px]"
             style={{ color: '#f4efe5' }}
           >
             {selection.text.length > 28 ? selection.text.slice(0, 28) + '…' : selection.text}
@@ -602,7 +608,7 @@ export function ReleaseBookReader({
             title="Артефакт"
           >
             <BookmarkPlus className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Артефакт</span>
+            <span>С фрагментом</span>
           </button>
 
           {/* Закрыть */}
