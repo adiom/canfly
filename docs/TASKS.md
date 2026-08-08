@@ -93,26 +93,6 @@
 
 ---
 
-### Feature: #15 — Заменить <img> на <Image> из next/image в компонентах
-- Приоритет: `priority-low`
-- Статус: `open`
-- Обновлено: 02.07.2026
-
-Описание
-
-5 компонентов используют нативный <img> вместо <Image> из next/image. Это влияет на LCP, оптимизацию изображений и SEO.
-
-Файлы
-
-| Файл | Строка |
-|---|---|
-| components/release-comic-reader.tsx | 254 |
-| components/highlight-artifact.tsx | 626 |
-| components/spread-reader.tsx | 827 |
-| com
-
----
-
 ### Feature: #14 — Добавить ссылку на читалку-разворот /reader/[editionId] из UI
 - Приоритет: `priority-low`
 - Статус: `open`
