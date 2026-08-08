@@ -200,6 +200,7 @@ export function ReleaseComicReader({ release, chapters }: ReleaseComicReaderProp
                 src={page.url}
                 alt={`Страница ${index + 1}`}
                 fill
+                priority={index === 0}
                 sizes="(max-width: 768px) 100vw, 720px"
                 className="w-full max-w-[720px] block object-cover"
               />

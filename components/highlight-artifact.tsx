@@ -649,7 +649,7 @@ export function HighlightArtifact({
                     {imageUrl && (
                       <div className="flex flex-col gap-2">
                         <div className="relative w-full" style={{ aspectRatio: '1/1' }}>
-                          <Image src={imageUrl} alt="Иллюстрация" fill sizes="(max-width: 768px) 100vw, 50vw" className="rounded-sm object-cover" />
+                          <Image src={imageUrl} alt="Иллюстрация" fill priority sizes="(max-width: 768px) 100vw, 50vw" className="rounded-sm object-cover" />
                         </div>
                         <button
                           onClick={handleIllustrate}

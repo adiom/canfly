@@ -2,6 +2,19 @@
 
 ---
 
+## [8 августа 2026] priority для LCP-изображений (issue #15)
+
+### Что изменено
+
+- **`components/release-comic-reader.tsx`** — `priority={index === 0}` для первой страницы комикса (LCP).
+- **`components/highlight-artifact.tsx`** — `priority` для главного артефакта иллюстрации хайлайта.
+
+### Зачем
+
+Issue #15 — замены `<img>` → `<Image>` уже были сделаны и `sizes`/remotePatterns на месте, не хватало `priority` для LCP-элементов. Добавлено.
+
+---
+
 ## [8 августа 2026] Страница серий /series/[slug]
 
 ### Что изменено
