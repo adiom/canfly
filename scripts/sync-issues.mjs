@@ -73,8 +73,8 @@ ${stripBody(issue.body)}
     bugs += '_Нет открытых багов._\n'
   }
 
-  writeFileSync(resolve(root, 'BUGS.md'), bugs, 'utf-8')
-  console.log(`✓ BUGS.md — ${bugIssues.length} багов`)
+  writeFileSync(resolve(root, 'docs', 'BUGS.md'), bugs, 'utf-8')
+  console.log(`✓ docs/BUGS.md — ${bugIssues.length} багов`)
 
   // TASKS.md
   let tasks = `# Задачи (Features)
@@ -102,8 +102,8 @@ ${stripBody(issue.body)}
     tasks += '_Нет открытых задач._\n'
   }
 
-  writeFileSync(resolve(root, 'TASKS.md'), tasks, 'utf-8')
-  console.log(`✓ TASKS.md — ${featureIssues.length} задач`)
+  writeFileSync(resolve(root, 'docs', 'TASKS.md'), tasks, 'utf-8')
+  console.log(`✓ docs/TASKS.md — ${featureIssues.length} задач`)
 }
 
 main().catch(err => {
