@@ -2,14 +2,16 @@ import type { MetadataRoute } from 'next'
 import { fetchReleasesWithEditions } from '@/lib/server/releases'
 import { fetchNewsPosts } from '@/lib/server/news'
 import { fetchCharactersList } from '@/lib/server/characters'
+import { fetchAllSeries } from '@/lib/server/series'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const [releases, newsPosts, characters] = await Promise.all([
+  const [releases, newsPosts, characters, series] = await Promise.all([
     fetchReleasesWithEditions({ status: 'published' }),
     fetchNewsPosts(100),
     fetchCharactersList(),
+    fetchAllSeries(),
   ])
 
   const releaseEntries = releases.map((release) => ({
@@ -33,6 +35,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     changeFrequency: 'monthly' as const,
     priority: 0.6,
     images: char.avatar ? [char.avatar] : undefined,
+  }))
+
+  const seriesEntries = series.map((s) => ({
+    url: `${BASE_URL}/series/${s.slug}`,
+    lastModified: new Date(s.updated_at),
+    changeFrequency: 'monthly' as const,
+    priority: 0.7,
   }))
 
   return [
@@ -69,5 +78,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...releaseEntries,
     ...newsEntries,
     ...characterEntries,
+    ...seriesEntries,
   ]
 }

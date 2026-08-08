@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { isRedirectError } from 'next/dist/client/components/redirect-error'
 import { toast } from 'sonner'
-import type { Release, Edition } from '@/lib/releases-types'
+import type { Release, Edition, Series, ReleaseSeries } from '@/lib/releases-types'
 import { updateReleaseStatusAction, deleteReleaseAction } from '@/lib/actions/studio'
 import { ReleaseForm } from '@/components/studio/release-form'
 import { EditionCard } from '@/components/studio/edition-card'
@@ -23,8 +23,12 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
-import { ArrowLeft, Globe, Archive, Trash2, Plus, Palette, Settings, FileText } from 'lucide-react'
+import { ArrowLeft, Globe, Archive, Trash2, Plus, Palette, Settings, FileText, BookOpen } from 'lucide-react'
 import Link from 'next/link'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { updateReleaseSeriesAction } from '@/lib/actions/studio'
 
 const statusLabels: Record<string, string> = {
   draft: 'Черновик',
@@ -38,9 +42,13 @@ const statusBadgeStyles: Record<string, string> = {
   archived: 'bg-gray-100 text-gray-500 border-gray-200/80',
 }
 
-export function ReleasePageClient({ release, editions }: { release: Release; editions: Edition[] }) {
+export function ReleasePageClient({ release, editions, series, releaseSeries }: { release: Release; editions: Edition[]; series: Series[]; releaseSeries: ReleaseSeries[] }) {
   const router = useRouter()
   const [deleting, setDeleting] = useState(false)
+  const [seriesLink, setSeriesLink] = useState<{ series_id: string | null; phase_number: number | null }>({
+    series_id: releaseSeries.length > 0 ? releaseSeries[0].series_id : null,
+    phase_number: releaseSeries.length > 0 ? releaseSeries[0].phase_number : null,
+  })
 
   async function handleStatusChange(status: string) {
     try {
@@ -61,6 +69,21 @@ export function ReleasePageClient({ release, editions }: { release: Release; edi
       if (isRedirectError(error)) throw error
       toast.error('Ошибка удаления')
       setDeleting(false)
+    }
+  }
+
+  async function handleSeriesSave() {
+    try {
+      const payload: { series_id: string; phase_number: number | null }[] =
+        seriesLink.series_id
+          ? [{ series_id: seriesLink.series_id, phase_number: seriesLink.phase_number }]
+          : []
+      await updateReleaseSeriesAction(release.id, payload)
+      toast.success('Серия сохранена')
+      router.refresh()
+    } catch (error) {
+      if (isRedirectError(error)) throw error
+      toast.error('Ошибка сохранения серии')
     }
   }
 
@@ -89,6 +112,9 @@ export function ReleasePageClient({ release, editions }: { release: Release; edi
           </TabsTrigger>
           <TabsTrigger value="design" className="rounded-lg data-[state=active]:bg-violet-100/80 data-[state=active]:text-violet-700 data-[state=active]:shadow-sm text-gray-500">
             <Palette className="h-4 w-4 mr-1.5" /> Дизайн
+          </TabsTrigger>
+          <TabsTrigger value="series" className="rounded-lg data-[state=active]:bg-violet-100/80 data-[state=active]:text-violet-700 data-[state=active]:shadow-sm text-gray-500">
+            <BookOpen className="h-4 w-4 mr-1.5" /> Серия
           </TabsTrigger>
           <TabsTrigger value="settings" className="rounded-lg data-[state=active]:bg-violet-100/80 data-[state=active]:text-violet-700 data-[state=active]:shadow-sm text-gray-500">
             <Settings className="h-4 w-4 mr-1.5" /> Настройки
@@ -120,6 +146,57 @@ export function ReleasePageClient({ release, editions }: { release: Release; edi
               ))}
             </div>
           )}
+        </TabsContent>
+
+        <TabsContent value="series" className="space-y-6">
+          <div className="bg-white/60 backdrop-blur-md border border-white/70 rounded-2xl shadow-sm shadow-black/5 p-5 md:p-6 space-y-4">
+            <h2 className="text-lg font-bold text-gray-900">Серия</h2>
+            <p className="text-sm text-gray-500">
+              Привяжите релиз к серии, чтобы он отображался на странице серии (/series/[slug]).
+            </p>
+
+            <div className="space-y-3">
+              <Label>Серия</Label>
+              <Select
+                value={seriesLink.series_id ?? ''}
+                onValueChange={v => setSeriesLink(prev => ({ ...prev, series_id: v || null }))}
+              >
+                <SelectTrigger className="bg-white/60 border-white/70 rounded-xl">
+                  <SelectValue placeholder="Выберите серию (необязательно)" />
+                </SelectTrigger>
+                <SelectContent>
+                  {series.map(s => (
+                    <SelectItem key={s.id} value={s.id}>{s.title}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {series.length === 0 && (
+                <p className="text-xs text-gray-400">
+                  Серии создаются в <Link href="/studio/series" className="text-violet-600">Studio → Серии</Link>
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="phase_number">Фаза (номер в серии)</Label>
+              <Input
+                id="phase_number"
+                type="number"
+                min="0"
+                placeholder="1, 2, 3..."
+                value={seriesLink.phase_number ?? ''}
+                onChange={e => setSeriesLink(prev => ({ ...prev, phase_number: e.target.value ? Number(e.target.value) : null }))}
+                className="bg-white/60 border-white/70 rounded-xl"
+              />
+              <p className="text-xs text-gray-400">Необязательно. Используется для сортировки в серии.</p>
+            </div>
+
+            <div className="pt-2">
+              <Button onClick={handleSeriesSave} className="rounded-xl bg-gradient-to-r from-violet-600 to-violet-500 text-white shadow-md shadow-violet-500/25 hover:from-violet-700 hover:to-violet-600">
+                Сохранить серию
+              </Button>
+            </div>
+          </div>
         </TabsContent>
 
         <TabsContent value="design">

@@ -12,6 +12,8 @@ next.user-config.*
 *.log
 # Environment variables
 .env*.local
+.agents/
+skills-*.json
 
 # Common ignores
 node_modules

@@ -3,8 +3,9 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
+import { useSession } from 'next-auth/react'
 import {
-  BookOpen, ArrowRight, Heart,
+  BookOpen, ArrowRight, Heart, Pen,
 } from 'lucide-react'
 import type {
   Release, Edition, EditionFormat, QualityTier, ReleaseDesignConfig, Series, ChapterHighlight,
@@ -14,6 +15,7 @@ import { SiteFooter } from '@/components/site-footer'
 
 const defaultConfig: ReleaseDesignConfig = {
   accent_color: '#d52525',
+  show_series: true,
 }
 
 const formatLabels: Record<EditionFormat, string> = {
@@ -67,11 +69,15 @@ interface ReleasePagePublicProps {
 }
 
 export function ReleasePagePublic({
-  release, editions, primaryEditionSlug, seriesLink, highlights, meta,
+  release, editions, primaryEditionSlug, primaryEditionTier, characters, seriesLink, highlights, meta,
 }: ReleasePagePublicProps) {
   const config = release.design_config ?? {}
   const accent = config.accent_color ?? defaultConfig.accent_color!
   const showSeries = config.show_series ?? defaultConfig.show_series!
+
+  const { data: session } = useSession()
+  const roles: string[] = session?.user?.roles ?? []
+  const isAdmin = roles.includes('admin')
 
   const [showAllQuotes, setShowAllQuotes] = useState(false)
 
@@ -123,11 +129,18 @@ export function ReleasePagePublic({
               {release.genre}
               {showSeries && seriesLink && (
                 <>
-                  {release.genre && <span className="opacity-30"> · </span>}
-                  <span className="opacity-60">
-                    {seriesLink.series.title}
-                    {seriesLink.phase_number ? ` · Фаза ${seriesLink.phase_number}` : ''}
-                  </span>
+                  {release.genre && <span className="opacity-30"> ·-+ </span>}
+                  СЕРИЯ: 
+                  <Link
+                    href={`/series/${seriesLink.series.slug}`}
+                    className="hover:text-cf-warm transition-colors"
+                  >
+                    <span className="opacity-60">
+                      
+                      {seriesLink.series.title}
+                      {seriesLink.phase_number ? ` · #${seriesLink.phase_number}` : ''}
+                    </span>
+                  </Link>
                 </>
               )}
             </div>
@@ -153,6 +166,19 @@ export function ReleasePagePublic({
                     {item}
                   </span>
                 ))}
+              </div>
+            )}
+
+            {/* Кнопка редактирования в Studio (только для админов) */}
+            {isAdmin && (
+              <div className="mt-4">
+                <Link
+                  href={`/studio/releases/${release.id}`}
+                  className="inline-flex items-center gap-1.5 rounded border border-cf-text-1/15 bg-cf-text-1/6 px-3 py-1.5 text-xs font-black uppercase tracking-[0.12em] text-cf-text-2 transition-colors hover:border-cf-accent hover:bg-cf-accent/10 hover:text-cf-accent"
+                >
+                  <Pen className="h-3 w-3" />
+                  Studio
+                </Link>
               </div>
             )}
 

@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import type { Edition, Release, ReleaseCharacter, ReleaseSeries, Series } from '@/lib/releases-types'
+import type { Edition, Release, ReleaseCharacter } from '@/lib/releases-types'
 import { updateEditionSetupAction } from '@/lib/actions/studio'
 import { generateSlug } from '@/lib/slug-utils'
 import { CoverImageUploader } from '@/components/studio/cover-image-uploader'
@@ -41,14 +41,12 @@ interface SetupData {
   edition: Edition
   release: Release | null
   characters: { id: string; name: string; slug: string; avatar: string | null }[]
-  series: Series[]
   releaseCharacters: ReleaseCharacter[]
-  releaseSeriesLinks: ReleaseSeries[]
 }
 
 export function EditionSetupPage({ data }: { data: SetupData }) {
   const router = useRouter()
-  const { edition, release, characters, series, releaseCharacters, releaseSeriesLinks } = data
+  const { edition, release, characters, releaseCharacters } = data
   const Icon = formatIcons[edition.format] ?? BookOpen
 
   const [slug, setSlug] = useState(edition.slug)
@@ -60,13 +58,6 @@ export function EditionSetupPage({ data }: { data: SetupData }) {
   const [selectedCharacters, setSelectedCharacters] = useState<{ character_id: string; role: string }[]>(
     releaseCharacters.map(rc => ({ character_id: rc.character_id, role: rc.role }))
   )
-  const [seriesLink, setSeriesLink] = useState<{
-    series_id: string | null
-    phase_number: number | null
-  }>({
-    series_id: releaseSeriesLinks.length > 0 ? releaseSeriesLinks[0].series_id : null,
-    phase_number: releaseSeriesLinks.length > 0 ? releaseSeriesLinks[0].phase_number : null,
-  })
   const [saving, setSaving] = useState(false)
 
   const toggleCharacter = (characterId: string, role: string) => {
@@ -85,10 +76,6 @@ export function EditionSetupPage({ data }: { data: SetupData }) {
   const handleSave = useCallback(async () => {
     setSaving(true)
     try {
-      const seriesLinks = seriesLink.series_id
-        ? [{ series_id: seriesLink.series_id, phase_number: seriesLink.phase_number }]
-        : []
-
       await updateEditionSetupAction(edition.id, {
         slug,
         platform: platform || null,
@@ -97,7 +84,6 @@ export function EditionSetupPage({ data }: { data: SetupData }) {
         cover_image: coverImage || null,
         annotation: annotation || null,
         character_ids: selectedCharacters,
-        series_links: seriesLinks,
       })
       toast.success('Настройки сохранены')
       router.push(`/studio/editions/${edition.id}`)
@@ -107,7 +93,7 @@ export function EditionSetupPage({ data }: { data: SetupData }) {
     } finally {
       setSaving(false)
     }
-  }, [edition.id, slug, platform, externalUrl, qualityTier, coverImage, annotation, selectedCharacters, seriesLink, router])
+  }, [edition.id, slug, platform, externalUrl, qualityTier, coverImage, annotation, selectedCharacters, router])
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8 md:px-8 md:py-12">
@@ -243,35 +229,6 @@ export function EditionSetupPage({ data }: { data: SetupData }) {
             ) : (
               <p className="text-sm text-gray-400">Персонажи пока не добавлены</p>
             )}
-          </div>
-        </div>
-
-        <div className="bg-white/60 backdrop-blur-md border border-white/70 rounded-2xl shadow-sm shadow-black/5 p-5 md:p-6 space-y-4">
-          <div className="space-y-3">
-            <Label className="text-gray-600">Серия</Label>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Select
-                value={seriesLink.series_id ?? ''}
-                onValueChange={v => setSeriesLink(prev => ({ ...prev, series_id: v || null }))}
-              >
-                <SelectTrigger className="bg-white/60 border-white/70 rounded-xl"><SelectValue placeholder="Выберите серию" /></SelectTrigger>
-                <SelectContent>
-                  {series.map(s => (
-                    <SelectItem key={s.id} value={s.id}>{s.title}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Input
-                type="number"
-                placeholder="Фаза (номер)"
-                value={seriesLink.phase_number ?? ''}
-                onChange={e => setSeriesLink(prev => ({
-                  ...prev,
-                  phase_number: e.target.value ? Number(e.target.value) : null,
-                }))}
-                className="bg-white/60 border-white/70 rounded-xl"
-              />
-            </div>
           </div>
         </div>
 

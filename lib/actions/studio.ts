@@ -167,6 +167,20 @@ export async function updateReleaseStatusAction(id: string, status: string) {
   revalidatePath('/studio')
 }
 
+export async function updateReleaseSeriesAction(
+  releaseId: string,
+  seriesLinks: { series_id: string; phase_number: number | null }[],
+) {
+  await requireReleaseOwnership(releaseId)
+  await releasesDb.setReleaseSeries(releaseId, seriesLinks)
+
+  const release = await releasesDb.fetchReleaseById(releaseId)
+  revalidatePath(`/studio/releases/${releaseId}`)
+  if (release?.slug) {
+    revalidatePath(`/release/${release.slug}`)
+  }
+}
+
 export async function deleteReleaseAction(id: string) {
   await requireReleaseOwnership(id)
   await releasesDb.deleteRelease(id)
@@ -190,6 +204,11 @@ export async function updateReleaseDesignAction(id: string, config: ReleaseDesig
 export async function getEditions(releaseId: string) {
   await requireReleaseOwnership(releaseId)
   return editionsDb.fetchEditionsByRelease(releaseId)
+}
+
+export async function getReleaseSeries(releaseId: string) {
+  await requireReleaseOwnership(releaseId)
+  return releasesDb.fetchReleaseSeries(releaseId)
 }
 
 export async function getEdition(id: string) {
@@ -529,22 +548,16 @@ export async function getEditionSetupData(editionId: string) {
   const characters = await dbQuery<{ id: string; name: string; slug: string; avatar: string | null }>(
     'SELECT id, name, slug, avatar FROM characters ORDER BY name ASC',
   )
-  const series = await seriesDb.fetchAllSeries()
 
   const releaseCharacters = release
     ? await releasesDb.fetchReleaseCharacters(release.id)
-    : []
-  const releaseSeriesLinks = release
-    ? await releasesDb.fetchReleaseSeries(release.id)
     : []
 
   return {
     edition,
     release,
     characters,
-    series,
     releaseCharacters,
-    releaseSeriesLinks,
   }
 }
 
@@ -558,7 +571,6 @@ export async function updateEditionSetupAction(
     cover_image?: string | null
     annotation?: string | null
     character_ids?: { character_id: string; role: string }[]
-    series_links?: { series_id: string; phase_number: number | null }[]
   },
 ) {
   await requireEditionOwnership(editionId)
@@ -595,10 +607,6 @@ export async function updateEditionSetupAction(
 
   if (data.character_ids) {
     await releasesDb.setReleaseCharacters(edition.release_id, data.character_ids as { character_id: string; role: ReleaseCharacterRole }[])
-  }
-
-  if (data.series_links) {
-    await releasesDb.setReleaseSeries(edition.release_id, data.series_links)
   }
 
   revalidatePath(`/studio/editions/${editionId}`)
