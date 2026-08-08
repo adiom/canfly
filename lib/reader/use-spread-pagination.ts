@@ -70,7 +70,8 @@ export function useSpreadPagination(
     const vpH = vp.clientHeight
     if (vpW === 0 || vpH === 0) return
 
-    const spread = vpW >= SPREAD_BREAKPOINT
+    const isPortrait = window.matchMedia('(orientation: portrait)').matches
+    const spread = !isPortrait && vpW >= SPREAD_BREAKPOINT
     const gutter = spread ? SPINE_WIDTH : 0
 
     let pageW: number

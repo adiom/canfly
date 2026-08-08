@@ -160,6 +160,12 @@ export function SpreadReader({
   const [font, setFont] = useState<FontId>('serif')
   const [fontSize, setFontSize] = useState(18)
 
+  // Максимально допустимый translateX трека — чтобы на последней странице
+  // не торчал обрезок соседней колонки через overflow:hidden.
+  const [maxTranslate, setMaxTranslate] = useState(0)
+  // Ширина кликабельной полосы листания по каждому краю viewport.
+  const [sideGutter, setSideGutter] = useState(28)
+
   useEffect(() => {
     const raw = window.localStorage.getItem('canfly-reader-theme')
     if (raw && raw in THEMES) {
@@ -261,6 +267,26 @@ export function SpreadReader({
   // Вычисленные
   const pagesPerView = isSpread ? 2 : 1
   const maxPage = Math.max(0, pageCount - pagesPerView)
+
+  // Пересчёт максимального сдвига трека и ширины полей листания. Двойной
+  // rAF, чтобы колонки гарантированно отрендерились с актуальной геометрией
+  // после remeasure.
+  useEffect(() => {
+    const id = requestAnimationFrame(() => requestAnimationFrame(() => {
+      const track = trackRef.current
+      const vp = viewportRef.current
+      if (!track || !vp) return
+      const next = Math.max(0, track.scrollWidth - vp.clientWidth)
+      setMaxTranslate(prev => (Math.abs(prev - next) > 0.5 ? next : prev))
+      const vpW = vp.clientWidth
+      const sideSpace = Math.max(0, (vpW - 1200) / 2)
+      // padding viewportRef = 40px по горизонтали; на узких экранах — минимум 28px
+      // под палец, иначе поля могут вовсе отсутствовать.
+      const g = Math.max(28, Math.floor(40 + sideSpace))
+      setSideGutter(prev => (prev !== g ? g : prev))
+    }))
+    return () => cancelAnimationFrame(id)
+  }, [currentChapter?.id, fontSize, pageCount, pagination.spreadWidth, currentPage])
 
   // Хайлайты текущей главы
   const chapterHighlights = useMemo(
@@ -661,18 +687,6 @@ export function SpreadReader({
             >
               <ChevronLeft className="h-4 w-4" />
             </Link>
-            <button
-              type="button"
-              onClick={() => applyFontSize(Math.max(14, fontSize - 2))}
-              title="Мельче"
-              style={{ color: t.text, padding: '2px 6px', fontSize: 11, fontWeight: 800 }}
-            >A−</button>
-            <button
-              type="button"
-              onClick={() => applyFontSize(Math.min(26, fontSize + 2))}
-              title="Крупнее"
-              style={{ color: t.text, padding: '2px 6px', fontSize: 13, fontWeight: 800 }}
-            >A+</button>
           </div>
 
           <span
@@ -713,7 +727,7 @@ export function SpreadReader({
             <button
               type="button"
               onClick={() => { setShowFonts(b => !b); setShowThemes(false) }}
-              title={`Шрифт: ${FONTS.find(f => f.id === font)?.label ?? 'Cormorant'}`}
+              title={`Шрифт и размер: ${FONTS.find(f => f.id === font)?.label ?? 'Cormorant'} · ${fontSize}px`}
               style={{ color: showFonts ? accent : t.text, padding: 4 }}
             >
               <Type className="h-4 w-4" />
@@ -790,7 +804,7 @@ export function SpreadReader({
                   top: 'calc(100% + 6px)',
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: 2,
+                  gap: 8,
                   padding: 8,
                   backgroundColor: t.bg,
                   border: `1px solid ${t.text}20`,
@@ -799,42 +813,111 @@ export function SpreadReader({
                   minWidth: 220,
                 }}
               >
-                {FONTS.map(fn => {
-                  const active = font === fn.id
-                  return (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 8,
+                    padding: '6px 8px',
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 800,
+                      letterSpacing: '0.16em',
+                      textTransform: 'uppercase',
+                      color: t.text2,
+                      fontFamily: 'var(--font-geist-sans)',
+                    }}
+                  >
+                    Размер
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <button
-                      key={fn.id}
                       type="button"
-                      onClick={() => { applyFont(fn.id); setShowFonts(false) }}
+                      onClick={() => applyFontSize(Math.max(14, fontSize - 2))}
+                      title="Мельче"
                       style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'flex-start',
-                        gap: 2,
-                        padding: '8px 10px',
-                        textAlign: 'left',
+                        color: t.text,
+                        padding: '2px 8px',
+                        fontSize: 11,
+                        fontWeight: 800,
+                        border: `1px solid ${t.text}25`,
+                        borderRadius: 3,
                         background: 'transparent',
-                        borderLeft: `2px solid ${active ? accent : 'transparent'}`,
+                      }}
+                    >A−</button>
+                    <span
+                      style={{
+                        fontSize: 11,
+                        color: t.text2,
+                        fontFamily: 'var(--font-geist-sans)',
+                        minWidth: 24,
+                        textAlign: 'center',
+                        fontVariantNumeric: 'tabular-nums',
                       }}
                     >
-                      <span
+                      {fontSize}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => applyFontSize(Math.min(26, fontSize + 2))}
+                      title="Крупнее"
+                      style={{
+                        color: t.text,
+                        padding: '2px 8px',
+                        fontSize: 13,
+                        fontWeight: 800,
+                        border: `1px solid ${t.text}25`,
+                        borderRadius: 3,
+                        background: 'transparent',
+                      }}
+                    >A+</button>
+                  </div>
+                </div>
+
+                <div style={{ height: 1, backgroundColor: `${t.text}12` }} />
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  {FONTS.map(fn => {
+                    const active = font === fn.id
+                    return (
+                      <button
+                        key={fn.id}
+                        type="button"
+                        onClick={() => { applyFont(fn.id); setShowFonts(false) }}
                         style={{
-                          fontSize: 10,
-                          fontWeight: 800,
-                          letterSpacing: '0.16em',
-                          textTransform: 'uppercase',
-                          color: active ? accent : t.text2,
-                          fontFamily: 'var(--font-geist-sans)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'flex-start',
+                          gap: 2,
+                          padding: '8px 10px',
+                          textAlign: 'left',
+                          background: 'transparent',
+                          borderLeft: `2px solid ${active ? accent : 'transparent'}`,
                         }}
                       >
-                        {fn.label}
-                      </span>
-                      <span style={{ fontSize: 13, color: t.text, fontFamily: fn.family }}>
-                        {fn.sample}
-                      </span>
-                    </button>
-                  )
-                })}
+                        <span
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 800,
+                            letterSpacing: '0.16em',
+                            textTransform: 'uppercase',
+                            color: active ? accent : t.text2,
+                            fontFamily: 'var(--font-geist-sans)',
+                          }}
+                        >
+                          {fn.label}
+                        </span>
+                        <span style={{ fontSize: 13, color: t.text, fontFamily: fn.family }}>
+                          {fn.sample}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
             )}
           </div>
@@ -842,7 +925,7 @@ export function SpreadReader({
 
         <main
           ref={viewportRef}
-          className="book-viewport"
+          className="book-viewport relative"
           style={{
             width: '100%',
             maxWidth: 1200,
@@ -852,22 +935,26 @@ export function SpreadReader({
             overflow: 'hidden',
           }}
         >
+          {isSpread && null}
           <div
             ref={trackRef}
             className="book-columns"
             style={{
               height: '100%',
+              width: pagination.spreadWidth,
               columnCount: isSpread ? 2 : 1,
               columnGap: 60,
               columnFill: 'auto',
-              overflowX: 'auto',
-              scrollSnapType: 'x mandatory',
               fontSize: `${fontSize}px`,
               lineHeight: 1.7,
               textAlign: 'justify',
               textJustify: 'inter-word',
+              hyphens: 'auto',
+              WebkitHyphens: 'auto',
+              MozHyphens: 'auto',
+              msHyphens: 'auto',
+              transform: `translateX(-${currentPage >= maxPage ? Math.min(currentPage * (pagination.pageWidth + pagination.gutter), maxTranslate) : currentPage * (pagination.pageWidth + pagination.gutter)}px)`,
             }}
-            onScroll={() => {/* вычисление currentPage делается в хуке через scrollWidth */}}
           >
             {chapters.length > 1 && (
               <p
@@ -882,7 +969,7 @@ export function SpreadReader({
                   breakAfter: 'avoid',
                 }}
               >
-                {currentIndex === 0 && release.genre ? release.genre : `Глава ${currentIndex + 1}`}
+                {currentIndex === 0 && release.genre ? release.genre : ''}
               </p>
             )}
             <h1
@@ -919,12 +1006,17 @@ export function SpreadReader({
               <div
                 ref={contentRef}
                 onPointerUp={handleSelectionEnd}
-                className="prose max-w-none"
+                lang="ru"
+                className="prose max-w-none cf-reader-content"
                 style={{
                   fontSize: `${fontSize}px`,
                   lineHeight: 1.7,
                   color: t.text,
                   fontFamily,
+                  hyphens: 'auto',
+                  WebkitHyphens: 'auto',
+                  MozHyphens: 'auto',
+                  msHyphens: 'auto',
                   ['--tw-prose-body' as string]: t.text,
                   ['--tw-prose-headings' as string]: t.text,
                   ['--tw-prose-links' as string]: accent,
@@ -964,6 +1056,51 @@ export function SpreadReader({
           </span>
         </footer>
       </div>
+
+      <button
+        type="button"
+        aria-label="Предыдущая страница"
+        onClick={goPrev}
+        style={{
+          position: 'absolute',
+          top: 70,
+          bottom: 60,
+          left: 0,
+          width: `${sideGutter}px`,
+          background: 'transparent',
+          border: 0,
+          cursor: 'pointer',
+          zIndex: 2,
+          padding: 0,
+        }}
+      />
+      <button
+        type="button"
+        aria-label="Следующая страница"
+        onClick={goNext}
+        style={{
+          position: 'absolute',
+          top: 70,
+          bottom: 60,
+          right: 0,
+          width: `${sideGutter}px`,
+          background: 'transparent',
+          border: 0,
+          cursor: 'pointer',
+          zIndex: 2,
+          padding: 0,
+        }}
+      />
+
+      <style>{`
+        .cf-reader-content p {
+          margin: 0;
+          text-indent: 1.5em;
+        }
+        .cf-reader-content p:first-child {
+          text-indent: 0;
+        }
+      `}</style>
 
       {/* ── Floating selection pill ── */}
       {selection && !artifactOpen && (
