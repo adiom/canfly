@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { Geist, Geist_Mono, Cormorant_Garamond } from 'next/font/google'
+import { Geist, Geist_Mono, Cormorant_Garamond, EB_Garamond, Libre_Franklin } from 'next/font/google'
 import { SessionProvider } from 'next-auth/react'
 import { CartProvider } from '@/lib/cart-context'
 import { ThemeProvider } from '@/components/theme-provider'
@@ -17,6 +17,21 @@ const cormorant = Cormorant_Garamond({
   weight: ['400', '500', '600', '700'],
   style: ['normal', 'italic'],
   variable: '--font-cormorant',
+})
+const ebGaramond = EB_Garamond({
+  subsets: ['latin', 'cyrillic'],
+  weight: ['400', '500', '600', '700'],
+  style: ['normal', 'italic'],
+  variable: '--font-ebgaramond',
+  preload: false,
+  display: 'swap',
+})
+const libreFranklin = Libre_Franklin({
+  subsets: ['latin', 'cyrillic'],
+  weight: ['400', '700'],
+  variable: '--font-libre-franklin',
+  preload: false,
+  display: 'swap',
 })
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
@@ -49,7 +64,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="ru" suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable} ${cormorant.variable}`}>
+    <html lang="ru" suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable} ${cormorant.variable} ${ebGaramond.variable} ${libreFranklin.variable}`}>
       <body className="font-sans antialiased">
         <script
           type="application/ld+json"

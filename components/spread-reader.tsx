@@ -3,9 +3,9 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { X, AlignJustify, Bookmark, BookmarkPlus, Heart, ChevronLeft, ChevronRight, Sun, Moon, Palette, MessageCircle, Check, Trash2 } from 'lucide-react'
+import { X, AlignJustify, Bookmark, BookmarkPlus, Heart, ChevronLeft, Sun, Moon, Palette, MessageCircle, Check, Trash2, Type } from 'lucide-react'
 import { toast } from 'sonner'
-import { useColumnPagination } from '@/lib/reader/use-column-pagination'
+import { useSpreadPagination } from '@/lib/reader/use-spread-pagination'
 import { useEditorialNotes } from '@/lib/reader/use-editorial-notes'
 import {
   collectParagraphs,
@@ -18,18 +18,102 @@ import {
 } from '@/lib/reader/highlights-dom'
 import { BookmarksPanel } from '@/components/bookmarks-panel'
 import { HighlightArtifact } from '@/components/highlight-artifact'
+import { CANFLY_COLORS } from '@/lib/canfly-colors'
 import type { Release, Edition, Chapter, ChapterHighlight, ChapterEditorialNote } from '@/lib/releases-types'
 import type { UserRole } from '@/lib/types'
 
 // ─── Темы ────────────────────────────────────────────────────────────────────
 
-type Theme = 'dark' | 'light' | 'sepia'
+type ThemeId = 'void' | 'manuscript' | 'sepia'
 
-const THEMES: Record<Theme, { bg: string; bg2: string; text: string; text2: string; shadow: string }> = {
-  dark:  { bg: '#0c0b0a', bg2: '#1d1c18', text: '#f0ebe0', text2: '#cec8bb', shadow: 'rgba(0,0,0,0.6)' },
-  light: { bg: '#d6cfc3', bg2: '#f0ebe0', text: '#1a1816', text2: '#3d3830', shadow: 'rgba(0,0,0,0.15)' },
-  sepia: { bg: '#2a2318', bg2: '#312a1e', text: '#e8d9bb', text2: '#c8b894', shadow: 'rgba(0,0,0,0.5)' },
+interface ThemeDef {
+  id: ThemeId
+  label: string
+  fullName: string
+  bg: string
+  bg2: string
+  text: string
+  text2: string
+  shadow: string
+  spineLine: string
+  pageInner: string
+  pageOuter: string
 }
+
+const VOID = CANFLY_COLORS.find(c => c.id === 'CF-004')
+const MANUSCRIPT = CANFLY_COLORS.find(c => c.id === 'CF-003')
+
+const THEMES: Record<ThemeId, ThemeDef> = {
+  void: {
+    id: 'void',
+    label: 'Void',
+    fullName: VOID?.fullName ?? 'before the first photon',
+    bg: VOID?.hex ?? '#111210',
+    bg2: '#1b1c19',
+    text: '#f4efe5',
+    text2: '#cec8bb',
+    shadow: 'rgba(0,0,0,0.6)',
+    spineLine: 'rgba(255, 235, 200, 0.08)',
+    pageInner: 'rgba(255, 235, 200, 0.04)',
+    pageOuter: 'rgba(0, 0, 0, 0.55)',
+  },
+  manuscript: {
+    id: 'manuscript',
+    label: 'Manuscript',
+    fullName: MANUSCRIPT?.fullName ?? 'burned papyrus',
+    bg: MANUSCRIPT?.hex ?? '#f4efe5',
+    bg2: '#ebe5d9',
+    text: '#1a1816',
+    text2: '#3d3830',
+    shadow: 'rgba(60, 40, 20, 0.18)',
+    spineLine: 'rgba(60, 40, 20, 0.18)',
+    pageInner: 'rgba(60, 40, 20, 0.05)',
+    pageOuter: 'rgba(60, 40, 20, 0.10)',
+  },
+  sepia: {
+    id: 'sepia',
+    label: 'Sepia',
+    fullName: 'warm parchment',
+    bg: '#2a2318',
+    bg2: '#312a1e',
+    text: '#e8d9bb',
+    text2: '#c8b894',
+    shadow: 'rgba(0, 0, 0, 0.5)',
+    spineLine: 'rgba(232, 217, 187, 0.10)',
+    pageInner: 'rgba(232, 217, 187, 0.05)',
+    pageOuter: 'rgba(0, 0, 0, 0.45)',
+  },
+}
+
+const LEGACY_THEME_MAP: Record<string, ThemeId> = {
+  dark: 'void',
+  light: 'manuscript',
+  sepia: 'sepia',
+}
+
+// ─── Шрифты ──────────────────────────────────────────────────────────────────
+
+type FontId = 'serif' | 'display' | 'sans' | 'mono' | 'dyslexic'
+
+interface FontDef {
+  id: FontId
+  label: string
+  family: string
+  sample: string
+}
+
+const FONTS: FontDef[] = [
+  { id: 'serif',    label: 'Cormorant',    family: 'var(--font-cormorant), Georgia, serif',      sample: 'Литературная классика' },
+  { id: 'display',  label: 'EB Garamond',  family: 'var(--font-ebgaramond), Georgia, serif',      sample: 'Книжная антиква' },
+  { id: 'sans',     label: 'Geist',        family: 'var(--font-geist-sans), system-ui, sans-serif', sample: 'Нейтральный современный' },
+  { id: 'mono',     label: 'Geist Mono',   family: 'var(--font-geist-mono), ui-monospace, monospace', sample: 'Терминал · код' },
+  { id: 'dyslexic', label: 'Libre Franklin',     family: 'var(--font-libre-franklin), system-ui, sans-serif', sample: 'Доступный для всех' },
+]
+
+const FONT_STACK: Record<FontId, string> = FONTS.reduce(
+  (acc, f) => ({ ...acc, [f.id]: f.family }),
+  {} as Record<FontId, string>,
+)
 
 // ─── Типы ─────────────────────────────────────────────────────────────────────
 
@@ -68,34 +152,61 @@ export function SpreadReader({
   const accent = release.design_config?.accent_color ?? '#d52525'
   const isEditor = userRole === 'editor' || userRole === 'admin'
 
-  // Тема и шрифт (сохраняем в localStorage)
-  const [theme, setTheme] = useState<Theme>('dark')
+  // Тема, шрифт и размер (сохраняем в localStorage).
+  // Стандартный hydration gate: на сервере и при первом клиентском рендере
+  // отдаём дефолты, после mount подтягиваем реальные значения из localStorage.
+  const [mounted, setMounted] = useState(false)
+  const [theme, setTheme] = useState<ThemeId>('void')
+  const [font, setFont] = useState<FontId>('serif')
   const [fontSize, setFontSize] = useState(18)
 
   useEffect(() => {
-    const t = localStorage.getItem('canfly-reader-theme') as Theme | null
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- initializing theme from localStorage
-    if (t && t in THEMES) setTheme(t)
-    const f = localStorage.getItem('canfly-reader-fontsize')
-    if (f) {
-      const n = parseInt(f, 10)
-      if (n >= 14 && n <= 26) setFontSize(n)
+    const raw = window.localStorage.getItem('canfly-reader-theme')
+    if (raw && raw in THEMES) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- hydration gate pattern
+      setTheme(raw as ThemeId)
+    } else if (raw && raw in LEGACY_THEME_MAP) {
+      const migrated = LEGACY_THEME_MAP[raw]
+       
+      setTheme(migrated)
+      window.localStorage.setItem('canfly-reader-theme', migrated)
     }
+    const fRaw = window.localStorage.getItem('canfly-reader-font')
+    if (fRaw && fRaw in FONT_STACK) {
+       
+      setFont(fRaw as FontId)
+    }
+    const fsRaw = window.localStorage.getItem('canfly-reader-fontsize')
+    if (fsRaw) {
+      const n = parseInt(fsRaw, 10)
+      if (n >= 14 && n <= 26) {
+         
+        setFontSize(n)
+      }
+    }
+     
+    setMounted(true)
   }, [])
 
-  const applyTheme = (t: Theme) => {
-    setTheme(t)
-    localStorage.setItem('canfly-reader-theme', t)
+  const applyTheme = (next: ThemeId) => {
+    setTheme(next)
+    window.localStorage.setItem('canfly-reader-theme', next)
+  }
+  const applyFont = (next: FontId) => {
+    setFont(next)
+    window.localStorage.setItem('canfly-reader-font', next)
   }
   const applyFontSize = (f: number) => {
     setFontSize(f)
-    localStorage.setItem('canfly-reader-fontsize', String(f))
+    window.localStorage.setItem('canfly-reader-fontsize', String(f))
   }
 
   const t = THEMES[theme]
+  const fontFamily = FONT_STACK[font]
 
   // Навигация по главам
   const [currentIndex, setCurrentIndex] = useState(initialChapterIndex)
+
   const currentChapter = chapters[currentIndex]
 
   // Хайлайты
@@ -109,6 +220,7 @@ export function SpreadReader({
   const [showToc, setShowToc] = useState(false)
   const [showBookmarks, setShowBookmarks] = useState(false)
   const [showThemes, setShowThemes] = useState(false)
+  const [showFonts, setShowFonts] = useState(false)
 
   // Навигация к закладке из другой главы
   const [pendingHighlightNav, setPendingHighlightNav] = useState<{ paragraphIndex: number; chapterId: string } | null>(null)
@@ -121,17 +233,18 @@ export function SpreadReader({
   const contentRef = useRef<HTMLDivElement>(null)
   const floatingMenuRef = useRef<HTMLDivElement>(null)
 
-  // Пагинация
+  // Пагинация книжного разворота (используется для currentPage / pageCount
+  // в эффектах навигации к хайлайтам; CSS-разметка больше не зависит от pageWidth).
+  const pagination = useSpreadPagination(viewportRef, trackRef, fontSize, currentChapter?.id ?? '')
   const {
     pageCount,
     currentPage,
     isSpread,
     pageWidth,
-    pageHeight,
     gutter,
     setCurrentPage,
     remeasure,
-  } = useColumnPagination(viewportRef, trackRef, fontSize, currentChapter?.id ?? '')
+  } = pagination
 
   // Перерегистрируем img.onload при смене главы для remeasure после загрузки картинок
   useEffect(() => {
@@ -148,7 +261,6 @@ export function SpreadReader({
   // Вычисленные
   const pagesPerView = isSpread ? 2 : 1
   const maxPage = Math.max(0, pageCount - pagesPerView)
-  const pageOffset = currentPage * (pageWidth + gutter)
 
   // Хайлайты текущей главы
   const chapterHighlights = useMemo(
@@ -281,6 +393,7 @@ export function SpreadReader({
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reset selection/artifact on chapter change
     setSelection(null)
+     
     setArtifactOpen(false)
   }, [currentIndex])
 
@@ -352,8 +465,15 @@ export function SpreadReader({
     const vp = viewportRef.current
     if (!vp) return
     let startX = 0
-    const onTouchStart = (e: TouchEvent) => { startX = e.touches[0].clientX }
+    let startedFromEdge = false
+    const onTouchStart = (e: TouchEvent) => {
+      startX = e.touches[0].clientX
+      // Текст остаётся зоной нативного выделения. Листание жестом доступно
+      // из полей страницы, где оно не конфликтует с long-press и drag.
+      startedFromEdge = startX < 36 || startX > window.innerWidth - 88
+    }
     const onTouchEnd = (e: TouchEvent) => {
+      if (!startedFromEdge) return
       const dx = startX - e.changedTouches[0].clientX
       if (Math.abs(dx) > 50) {
         if (dx > 0) goNext()
@@ -403,6 +523,12 @@ export function SpreadReader({
 
     setSelection({ text, rect, paragraphIndex, contextBefore, contextAfter, startOffset: Math.max(0, offset), endOffset: Math.max(0, offset) + text.length })
   }, [currentUserId])
+
+  // Mobile WebKit фиксирует финальный Range после pointerup, поэтому читаем
+  // Selection в следующей задаче очереди.
+  const handleSelectionEnd = useCallback(() => {
+    window.setTimeout(handleMouseUp, 0)
+  }, [handleMouseUp])
 
   // ── Навигация к закладке ──
   const scrollToHighlight = useCallback((paragraphIndex: number, chapterId: string) => {
@@ -484,344 +610,376 @@ export function SpreadReader({
     )
   }
 
-  const spreadWidth = isSpread ? pageWidth * 2 + gutter : pageWidth
-  const totalWords = chapters.reduce((sum, ch) => sum + (ch.word_count ?? 0), 0)
+  // useSyncExternalStore отдаёт одинаковый default-снепшот на сервере и при
+  // первом клиентском рендере — hydration mismatch не возникает.
+  if (!mounted) {
+    return (
+      <div
+        className="fixed inset-0"
+        style={{ backgroundColor: THEMES.void.bg }}
+        aria-hidden
+      />
+    )
+  }
 
   return (
     <div
-      className="fixed inset-0 select-none"
-      style={{ backgroundColor: t.bg, transition: 'background-color 0.4s' }}
+      className="fixed inset-0"
+      style={{ backgroundColor: t.bg, color: t.text, fontFamily, transition: 'background-color 0.4s, color 0.4s' }}
     >
-      {/* ── Прогресс-бар ── */}
-      <div className="pointer-events-none fixed inset-x-0 top-0 z-50 h-px" style={{ backgroundColor: `${accent}22` }}>
-        <div
-          className="h-full transition-all duration-700"
-          style={{ width: `${progress}%`, backgroundColor: accent }}
-        />
-      </div>
-
-      {/* ── Back link ── */}
-      <Link
-        href={`/release/${release.slug}`}
-        className="fixed left-4 top-4 z-50 flex items-center gap-1.5 text-xs font-black uppercase tracking-[0.18em] transition-opacity hover:opacity-60"
-        style={{ color: t.text2 }}
-      >
-        <ChevronLeft className="h-3.5 w-3.5" />
-        <span className="hidden sm:inline max-w-[120px] truncate">{release.title}</span>
-      </Link>
-
-      {/* ── Тулбар — вертикальный, по правому краю ── */}
-      <aside
-        className="fixed right-0 top-1/2 z-50 flex -translate-y-1/2 flex-col gap-px"
+      <div
+        className="reader-container"
         style={{
-          backgroundColor: `${t.bg2}ee`,
-          border: `1px solid ${t.text}12`,
-          borderRight: 'none',
-          borderRadius: '8px 0 0 8px',
-          backdropFilter: 'blur(12px)',
+          display: 'grid',
+          gridTemplateRows: '50px 1fr 40px',
+          height: '100vh',
+          boxSizing: 'border-box',
+          backgroundColor: t.bg,
+          color: t.text,
+          fontFamily,
+          transition: 'background-color 0.4s, color 0.4s',
         }}
       >
-        {/* Размер шрифта A- */}
-        <ToolbarBtn
-          onClick={() => applyFontSize(Math.max(14, fontSize - 2))}
-          title="Уменьшить шрифт"
-          textColor={t.text}
+        <header
+          className="reader-header"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '0 16px',
+            fontSize: 13,
+            color: t.text2,
+            fontFamily: 'var(--font-geist-sans)',
+            position: 'relative',
+          }}
         >
-          <span className="text-[11px] font-black">A−</span>
-        </ToolbarBtn>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Link
+              href={`/release/${release.slug}`}
+              title="К релизу"
+              style={{ color: t.text2, display: 'inline-flex', padding: 4 }}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Link>
+            <button
+              type="button"
+              onClick={() => applyFontSize(Math.max(14, fontSize - 2))}
+              title="Мельче"
+              style={{ color: t.text, padding: '2px 6px', fontSize: 11, fontWeight: 800 }}
+            >A−</button>
+            <button
+              type="button"
+              onClick={() => applyFontSize(Math.min(26, fontSize + 2))}
+              title="Крупнее"
+              style={{ color: t.text, padding: '2px 6px', fontSize: 13, fontWeight: 800 }}
+            >A+</button>
+          </div>
 
-        {/* Размер шрифта A+ */}
-        <ToolbarBtn
-          onClick={() => applyFontSize(Math.min(26, fontSize + 2))}
-          title="Увеличить шрифт"
-          textColor={t.text}
-        >
-          <span className="text-[13px] font-black">A+</span>
-        </ToolbarBtn>
-
-        <div className="mx-2 h-px" style={{ backgroundColor: `${t.text}15` }} />
-
-        {/* Оглавление */}
-        {chapters.length > 1 && (
-          <ToolbarBtn onClick={() => setShowToc(true)} title="Оглавление" textColor={t.text}>
-            <AlignJustify className="h-4 w-4" />
-          </ToolbarBtn>
-        )}
-
-        {/* Закладки */}
-        {currentUserId && (
-          <ToolbarBtn
-            onClick={() => setShowBookmarks(b => !b)}
-            title="Закладки"
-            textColor={showBookmarks ? accent : t.text}
+          <span
+            className="book-title truncate"
+            style={{ maxWidth: '40%' }}
+            title={`${release.title} — ${currentChapter?.title ?? ''}`}
           >
-            <Bookmark
-              className="h-4 w-4"
-              style={{ fill: myHighlights.length > 0 ? 'currentColor' : 'none' }}
-            />
-          </ToolbarBtn>
-        )}
+            <span style={{ opacity: 0.7 }}>{release.title}</span>
+            {chapters.length > 1 && (
+              <span style={{ opacity: 0.5 }}> · {currentChapter?.title}</span>
+            )}
+          </span>
 
-        <div className="mx-2 h-px" style={{ backgroundColor: `${t.text}15` }} />
-
-        {/* Тема */}
-        <ToolbarBtn
-          onClick={() => setShowThemes(b => !b)}
-          title="Тема"
-          textColor={showThemes ? accent : t.text}
-        >
-          {theme === 'dark' ? <Moon className="h-4 w-4" /> : theme === 'light' ? <Sun className="h-4 w-4" /> : <Palette className="h-4 w-4" />}
-        </ToolbarBtn>
-
-        {/* Выбор темы — абсолютно позиционированный вправо от тулбара (влево!) */}
-        {showThemes && (
-          <div
-            className="absolute right-full top-1/2 mr-1.5 flex -translate-y-1/2 flex-col gap-1 rounded-sm p-2"
-            style={{ backgroundColor: `${t.bg2}f0`, border: `1px solid ${t.text}12`, backdropFilter: 'blur(16px)' }}
-          >
-            {(['dark', 'light', 'sepia'] as Theme[]).map(th => (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, position: 'relative' }}>
+            {chapters.length > 1 && (
               <button
-                key={th}
-                onClick={() => { applyTheme(th); setShowThemes(false) }}
-                className="flex items-center gap-2 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.16em] transition-opacity hover:opacity-60"
-                style={{ color: theme === th ? accent : t.text2 }}
+                type="button"
+                onClick={() => setShowToc(true)}
+                title="Оглавление"
+                style={{ color: t.text, padding: 4 }}
               >
-                <span className="h-3 w-3 rounded-full border" style={{
-                  backgroundColor: THEMES[th].bg2,
-                  borderColor: `${t.text}40`,
-                  boxShadow: `0 0 0 1px ${theme === th ? accent : 'transparent'}`,
-                }} />
-                {th === 'dark' ? 'Тёмная' : th === 'light' ? 'Светлая' : 'Сепия'}
+                <AlignJustify className="h-4 w-4" />
               </button>
-            ))}
+            )}
+            {currentUserId && (
+              <button
+                type="button"
+                onClick={() => setShowBookmarks(b => !b)}
+                title="Закладки"
+                style={{ color: showBookmarks ? accent : t.text, padding: 4 }}
+              >
+                <Bookmark
+                  className="h-4 w-4"
+                  style={{ fill: myHighlights.length > 0 ? 'currentColor' : 'none' }}
+                />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => { setShowFonts(b => !b); setShowThemes(false) }}
+              title={`Шрифт: ${FONTS.find(f => f.id === font)?.label ?? 'Cormorant'}`}
+              style={{ color: showFonts ? accent : t.text, padding: 4 }}
+            >
+              <Type className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => { setShowThemes(b => !b); setShowFonts(false) }}
+              title={`Тема: ${THEMES[theme].label}`}
+              style={{ color: showThemes ? accent : t.text, padding: 4 }}
+            >
+              {theme === 'void' ? <Moon className="h-4 w-4" /> : theme === 'manuscript' ? <Sun className="h-4 w-4" /> : <Palette className="h-4 w-4" />}
+            </button>
+
+            {showThemes && (
+              <div
+                style={{
+                  position: 'absolute',
+                  right: 0,
+                  top: 'calc(100% + 6px)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 4,
+                  padding: 8,
+                  backgroundColor: t.bg,
+                  border: `1px solid ${t.text}20`,
+                  borderRadius: 4,
+                  zIndex: 60,
+                  minWidth: 160,
+                }}
+              >
+                {(['void', 'manuscript', 'sepia'] as ThemeId[]).map(th => {
+                  const def = THEMES[th]
+                  const active = theme === th
+                  return (
+                    <button
+                      key={th}
+                      type="button"
+                      onClick={() => { applyTheme(th); setShowThemes(false) }}
+                      title={def.fullName}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        padding: '6px 8px',
+                        fontSize: 11,
+                        fontWeight: 800,
+                        letterSpacing: '0.16em',
+                        textTransform: 'uppercase',
+                        color: active ? accent : t.text2,
+                        border: `1px solid ${active ? accent : 'transparent'}`,
+                        background: 'transparent',
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 16,
+                          height: 12,
+                          backgroundColor: def.bg2,
+                          border: `1px solid ${t.text}40`,
+                        }}
+                      />
+                      {def.label}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+
+            {showFonts && (
+              <div
+                style={{
+                  position: 'absolute',
+                  right: 0,
+                  top: 'calc(100% + 6px)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 2,
+                  padding: 8,
+                  backgroundColor: t.bg,
+                  border: `1px solid ${t.text}20`,
+                  borderRadius: 4,
+                  zIndex: 60,
+                  minWidth: 220,
+                }}
+              >
+                {FONTS.map(fn => {
+                  const active = font === fn.id
+                  return (
+                    <button
+                      key={fn.id}
+                      type="button"
+                      onClick={() => { applyFont(fn.id); setShowFonts(false) }}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'flex-start',
+                        gap: 2,
+                        padding: '8px 10px',
+                        textAlign: 'left',
+                        background: 'transparent',
+                        borderLeft: `2px solid ${active ? accent : 'transparent'}`,
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 800,
+                          letterSpacing: '0.16em',
+                          textTransform: 'uppercase',
+                          color: active ? accent : t.text2,
+                          fontFamily: 'var(--font-geist-sans)',
+                        }}
+                      >
+                        {fn.label}
+                      </span>
+                      <span style={{ fontSize: 13, color: t.text, fontFamily: fn.family }}>
+                        {fn.sample}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
           </div>
-        )}
-      </aside>
+        </header>
 
-      {/* ── Книжная зона ── */}
-      <div
-        className="fixed inset-0"
-        style={{ top: 0, bottom: 0, left: 0, right: 52, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-      >
-        {/* Стрелка влево */}
-        <button
-          onClick={goPrev}
-          disabled={currentPage === 0 && currentIndex === 0}
-          className="relative z-10 flex h-full w-12 shrink-0 items-center justify-center opacity-0 transition-opacity hover:opacity-100 disabled:pointer-events-none"
-          aria-label="Предыдущая страница"
+        <main
+          ref={viewportRef}
+          className="book-viewport"
+          style={{
+            width: '100%',
+            maxWidth: 1200,
+            margin: '0 auto',
+            padding: '20px 40px',
+            boxSizing: 'border-box',
+            overflow: 'hidden',
+          }}
         >
-          <ChevronLeft className="h-5 w-5" style={{ color: t.text2 }} />
-        </button>
-
-        {/* ── Книга (viewport) — заполняет весь экран ── */}
-        <div className="relative flex-1" style={{ height: '100%', overflow: 'hidden' }}>
-          {/* Тень книги */}
           <div
-            className="pointer-events-none absolute inset-0"
+            ref={trackRef}
+            className="book-columns"
             style={{
-              width: spreadWidth,
-              left: '50%',
-              transform: 'translateX(-50%)',
-              boxShadow: `0 32px 80px ${t.shadow}, 0 8px 24px ${t.shadow}`,
-              borderRadius: 1,
-            }}
-          />
-
-          {/* Viewport с overflow:hidden */}
-          <div
-            ref={viewportRef}
-            className="relative"
-            style={{
-              width: '100%',
               height: '100%',
-              overflow: 'hidden',
-              backgroundColor: t.bg2,
-              cursor: 'text',
-              userSelect: 'text',
+              columnCount: isSpread ? 2 : 1,
+              columnGap: 60,
+              columnFill: 'auto',
+              overflowX: 'auto',
+              scrollSnapType: 'x mandatory',
+              fontSize: `${fontSize}px`,
+              lineHeight: 1.7,
+              textAlign: 'justify',
+              textJustify: 'inter-word',
             }}
+            onScroll={() => {/* вычисление currentPage делается в хуке через scrollWidth */}}
           >
-            {/* Track — CSS-columns, moves via transform */}
-            <div
-              ref={trackRef}
+            {chapters.length > 1 && (
+              <p
+                style={{
+                  columnSpan: 'all',
+                  fontSize: '11px',
+                  fontFamily: 'var(--font-geist-sans)',
+                  letterSpacing: '0.18em',
+                  textTransform: 'uppercase',
+                  margin: '0 0 8px',
+                  color: accent,
+                  breakAfter: 'avoid',
+                }}
+              >
+                {currentIndex === 0 && release.genre ? release.genre : `Глава ${currentIndex + 1}`}
+              </p>
+            )}
+            <h1
               style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                height: '100%',
-                columnWidth: pageWidth > 0 ? pageWidth : undefined,
-                columnGap: gutter,
-                columnFill: 'auto',
-                willChange: 'transform',
-                transform: `translateX(-${pageOffset}px)`,
-                transition: 'transform 0.32s cubic-bezier(0.22, 0.61, 0.36, 1)',
-                padding: '40px 0',
-                boxSizing: 'border-box',
+                columnSpan: 'all',
+                fontFamily: 'var(--font-geist-sans)',
+                fontSize: '1.6em',
+                fontWeight: 800,
+                textTransform: 'uppercase',
+                lineHeight: 1.1,
+                margin: '0 0 24px',
+                breakAfter: 'avoid',
+                textAlign: 'left',
               }}
             >
-              {/* Заголовок главы — паджинируется вместе с текстом */}
-              <div
-                style={{ breakInside: 'avoid', marginBottom: '2em' }}
-              >
-                {chapters.length > 1 && (
-                  <p
-                    className="mb-2 text-[10px] font-black uppercase tracking-[0.28em]"
-                    style={{ color: accent }}
-                  >
-                    {currentIndex === 0 && release.genre ? release.genre : `Глава ${currentIndex + 1}`}
-                  </p>
-                )}
-                <h2
-                  className="text-2xl font-black uppercase leading-tight"
-                  style={{ fontFamily: 'var(--font-sans)', color: t.text }}
-                >
-                  {currentChapter?.title}
-                </h2>
-                {currentIndex === 0 && release.annotation && (
-                  <p
-                    className="mt-3 text-sm leading-7 opacity-55"
-                    style={{ color: t.text, fontFamily: 'var(--font-cormorant)', fontSize: '15px' }}
-                  >
-                    {release.annotation}
-                  </p>
-                )}
-                {currentIndex === 0 && (
-                  <div className="mt-3 flex items-center gap-4">
-                    {release.authors.length > 0 && (
-                      <span className="text-[10px] uppercase tracking-[0.18em] opacity-40" style={{ color: t.text }}>
-                        {release.authors.map(a => a.name).join(', ')}
-                      </span>
-                    )}
-                    {totalWords > 0 && (
-                      <span className="text-[10px] opacity-30" style={{ color: t.text }}>
-                        ~{Math.ceil(totalWords / 200)} мин
-                      </span>
-                    )}
-                  </div>
-                )}
-                <div className="mt-5 h-px w-8 opacity-20" style={{ backgroundColor: t.text }} />
-              </div>
-
-              {/* Контент главы */}
-              {currentChapter?.content ? (
-                <div
-                  ref={contentRef}
-                  onMouseUp={handleMouseUp}
-                  className="prose max-w-none"
-                  style={{
-                    fontSize: `${fontSize}px`,
-                    lineHeight: 1.85,
-                    color: t.text,
-                    fontFamily: 'var(--font-cormorant)',
-                    ['--tw-prose-body' as string]: t.text,
-                    ['--tw-prose-headings' as string]: t.text,
-                    ['--tw-prose-links' as string]: accent,
-                    ['--tw-prose-bold' as string]: t.text,
-                    ['--tw-prose-quotes' as string]: t.text,
-                    ['--tw-prose-hr' as string]: `${t.text}20`,
-                  }}
-                  dangerouslySetInnerHTML={{ __html: currentChapter.content ?? '' }}
-                />
-              ) : (
-                <p className="py-8 text-center text-sm opacity-40" style={{ color: t.text }}>
-                  Содержимое главы ещё не добавлено
-                </p>
-              )}
-            </div>
-
-            {/* ── Корешок (spine) — только на desktop ── */}
-            {isSpread && gutter > 0 && (
-              <div
-                className="pointer-events-none absolute inset-y-0"
+              {currentChapter?.title}
+            </h1>
+            {currentIndex === 0 && release.annotation && (
+              <p
                 style={{
-                  left: pageWidth,
-                  width: gutter,
-                  background: `linear-gradient(90deg,
-                    rgba(0,0,0,0.28) 0%,
-                    rgba(0,0,0,0.08) 35%,
-                    transparent 50%,
-                    rgba(0,0,0,0.04) 65%,
-                    rgba(0,0,0,0.20) 100%)`,
-                  zIndex: 5,
+                  columnSpan: 'all',
+                  fontSize: '0.85em',
+                  lineHeight: 1.7,
+                  margin: '0 0 28px',
+                  opacity: 0.7,
+                  textAlign: 'left',
                 }}
               >
-                {/* Тонкая линия корешка */}
-                <div
-                  className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2"
-                  style={{ backgroundColor: `${t.text}08` }}
-                />
-              </div>
+                {release.annotation}
+              </p>
             )}
 
-            {/* Левая page-shadow (только в spread) */}
-            {isSpread && (
+            {currentChapter?.content ? (
               <div
-                className="pointer-events-none absolute inset-y-0 left-0 w-6"
+                ref={contentRef}
+                onPointerUp={handleSelectionEnd}
+                className="prose max-w-none"
                 style={{
-                  background: `linear-gradient(90deg, rgba(0,0,0,0.15), transparent)`,
-                  zIndex: 4,
+                  fontSize: `${fontSize}px`,
+                  lineHeight: 1.7,
+                  color: t.text,
+                  fontFamily,
+                  ['--tw-prose-body' as string]: t.text,
+                  ['--tw-prose-headings' as string]: t.text,
+                  ['--tw-prose-links' as string]: accent,
+                  ['--tw-prose-bold' as string]: t.text,
+                  ['--tw-prose-quotes' as string]: t.text,
+                  ['--tw-prose-hr' as string]: `${t.text}20`,
                 }}
+                dangerouslySetInnerHTML={{ __html: currentChapter.content ?? '' }}
               />
+            ) : (
+              <p style={{ textAlign: 'center', opacity: 0.4 }}>Содержимое главы ещё не добавлено</p>
             )}
           </div>
+        </main>
 
-          {/* Номера страниц под каждой страницей */}
-          {pageHeight > 0 && pageCount > 1 && (
-            <div
-              className="pointer-events-none absolute flex items-center"
-              style={{
-                top: pageHeight + 12,
-                left: '50%',
-                transform: 'translateX(-50%)',
-                width: spreadWidth,
-              }}
-            >
-              {/* Левая страница */}
-              <span
-                className="flex-1 text-center text-[10px] font-black uppercase tracking-[0.2em]"
-                style={{ color: `${t.text2}50` }}
-              >
-                {currentPage + 1}
-              </span>
-              {isSpread && (
-                <span
-                  className="flex-1 text-center text-[10px] font-black uppercase tracking-[0.2em]"
-                  style={{ color: `${t.text2}50` }}
-                >
-                  {currentPage + 2 <= pageCount ? currentPage + 2 : ''}
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Стрелка вправо */}
-        <button
-          onClick={goNext}
-          disabled={currentPage >= maxPage && currentIndex === chapters.length - 1}
-          className="relative z-10 flex h-full w-12 shrink-0 items-center justify-center opacity-0 transition-opacity hover:opacity-100 disabled:pointer-events-none"
-          aria-label="Следующая страница"
+        <footer
+          className="reader-footer"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '0 40px',
+            fontSize: 12,
+            color: t.text2,
+            fontFamily: 'var(--font-geist-sans)',
+          }}
         >
-          <ChevronRight className="h-5 w-5" style={{ color: t.text2 }} />
-        </button>
+          <span style={{ opacity: 0.6 }}>
+            {currentIndex === 0 && release.authors.length > 0
+              ? release.authors.map(a => a.name).join(', ')
+              : ''}
+          </span>
+          <span style={{ opacity: 0.55 }}>
+            {chapters.length > 1
+              ? `Глава ${currentIndex + 1} / ${chapters.length}`
+              : ''}
+          </span>
+        </footer>
       </div>
 
       {/* ── Floating selection pill ── */}
       {selection && !artifactOpen && (
         <div
           ref={floatingMenuRef}
-          className="fixed z-[100] flex items-center overflow-hidden shadow-2xl"
+          className="fixed z-[100] flex items-center overflow-hidden shadow-2xl max-sm:inset-x-4 max-sm:bottom-4 max-sm:justify-between max-sm:rounded-lg sm:rounded-full sm:top-[var(--selection-top)] sm:left-[var(--selection-left)]"
           style={{
-            top: Math.max(60, selection.rect.top - 52),
-            left: Math.max(8, Math.min(window.innerWidth - 220, selection.rect.left + selection.rect.width / 2 - 104)),
+            '--selection-top': `${Math.max(60, selection.rect.top - 52)}px`,
+            '--selection-left': `${Math.max(8, Math.min(window.innerWidth - 220, selection.rect.left + selection.rect.width / 2 - 104))}px`,
             backgroundColor: '#0e0d0c',
             border: '1px solid rgba(244,239,229,0.12)',
-            borderRadius: 9999,
-          }}
+          } as React.CSSProperties}
           onMouseDown={e => e.preventDefault()}
         >
           <span
-            className="pl-4 pr-2 text-[12px] italic opacity-50 select-none"
+            className="max-w-[42vw] truncate pl-4 pr-2 text-[12px] italic opacity-50 select-none sm:max-w-[180px]"
             style={{ fontFamily: 'var(--font-cormorant)', color: '#f4efe5' }}
           >
             {selection.text.length > 28 ? selection.text.slice(0, 28) + '…' : selection.text}
@@ -833,7 +991,7 @@ export function SpreadReader({
             style={{ color: accent }}
           >
             <BookmarkPlus className="h-3.5 w-3.5" />
-            <span>Артефакт</span>
+            <span>С фрагментом</span>
           </button>
           <span className="h-5 w-px" style={{ backgroundColor: 'rgba(244,239,229,0.12)' }} />
           <button
@@ -1119,30 +1277,6 @@ export function SpreadReader({
 }
 
 // ─── Вспомогательные компоненты ───────────────────────────────────────────────
-
-function ToolbarBtn({
-  onClick,
-  title,
-  textColor,
-  children,
-}: {
-  onClick: () => void
-  title: string
-  textColor: string
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      onClick={onClick}
-      title={title}
-      className="flex h-10 w-10 items-center justify-center transition-opacity hover:opacity-60"
-      style={{ color: textColor }}
-      aria-label={title}
-    >
-      {children}
-    </button>
-  )
-}
 
 // findTextRange переэкспортируем так чтобы не импортировать highlights-dom в тесте напрямую
 export { findTextRange }

@@ -69,6 +69,8 @@
   --color-cf-status-ignored: var(--cf-status-ignored);
   --font-cormorant: var(--font-cormorant, 'Cormorant Garamond', Georgia, serif);
   --font-cormorant-serif: var(--font-cormorant, 'Cormorant Garamond', Georgia, serif);
+  --font-ebgaramond: var(--font-ebgaramond, 'EB Garamond', 'Cormorant Garamond', Georgia, serif);
+  --font-libre-franklin: var(--font-libre-franklin, 'Libre Franklin', system-ui, sans-serif);
 
   /* shadcn/ui semantic tokens → проектная палитра cf-* (адаптируются к light/dark) */
   --color-background: var(--cf-bg);
