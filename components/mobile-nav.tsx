@@ -1,9 +1,17 @@
 'use client'
 
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { signOut, useSession } from 'next-auth/react'
 import { Menu } from 'lucide-react'
 
 import { Sheet, SheetClose, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
+import { safeInternalPath } from '@/lib/safe-redirect'
+
+const STUDIO_ROLES = ['author', 'editor', 'admin']
+
+const linkClass =
+  'flex h-12 items-center rounded-sm px-4 text-sm font-black uppercase tracking-[0.12em] text-cf-text-2 transition-colors hover:bg-cf-text-1/6 hover:text-cf-text-heading'
 
 interface MobileNavItem {
   label: string
@@ -15,6 +23,12 @@ interface MobileNavProps {
 }
 
 export function MobileNav({ items }: MobileNavProps) {
+  const { data: session, status } = useSession()
+  const pathname = usePathname()
+
+  const user = status === 'authenticated' ? session?.user : null
+  const showStudio = (user?.roles ?? []).some((role) => STUDIO_ROLES.includes(role))
+
   return (
     <Sheet>
       <SheetTrigger className="flex h-10 w-10 cursor-pointer touch-manipulation items-center justify-center text-cf-text-1 hover:text-cf-text-heading lg:hidden" aria-label="Открыть меню">
@@ -32,12 +46,48 @@ export function MobileNav({ items }: MobileNavProps) {
             <SheetClose asChild key={item.href}>
               <Link
                 href={item.href}
-                className="flex h-12 items-center rounded-sm px-4 text-sm font-black uppercase tracking-[0.12em] text-cf-text-2 transition-colors hover:bg-cf-text-1/6 hover:text-cf-text-heading"
+                className={linkClass}
               >
                 {item.label}
               </Link>
             </SheetClose>
           ))}
+
+          <div className="my-2 h-px bg-cf-text-1/10" />
+
+          {status === 'loading' ? null : user ? (
+            <>
+              <SheetClose asChild>
+                <Link href="/profile" className={linkClass}>Профиль</Link>
+              </SheetClose>
+              <SheetClose asChild>
+                <Link href="/profile/settings" className={linkClass}>Настройки</Link>
+              </SheetClose>
+              {showStudio && (
+                <SheetClose asChild>
+                  <Link href="/studio" className={linkClass}>Studio</Link>
+                </SheetClose>
+              )}
+              <SheetClose asChild>
+                <button
+                  type="button"
+                  onClick={() => signOut({ redirectTo: '/' })}
+                  className={`${linkClass} w-full cursor-pointer text-left`}
+                >
+                  Выйти
+                </button>
+              </SheetClose>
+            </>
+          ) : (
+            <SheetClose asChild>
+              <Link
+                href={`/login?redirect=${encodeURIComponent(safeInternalPath(pathname, '/'))}`}
+                className={linkClass}
+              >
+                Войти
+              </Link>
+            </SheetClose>
+          )}
         </nav>
       </SheetContent>
     </Sheet>

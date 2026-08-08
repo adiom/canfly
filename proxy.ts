@@ -82,20 +82,6 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next({ request })
   }
 
-  // --- Авторизованный пользователь на /login → редирект на главную ---
-  if (pathname === '/login') {
-    const token = await getToken({
-      req: request,
-      secret: process.env.AUTH_SECRET,
-      secureCookie: process.env.NODE_ENV === 'production',
-    })
-
-    if (token) {
-      // console.log(`[proxy] /login redirect to / (already authenticated)`, { userId: token.sub })
-      return NextResponse.redirect(new URL('/', request.url))
-    }
-  }
-
   // --- Редирект /release → /releases (каталог) ---
   if (pathname === '/release') {
     return NextResponse.redirect(new URL('/releases/', request.url), 301)
@@ -137,7 +123,6 @@ export const config = {
     '/profile/:path*',
     '/admin/:path*',
     '/studio/:path*',
-    '/login',
     '/release',
     '/release/:path*',
     '/books/:path*',

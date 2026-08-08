@@ -52,14 +52,14 @@ declare module 'next-auth/jwt' {
   }
 }
 
-async function findOrCreateUserByEmail(email: string, name?: string | null): Promise<UserProfile | null> {
-  const existing = await dbQueryOne<UserProfile>(
+function findUserByEmail(email: string): Promise<UserProfile | null> {
+  return dbQueryOne<UserProfile>(
     'SELECT * FROM users WHERE email = $1 LIMIT 1',
     [email],
   )
+}
 
-  if (existing) return existing
-
+async function createUserWithReaderRole(email: string, name?: string | null): Promise<UserProfile | null> {
   const handle = `user-${crypto.randomUUID().slice(0, 8)}`
   const created = await dbQueryOne<UserProfile>(
     `INSERT INTO users (email, handle, display_name)
@@ -78,6 +78,45 @@ async function findOrCreateUserByEmail(email: string, name?: string | null): Pro
   }
 
   return created
+}
+
+function linkOAuthAccount(
+  userId: string,
+  provider: string,
+  providerAccountId: string,
+  displayName: string | null,
+  avatarUrl: string | null,
+): Promise<unknown> {
+  return dbQueryOne(
+    `INSERT INTO linked_accounts (user_id, provider, provider_account_id, display_name, avatar_url)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (provider, provider_account_id) DO NOTHING`,
+    [userId, provider, providerAccountId, displayName, avatarUrl],
+  )
+}
+
+/**
+ * Провайдеры, чьему email доверяем без claim'а `email_verified`
+ * (список через запятую в `AUTH_TRUSTED_EMAIL_PROVIDERS`). Послабление на
+ * случай, когда владелец инстанса осознанно принимает риск: по умолчанию
+ * пусто, и слияние с существующим аккаунтом требует подтверждённого адреса.
+ */
+const trustedEmailProviders = new Set(
+  (process.env.AUTH_TRUSTED_EMAIL_PROVIDERS ?? '')
+    .split(',')
+    .map(value => value.trim().toLowerCase())
+    .filter(Boolean),
+)
+
+/**
+ * Подтверждён ли адрес на стороне провайдера. Google и OIDC отдают
+ * `email_verified`, а GitHub и Yandex — нет: `providers/github.js` берёт
+ * primary-email игнорируя его `verified`, `providers/yandex.js` отдаёт
+ * `default_email` вообще без признака подтверждения.
+ */
+function hasVerifiedEmail(provider: string, profile: unknown): boolean {
+  if (trustedEmailProviders.has(provider)) return true
+  return (profile as { email_verified?: unknown } | null | undefined)?.email_verified === true
 }
 
 const canflyIssuer = process.env.AUTH_CANFLY_ISSUER?.replace(/\/$/, '')
@@ -196,32 +235,27 @@ export function createAuthConfig(request?: NextRequest): NextAuthConfig {
       const provider = account?.provider
       const isLinking = request?.cookies.get('cf_oauth_link')?.value === provider
 
-      console.log('[auth] signIn', {
-        provider,
-        userEmail: user?.email,
-        userName: user?.name,
-        userId: user?.id,
-        isLinking,
-        profileData: provider !== 'credentials' ? { email: profile?.email, name: profile?.name } : undefined,
-      })
-
       if (account?.provider !== 'credentials') {
-        if (!account) return false
+        if (!account || !provider) return false
 
         if (!user?.email) {
-          console.warn('[auth] signIn rejected: no email', {
-            provider,
-            user,
-            profile,
-          })
+          // В логах — только причина и провайдер: email, user и profile это PII.
+          console.warn('[auth] signIn rejected: no email', { provider })
           return false
         }
+
+        const providerAccountId = account.providerAccountId
+        const profileName = (profile as { name?: string | null })?.name ?? user.name ?? null
+        const profileImage =
+          (profile as { image?: string | null })?.image ??
+          (profile as { picture?: string | null })?.picture ??
+          null
 
         try {
           // Если это режим привязки — привязываем к текущему пользователю из JWT
           if (isLinking) {
             if (!request) {
-              console.warn('[auth] signIn linking rejected: no request context')
+              console.warn('[auth] signIn linking rejected: no request context', { provider })
               return '/profile/settings?link_error=session'
             }
 
@@ -232,37 +266,51 @@ export function createAuthConfig(request?: NextRequest): NextAuthConfig {
             const currentUserId = currentToken?.id
 
             if (!currentUserId) {
-              console.warn('[auth] signIn linking rejected: no current user in session')
+              console.warn('[auth] signIn linking rejected: no current user in session', { provider })
               return '/profile/settings?link_error=session'
             }
 
-            const providerAccountId = account.providerAccountId
-
-            // Проверяем, не привязан ли уже такой аккаунт
-            const existingLink = await dbQueryOne<{ id: string }>(
-              'SELECT id FROM linked_accounts WHERE provider = $1 AND provider_account_id = $2 LIMIT 1',
-              [provider, providerAccountId],
-            )
-            if (!existingLink) {
-              const profileName = (profile as { name?: string | null })?.name ?? user.name ?? null
-              const profileImage = (profile as { image?: string | null })?.image ?? (profile as { picture?: string | null })?.picture ?? null
-
-              await dbQueryOne(
-                `INSERT INTO linked_accounts (user_id, provider, provider_account_id, display_name, avatar_url)
-                 VALUES ($1, $2, $3, $4, $5)
-                 ON CONFLICT (provider, provider_account_id) DO NOTHING`,
-                [currentUserId, provider, providerAccountId, profileName, profileImage],
-              )
-            }
-            console.log('[auth] signIn linked', { provider, currentUserId, linkedTo: providerAccountId })
+            await linkOAuthAccount(currentUserId, provider, providerAccountId, profileName, profileImage)
 
             return `/profile/settings?linked=${provider}`
           }
 
-          // Обычный OAuth-вход: ищем/создаём пользователя по email
-          const dbUser = await findOrCreateUserByEmail(user.email, user.name)
+          // Обычный OAuth-вход. Основной ключ — provider_account_id, а не email:
+          // GitHub и Yandex не отдают email_verified, поэтому вход по чужому
+          // (непроверенному) адресу иначе отдавал бы чужой аккаунт целиком.
+          const existingLink = await dbQueryOne<{ user_id: string }>(
+            'SELECT user_id FROM linked_accounts WHERE provider = $1 AND provider_account_id = $2 LIMIT 1',
+            [provider, providerAccountId],
+          )
+
+          let dbUser: UserProfile | null = null
+
+          if (existingLink) {
+            // Связь уже есть — это и есть пользователь, email не участвует.
+            dbUser = await dbQueryOne<UserProfile>(
+              'SELECT * FROM users WHERE id = $1 LIMIT 1',
+              [existingLink.user_id],
+            )
+          } else {
+            const byEmail = await findUserByEmail(user.email)
+
+            if (byEmail && !hasVerifiedEmail(provider, profile)) {
+              // Аккаунт с таким адресом уже есть, а провайдер подтверждение
+              // не прислал. Привязать можно только осознанно — из настроек,
+              // уже будучи внутри аккаунта (ветка isLinking выше).
+              console.warn('[auth] signIn rejected: unverified email would merge accounts', { provider })
+              return '/login?error=link_required'
+            }
+
+            dbUser = byEmail ?? (await createUserWithReaderRole(user.email, user.name))
+
+            if (dbUser) {
+              await linkOAuthAccount(dbUser.id, provider, providerAccountId, profileName, profileImage)
+            }
+          }
+
           if (!dbUser) {
-            console.warn('[auth] signIn rejected: user not created', { email: user.email })
+            console.warn('[auth] signIn rejected: user not resolved', { provider })
             return false
           }
 
@@ -271,47 +319,21 @@ export function createAuthConfig(request?: NextRequest): NextAuthConfig {
           ;(user as { handle?: string | null }).handle = dbUser.handle
           ;(user as { login?: string | null }).login = dbUser.login
 
-          // Автоматически привязываем OAuth-аккаунт к найденному пользователю
-          const providerAccountId = account.providerAccountId
-          const existingLink = await dbQueryOne<{ id: string }>(
-            'SELECT id FROM linked_accounts WHERE provider = $1 AND provider_account_id = $2 LIMIT 1',
-            [provider, providerAccountId],
-          )
-          if (!existingLink) {
-            const profileName = (profile as { name?: string | null })?.name ?? user.name ?? null
-            const profileImage = (profile as { image?: string | null })?.image ?? (profile as { picture?: string | null })?.picture ?? null
-
-            await dbQueryOne(
-              `INSERT INTO linked_accounts (user_id, provider, provider_account_id, display_name, avatar_url)
-               VALUES ($1, $2, $3, $4, $5)
-               ON CONFLICT (provider, provider_account_id) DO NOTHING`,
-              [dbUser.id, provider, providerAccountId, profileName, profileImage],
-            )
-          }
-
-          console.log('[auth] signIn success', { provider, userId: dbUser.id, email: user.email })
           return true
         } catch (error) {
           console.error('[auth] signIn OAuth failed', {
             provider,
-            email: user.email,
             error: error instanceof Error ? error.message : String(error),
           })
           return false
         }
       }
 
-      console.log('[auth] signIn credentials success', { userId: user?.id })
       return true
     },
 
     async jwt({ token, user, trigger }) {
       if (user) {
-        console.log('[auth] jwt update', {
-          trigger,
-          userId: user.id,
-          userType: (user as { type?: UserType }).type,
-        })
         if (user.id) token.id = user.id as string
         token.type = (user as { type?: UserType }).type ?? token.type ?? 'regular'
         token.handle = (user as { handle?: string | null }).handle ?? token.handle
@@ -328,10 +350,8 @@ export function createAuthConfig(request?: NextRequest): NextAuthConfig {
             [uid],
           )
           token.roles = rows.map(r => r.role)
-          console.log('[auth] jwt roles fetched', { userId: uid, roles: token.roles })
         } catch (error) {
           console.error('[auth] jwt role fetch failed', {
-            userId: uid,
             error: error instanceof Error ? error.message : String(error),
           })
         }
@@ -344,10 +364,6 @@ export function createAuthConfig(request?: NextRequest): NextAuthConfig {
 
     session({ session, token }) {
       if (session.user) {
-        // console.log('[auth] session', {
-        //   userId: token.id ?? token.sub,
-        //   roles: token.roles,
-        // })
         if (token.id) session.user.id = token.id
         session.user.type = (token.type as UserType) ?? 'regular'
         session.user.handle = token.handle ?? null
@@ -359,7 +375,16 @@ export function createAuthConfig(request?: NextRequest): NextAuthConfig {
     },
 
     async redirect({ url, baseUrl }) {
-      return url.startsWith(baseUrl) ? url : baseUrl
+      // Сравниваем origin, а не префикс: `startsWith(baseUrl)` пропускал
+      // `https://canfly.org.example.com` (открытый редирект через ?redirect=)
+      // и одновременно резал относительный `/profile`, из-за чего
+      // ?redirect= после OAuth-входа терялся.
+      try {
+        const target = new URL(url, baseUrl)
+        return target.origin === new URL(baseUrl).origin ? target.toString() : baseUrl
+      } catch {
+        return baseUrl
+      }
     },
   },
   debug: false,

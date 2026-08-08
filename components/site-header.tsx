@@ -3,6 +3,7 @@ import { NAV_ITEMS as DEFAULT_NAV_ITEMS, type NavItem } from '@/lib/nav'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { MobileNav } from '@/components/mobile-nav'
 import { SearchDialog } from '@/components/search/search-dialog'
+import { HeaderAuth } from '@/components/header-auth'
 
 interface SiteHeaderProps {
   activePath?: string
@@ -46,6 +47,9 @@ export function SiteHeader({
         <div className="flex items-center gap-2">
           <ThemeToggle />
           {showSearch && <SearchDialog />}
+          <span className="hidden lg:flex">
+            <HeaderAuth />
+          </span>
           <MobileNav items={navItems} />
         </div>
       </div>

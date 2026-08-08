@@ -29,6 +29,22 @@ const PROVIDERS: Record<string, { label: string; icon: string }> = {
   canfly: { label: 'canfly', icon: 'C' },
 }
 
+/** Метка «этот OAuth-вход — привязка, а не логин». Читается в auth.config.ts. */
+const OAUTH_LINK_COOKIE = 'cf_oauth_link'
+
+function oauthCookieSuffix() {
+  return `path=/; samesite=lax${window.location.protocol === 'https:' ? '; secure' : ''}`
+}
+
+function setOauthLinkCookie(providerId: string) {
+  // 5 минут: привязка — это один редирект туда-обратно, больше не нужно.
+  document.cookie = `${OAUTH_LINK_COOKIE}=${providerId}; max-age=300; ${oauthCookieSuffix()}`
+}
+
+function clearOauthLinkCookie() {
+  document.cookie = `${OAUTH_LINK_COOKIE}=; max-age=0; ${oauthCookieSuffix()}`
+}
+
 export function AccountSettingsClient({ initialEmails, initialLinkedAccounts }: AccountSettingsClientProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -43,11 +59,26 @@ export function AccountSettingsClient({ initialEmails, initialLinkedAccounts }: 
 
   useEffect(() => {
     const linked = searchParams.get('linked')
+    const linkError = searchParams.get('link_error')
+    if (!linked && !linkError) return
+
+    // Cookie снимается сразу по возвращении с провайдера. Без этого она жила
+    // все 600 секунд, и обычный вход тем же провайдером всё это время уходил
+    // в ветку линковки (auth.config.ts) — то есть ломался с link_error=session.
+    clearOauthLinkCookie()
+
     if (linked) {
       toast.success(`Аккаунт ${PROVIDERS[linked]?.label ?? linked} привязан`)
       refreshData()
-      router.replace('/profile/settings')
+    } else {
+      toast.error(
+        linkError === 'session'
+          ? 'Сессия истекла — войдите заново и повторите привязку'
+          : 'Не удалось привязать аккаунт',
+      )
     }
+
+    router.replace('/profile/settings')
   }, [searchParams, router])
 
   useEffect(() => {
@@ -114,7 +145,7 @@ export function AccountSettingsClient({ initialEmails, initialLinkedAccounts }: 
   }
 
   function handleLinkAccount(providerId: string) {
-    document.cookie = `cf_oauth_link=${providerId}; path=/; max-age=600; samesite=lax${window.location.protocol === 'https:' ? '; secure' : ''}`
+    setOauthLinkCookie(providerId)
     signIn(providerId, { redirectTo: '/profile/settings?linked=' + providerId })
   }
 
