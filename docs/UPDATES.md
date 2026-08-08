@@ -2,8 +2,38 @@
 
 ---
 
-## [8 августа 2026] Редизайн `/login`: сплит-экран и панель «Небо»
+## [8 августа 2026] Профиль читателя: `/user`, `/user-settings`, `/user/[handle]`
 
+### Что изменено
+Три новых маршрута рядом со старым `/profile` — старые страницы не трогаем.
+- `/user` — приватный дашборд. Полоса-паспорт, разрез чтения на 52 недели (керн), полка «читает» с реальным прогрессом, публичные цитаты, голоса.
+- `/user-settings` — личность, аватар, handle, цветовой паспорт (15 цветов каталога), видимость, доступ (email + OAuth через существующий `AccountSettingsClient`). Живое превью справа показывает то, что увидит публика.
+- `/user/[handle]` — публичная страница читателя. `notFound()` для неавторизованных зрителей при `profile_is_public = false`. Владелец видит баннер «так тебя видят другие».
+
+### Концепция
+Профиль как запись в каталоге canfly: цветовой паспорт из `CANFLY_COLORS`, керн как осадочный разрез чтения, человек — как совокупность вынесенного на свет. Имя в Cormorant light italic, без `font-black uppercase` — профиль это не рубрика. Полоса паспорта — тот же приём, что в `app/login/sky-panel.tsx`, но кадр фиксированный.
+
+### Как пользоваться
+- Зайти magic-link'ом, открыть `/user-settings`, выбрать цвет, загрузить аватар, написать одну строку `tagline`.
+- Сменить handle — публичный URL изменится, кулдаун 14 дней.
+- `/user/<handle>` работает анонимно; выключить видимость — страница отдаёт 404.
+
+### Зачем
+Раньше профиль читал только friends/highlights, читатель не мог менять имя/handle/аватар, прогресс чтения нигде не возвращался. Теперь `/user` — это личный зал, а `/user/[handle]` — визитная карточка читателя, как каталог цветов.
+
+### Что под капотом
+- `postgres/015_user_profile.sql`: `tagline`, `signature_color`, `profile_is_public`, `show_reading`, `handle_changed_at` + `UNIQUE INDEX (LOWER(handle))` (закрывает `@Adiom`/`@adiom`).
+- `lib/server/user-profile.ts`: `fetchShelf`, `fetchCoreWeeks`, `fetchPublicQuotes`, `fetchUserByHandle`, `isHandleAvailable`, `fetchUserProfileById`. `chapter_number` через `ROW_NUMBER` по опубликованным — маршруты ридера адресуют главу позицией, не `chapters.chapter_index`.
+- `lib/user-signature.ts`: паспортный цвет (`signature_color` → иначе дефолт из `users.id`), `isDarkHex` для выбора читаемой краски текста на полосе.
+- `lib/actions/user-profile.ts`: `updateIdentity`, `changeHandle`, `updateSignatureColor`, `updateVisibility`, `updateAvatar`. Гонка при смене handle ловится по `23505`; `users.email`-логика не задета.
+- `app/api/user/avatar/route.ts`: 10/час на пользователя, проверка сигнатуры байтов в `handleImageUpload`.
+- `proxy.ts`: гварды `/user` и `/user-settings` по тому же JWT-блоку, что у `/profile`; публичный `/user/[handle]` в матчер не попадает.
+- `lib/server/session.ts`: `SessionUser` расширен `tagline`, `signature_color`, `profile_is_public`, `show_reading`, `created_at` — лишний запрос на каждой странице больше не нужен.
+
+### Ограничения
+- OG-картинка `/user/[handle]/opengraph-image` — следующая задача; сейчас в `generateMetadata` только title/description и canonical.
+
+---
 ### Что изменено
 
 **Страница перешла на токены `cf-*`.** До этого `/login` была размечена хардкодом `#111210` / `#1b1c19` / `#f4efe5` и потому оставалась тёмной всегда: читатель со светлой темой на всём сайте попадал на чёрный экран. Теперь фон, текст и акцент берутся из `app/globals.css`, страница следует теме.

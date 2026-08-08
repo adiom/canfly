@@ -27,6 +27,21 @@ export function getPrimaryEdition(editions: Edition[]): Edition | null {
   )[0]
 }
 
+/**
+ * Ссылка на главу. У book-издания SEO-вариант с quality_tier, у остальных —
+ * editionSlug; /release/[slug]/[editionSlug] всё равно редиректит book на первый вид.
+ */
+export function getChapterUrl(
+  releaseSlug: string,
+  edition: { format: EditionFormat; slug: string; quality_tier: string },
+  chapterNumber: number,
+): string {
+  if (edition.format === 'book') {
+    return `/release/${releaseSlug}/book/${edition.quality_tier}/${chapterNumber}`
+  }
+  return `/release/${releaseSlug}/${edition.slug}/${chapterNumber}`
+}
+
 export function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60)
   const s = seconds % 60

@@ -98,6 +98,13 @@ export interface UserProfile {
   display_name: string;
   avatar: string | null;
   bio: string | null;
+  /** Одна строка под именем в профиле */
+  tagline: string | null;
+  /** id цвета из CANFLY_COLORS; null — цвет ещё не выбран, берётся дефолт по users.id */
+  signature_color: string | null;
+  profile_is_public: boolean;
+  show_reading: boolean;
+  handle_changed_at: string | null;
   is_deleted: boolean;
   deleted_at: string | null;
   created_at: string;

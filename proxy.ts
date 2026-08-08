@@ -14,7 +14,11 @@ export async function proxy(request: NextRequest) {
   }
 
   // --- Защита /profile через next-auth JWT ---
-  if (pathname.startsWith('/profile')) {
+  if (
+    pathname === '/user' ||
+    pathname.startsWith('/user-settings') ||
+    pathname.startsWith('/profile')
+  ) {
     const token = await getToken({
       req: request,
       secret: process.env.AUTH_SECRET,
@@ -121,6 +125,8 @@ export async function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     '/profile/:path*',
+    '/user',
+    '/user-settings/:path*',
     '/admin/:path*',
     '/studio/:path*',
     '/release',
