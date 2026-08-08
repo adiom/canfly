@@ -4,7 +4,7 @@ import { BookOpen } from 'lucide-react'
 
 import { fetchBooks } from '@/lib/server/books'
 import { BookType, BookWithCharacters } from '@/lib/types'
-import { generateBooksCollectionSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
+import { generateBooksCollectionSchema, generateBreadcrumbSchema, serializeJsonLd } from '@/lib/seo/schema'
 import { BooksClient } from '@/components/books-client'
 import { SiteHeader } from '@/components/site-header'
 import { SiteFooter } from '@/components/site-footer'
@@ -81,11 +81,11 @@ export default async function BooksHubPage() {
     <main className="min-h-screen bg-cf-bg">
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionSchema) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(collectionSchema) }}
       />
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(breadcrumbSchema) }}
       />
       <SiteHeader activePath="/books" />
 

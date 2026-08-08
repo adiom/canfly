@@ -3,7 +3,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 
 import { fetchNewsPostById } from '@/lib/server/news'
-import { generateNewsArticleSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
+import { generateNewsArticleSchema, generateBreadcrumbSchema, serializeJsonLd } from '@/lib/seo/schema'
 import { ThemeToggle } from '@/components/theme-toggle'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
@@ -61,11 +61,11 @@ export default async function NewsPage({ params }: NewsPageProps) {
     <main className="min-h-screen bg-cf-bg text-cf-text-1">
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(articleSchema) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(articleSchema) }}
       />
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(breadcrumbSchema) }}
       />
 
       <header className="sticky top-0 z-50 border-b border-cf-text-1/10 bg-cf-bg/92 backdrop-blur-xl">

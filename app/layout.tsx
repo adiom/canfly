@@ -3,7 +3,7 @@ import { Geist, Geist_Mono, Cormorant_Garamond } from 'next/font/google'
 import { SessionProvider } from 'next-auth/react'
 import { CartProvider } from '@/lib/cart-context'
 import { ThemeProvider } from '@/components/theme-provider'
-import { generateOrganizationSchema } from '@/lib/seo/schema'
+import { generateOrganizationSchema, serializeJsonLd } from '@/lib/seo/schema'
 import { Analytics } from '@vercel/analytics/next'
 import { SpeedInsights } from "@vercel/speed-insights/next"
 import { YandexMetrika } from '@/components/yandex-metrika'
@@ -53,7 +53,7 @@ export default function RootLayout({
       <body className="font-sans antialiased">
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationSchema) }}
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(organizationSchema) }}
         />
         <SessionProvider>
           <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>

@@ -2,7 +2,7 @@ import { notFound, redirect } from 'next/navigation'
 import type { Metadata } from 'next'
 
 import { fetchBookBySlug } from '@/lib/server/books'
-import { generateBookSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
+import { generateBookSchema, generateBreadcrumbSchema, serializeJsonLd } from '@/lib/seo/schema'
 import { BookReader } from '@/components/book-reader'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
@@ -84,11 +84,11 @@ export default async function BookChapterPage({ params }: BookChapterPageProps) 
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(bookSchema) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(bookSchema) }}
       />
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(breadcrumbSchema) }}
       />
       <BookReader book={book} initialChapter={chapterIndex} />
     </>

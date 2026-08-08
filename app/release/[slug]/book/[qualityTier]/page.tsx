@@ -12,6 +12,7 @@ import {
   generateBookEditionSchema,
   generateBreadcrumbSchema,
   generateChapterListSchema,
+  serializeJsonLd,
 } from '@/lib/seo/schema'
 import { formatChapterCount } from '@/lib/utils/format'
 
@@ -136,15 +137,15 @@ export default async function EditionPublicPage({
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(editionSchema) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(editionSchema) }}
       />
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(chapterListSchema) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(chapterListSchema) }}
       />
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(breadcrumbSchema) }}
       />
       <ReleaseEditionToc
         release={release}

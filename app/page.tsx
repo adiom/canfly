@@ -12,7 +12,7 @@ import {
 import { HomepageSlide } from '@/lib/types'
 import { SiteHeader } from '@/components/site-header'
 import { SiteFooter } from '@/components/site-footer'
-import { generateWebSiteSchema } from '@/lib/seo/schema'
+import { generateWebSiteSchema, serializeJsonLd } from '@/lib/seo/schema'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
@@ -59,7 +59,7 @@ export default async function Home() {
     <main className="min-h-screen bg-cf-bg text-cf-text-1">
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(webSiteSchema) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(webSiteSchema) }}
       />
       <SiteHeader activePath="/" />
 

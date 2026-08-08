@@ -13,7 +13,7 @@ import {
 import { listVisibleCharacterPosts } from '@/lib/server/character-posts'
 import { fetchWallPosts } from '@/lib/server/character-wall'
 import { getCurrentUser, getUserRoles } from '@/lib/server/session'
-import { generateCharacterSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
+import { generateCharacterSchema, generateBreadcrumbSchema, serializeJsonLd } from '@/lib/seo/schema'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
@@ -90,11 +90,11 @@ export default async function CharacterPage({ params, searchParams }: CharacterP
     <main className="min-h-screen bg-cf-bg text-cf-text-1">
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(characterSchema) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(characterSchema) }}
       />
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(breadcrumbSchema) }}
       />
       <SiteHeader activePath="/characters" />
 

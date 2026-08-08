@@ -4,7 +4,7 @@ import { fetchReleaseBySlug } from '@/lib/server/releases'
 import { fetchEditionByReleaseFormatTier } from '@/lib/server/editions'
 import { fetchPublishedChaptersByEdition } from '@/lib/server/chapters'
 import { ReleaseFullPage } from '@/components/release-full-page'
-import { generateBookEditionSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
+import { generateBookEditionSchema, generateBreadcrumbSchema, serializeJsonLd } from '@/lib/seo/schema'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
@@ -80,11 +80,11 @@ export default async function EditionFullPage({
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(editionSchema) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(editionSchema) }}
       />
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(breadcrumbSchema) }}
       />
       <ReleaseFullPage release={release} edition={edition} chapters={chapters} />
     </>

@@ -13,7 +13,7 @@ import {
   getEditionLabel,
   isAudioFormat,
 } from '@/lib/utils/editions'
-import { generateBreadcrumbSchema, generateChapterListSchema } from '@/lib/seo/schema'
+import { generateBreadcrumbSchema, generateChapterListSchema, serializeJsonLd } from '@/lib/seo/schema'
 import { formatChapterCount } from '@/lib/utils/format'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
@@ -133,11 +133,11 @@ export default async function EditionPublicPage({
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(chapterListSchema) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(chapterListSchema) }}
       />
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(breadcrumbSchema) }}
       />
       <ReleaseEditionToc
         release={release}

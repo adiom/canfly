@@ -8,7 +8,7 @@ import { fetchCharactersList } from '@/lib/server/characters'
 import { fetchPublicHighlightsByRelease } from '@/lib/server/chapter-highlights'
 import { ReleasePagePublic } from '@/components/release-page'
 import { computeEditionMeta, getPrimaryEdition } from '@/lib/utils/editions'
-import { generateReleaseSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
+import { generateReleaseSchema, generateBreadcrumbSchema, serializeJsonLd } from '@/lib/seo/schema'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
@@ -90,11 +90,11 @@ export default async function ReleasePublicPage({ params }: { params: Promise<{ 
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(releaseSchema) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(releaseSchema) }}
       />
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(breadcrumbSchema) }}
       />
       <ReleasePagePublic
         release={release}

@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { fetchSeriesWithReleases } from '@/lib/server/series'
 import { SeriesPage } from '@/components/series-page'
-import { generateBreadcrumbSchema } from '@/lib/seo/schema'
+import { generateBreadcrumbSchema, serializeJsonLd } from '@/lib/seo/schema'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
@@ -46,7 +46,7 @@ export default async function SeriesPageRoute({ params }: { params: Promise<{ sl
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(breadcrumbSchema) }}
       />
       <SeriesPage series={series} releases={series.releases} />
     </>

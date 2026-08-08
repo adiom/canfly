@@ -3,7 +3,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 
 import { fetchBookBySlug } from '@/lib/server/books'
-import { generateBookSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
+import { generateBookSchema, generateBreadcrumbSchema, serializeJsonLd } from '@/lib/seo/schema'
 import { MarkdownRenderer } from '@/components/markdown-renderer'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
@@ -75,11 +75,11 @@ export default async function BookFullPage({ params }: BookFullPageProps) {
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(bookSchema) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(bookSchema) }}
       />
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(breadcrumbSchema) }}
       />
       
       <main className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">

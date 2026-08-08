@@ -7,7 +7,7 @@ import { getCurrentUser, getUserRoles } from '@/lib/server/session'
 import { fetchChapterHighlights } from '@/lib/server/chapter-highlights'
 import type { UserRole } from '@/lib/types'
 import { ReleaseBookReader } from '@/components/release-book-reader'
-import { generateBookEditionSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
+import { generateBookEditionSchema, generateBreadcrumbSchema, serializeJsonLd } from '@/lib/seo/schema'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
@@ -109,11 +109,11 @@ export default async function ChapterPublicPage({
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(editionSchema) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(editionSchema) }}
       />
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(breadcrumbSchema) }}
       />
       <ReleaseBookReader
         release={release}
