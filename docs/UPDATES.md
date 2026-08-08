@@ -2,6 +2,24 @@
 
 ---
 
+## [8 августа 2026] Обновление Next.js 16.3.0 — фикс ChunkLoadError (issue #4)
+
+### Что изменено
+
+- **Next.js 16.2.7 → 16.3.0**, `eslint-config-next` 16.2.12 → 16.3.0
+- В 16.3 Turbopack **по умолчанию** ретраится при неудачной загрузке чанка (vercel/next.js#94918) — прямой фикс issue #4.
+- Обновлён `docs/TROUBLESHOOTING.md` — инструкция для ChunkLoadError.
+
+### Зачем
+
+Issue #4 — Turbopack: `ChunkLoadError` при быстром HMR в dev-режиме. Фикс вошёл в Turbopack 16.3, отдельный конфиг не нужен.
+
+### Примечание по переустановке
+
+Из-за смены pnpm store приходилось переустанавливать зависимости: `node_modules` удалён, `pnpm config set store-dir /Users/adiom/.pnpm --global`, нужен `pnpm install` + `pnpm add next@latest`.
+
+---
+
 ## [8 августа 2026] priority для LCP-изображений (issue #15)
 
 ### Что изменено
