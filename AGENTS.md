@@ -42,7 +42,7 @@ pnpm sync:tasks     # регенерация docs/BUGS.md и docs/TASKS.md из 
 
 Legacy-система книг удалена 9 августа 2026: страницы `/books/**`, витрина `/shop`, корзина `/cart` с `lib/cart-context.tsx`, админка книг (`app/admin/books/**`, `app/api/admin/books/**`, `book-form.tsx`), `lib/server/books.ts` и компоненты `book-reader.tsx` / `books-client.tsx` / `comic-reader.tsx` больше не существуют. Осталось три следа, и трогать их не нужно:
 
-- **301-редиректы в `proxy.ts`**: `/books/*` → `/release/[slug]`, `/shop` и `/cart` → `/releases/`, `/reader/*` → `/vvvvv/*`. Держат старые URL, которые годами живут в индексе Google.
+- **301-редиректы в `proxy.ts`**: `/books/*` → `/release/[slug]`, `/shop` и `/cart` → `/releases`, `/reader/*` → `/vvvvv/*`. Держат старые URL, которые годами живут в индексе Google.
 - **Надгробия API**: `GET|POST /api/books` и `POST /api/orders` отвечают «retired» (у orders — 410). `/api/orders` принимал анонимный POST с ценой из тела запроса, поэтому его нельзя просто вернуть.
 - **Таблицы `books`, `book_characters`, `orders`** остались в `postgres/schema.sql` и в базе как архив — живого кода к ним нет.
 
@@ -64,12 +64,17 @@ Legacy-система книг удалена 9 августа 2026: стран�
 
 Не `middleware.ts` — файла с таким именем нет и создавать его не нужно. `proxy.ts` экспортирует `proxy()` и `config` и отвечает за:
 
-- JWT-гварды `/profile`, `/admin` (нужна роль `admin`, иначе → `/admin/login`), `/studio` (**только факт авторизации** — роли проверяются глубже, в layout по БД);
-- редирект `/login` → `/` для авторизованных;
-- 301-нормализацию: `/release` → `/releases/`, приведение `/release/[slug]` к нижнему регистру;
+- JWT-гварды `/profile`, `/user`, `/user-settings`, `/admin` (нужна роль `admin`, иначе → `/admin/login`), `/studio` (**только факт авторизации** — роли проверяются глубже, в layout по БД);
+- 301-нормализацию: `/release` → `/releases`, `/home` → `/`, приведение слага `/release/[slug]` к нижнему регистру;
 - редиректы legacy-маршрутов.
 
-Пропускаются без обработки `/api/auth`, `/api/magic`, `/hi/`.
+`config.matcher` — **белый список**: вне перечисленных путей `proxy()` не вызывается вообще. Поэтому отдельные пропуски для `/api/**` и `/hi/**` не нужны, а добавление гварда без правки matcher ничего не защитит. Обратное тоже верно: server action — это POST на свой роут, и сужение matcher молча снимет с него защиту, поэтому авторизация обязана дублироваться в `studio-auth`.
+
+Метаданные-роуты (`opengraph-image`, `twitter-image`, `icon`, `apple-icon`) пропускаются в самом начале: для правила «всё глубже `/release/[slug]` — на сам релиз» это подмаршрут, и без исключения картинка отвечала бы 301.
+
+Редиректы ведут на пути **без завершающего слэша**: `trailingSlash` не включён, и Next добавил бы к `/releases/` второй прыжок (308).
+
+Страница `/login` авторизованному показывает `AlreadySignedIn` (см. `app/login/page.tsx`), редиректа в `proxy.ts` для неё нет.
 
 ### 3. Авторизация — три слоя
 
