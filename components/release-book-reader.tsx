@@ -12,6 +12,7 @@ import { useEditorialNotes } from '@/lib/reader/use-editorial-notes'
 import { BookmarksPanel } from '@/components/bookmarks-panel'
 import { HighlightArtifact } from '@/components/highlight-artifact'
 import { collectParagraphs, clearHighlightMarks, wrapHighlight, wrapEditorialNote, PARAGRAPH_TAGS } from '@/lib/reader/highlights-dom'
+import { CATALOG_PATH } from '@/lib/nav'
 
 interface ReleaseBookReaderProps {
   release: Release
@@ -566,7 +567,7 @@ export function ReleaseBookReader({
             <div className="flex flex-1 flex-col items-end justify-center gap-2 border py-4 px-5" style={{ borderColor: `${textColor}14` }}>
               <p className="text-[10px] uppercase tracking-[0.16em] opacity-40" style={{ color: textColor }}>Конец</p>
               <Link
-                href="/releases"
+                href={CATALOG_PATH}
                 className="text-sm font-black uppercase tracking-[0.12em] transition-opacity hover:opacity-70"
                 style={{ color: accent }}
               >

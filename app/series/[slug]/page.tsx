@@ -3,6 +3,7 @@ import type { Metadata } from 'next'
 import { fetchSeriesWithReleases } from '@/lib/server/series'
 import { SeriesPage } from '@/components/series-page'
 import { generateBreadcrumbSchema, serializeJsonLd } from '@/lib/seo/schema'
+import { CATALOG_PATH } from '@/lib/nav'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
@@ -37,7 +38,7 @@ export default async function SeriesPageRoute({ params }: { params: Promise<{ sl
 
   const breadcrumbSchema = generateBreadcrumbSchema([
     { label: 'canfly', url: `${BASE_URL}/` },
-    { label: 'Релизы', url: `${BASE_URL}/releases/` },
+    { label: 'Релизы', url: `${BASE_URL}${CATALOG_PATH}` },
     { label: series.title, url: `${BASE_URL}/series/${series.slug}` },
   ])
 

@@ -87,6 +87,10 @@ export async function proxy(request: NextRequest) {
   }
 
   // --- Редирект /release → /releases (каталог) ---
+  // Ведём на /releases, а не сразу на корень, хотя каталог сейчас там: этот
+  // редирект постоянный (301), а переезд каталога — временный. Лишний прыжок
+  // на редкой опечатке в URL дешевле, чем намертво закэшированный у клиентов
+  // адрес, который после отката окажется неверным.
   if (pathname === '/release') {
     return NextResponse.redirect(new URL('/releases/', request.url), 301)
   }

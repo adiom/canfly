@@ -59,3 +59,32 @@ test.describe('legacy: надгробия API не воскрешаются', ()
     expect(res.status()).toBe(410)
   })
 })
+
+/**
+ * Каталог временно отдаётся с корня, прежний лендинг — с `/home`.
+ * Редирект с `/releases` намеренно временный (307): переезд обратим, а 308
+ * браузеры кэшируют надолго и после отката уводили бы с `/releases` на корень.
+ */
+test.describe('каталог на корне: /releases редиректит временно', () => {
+  test('GET /releases → 307 → /', async ({ request }) => {
+    const res = await request.get('/releases', { maxRedirects: 0 })
+    expect(res.status()).toBe(307)
+    expect(res.headers()['location']).toBe('/')
+  })
+
+  test('GET /releases?category=book&page=2 сохраняет параметры', async ({ request }) => {
+    const res = await request.get('/releases?category=book&page=2', { maxRedirects: 0 })
+    expect(res.status()).toBe(307)
+    expect(res.headers()['location']).toBe('/?category=book&page=2')
+  })
+
+  test('корень отдаёт каталог, а не лендинг', async ({ page }) => {
+    await page.goto('/', { waitUntil: 'domcontentloaded' })
+    await expect(page.getByRole('heading', { level: 1, name: 'Релизы' })).toBeVisible()
+  })
+
+  test('/home отдаёт прежний лендинг', async ({ page }) => {
+    const res = await page.goto('/home', { waitUntil: 'domcontentloaded' })
+    expect(res?.status()).toBe(200)
+  })
+})

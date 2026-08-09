@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { NAV_ITEMS as DEFAULT_NAV_ITEMS, type NavItem } from '@/lib/nav'
+import { NAV_ITEMS as DEFAULT_NAV_ITEMS, LANDING_PATH, type NavItem } from '@/lib/nav'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { MobileNav } from '@/components/mobile-nav'
 import { SearchDialog } from '@/components/search/search-dialog'
@@ -19,7 +19,7 @@ export function SiteHeader({
   return (
     <header className="sticky top-0 z-[60] border-b border-cf-text-1/10 bg-cf-bg/92 backdrop-blur-xl">
       <div className="mx-auto flex max-w-7xl h-14 items-center justify-between px-4 md:px-8">
-        <Link href="/" className="flex items-center gap-3" aria-label="Canfly home">
+        <Link href={LANDING_PATH} className="flex items-center gap-3" aria-label="Canfly home">
           <span className="flex h-9 w-16 items-center justify-center bg-cf-accent text-lg font-black uppercase tracking-[-0.04em] text-white">
             canfly
           </span>

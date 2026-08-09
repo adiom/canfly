@@ -15,6 +15,7 @@ import {
   isAudioFormat,
 } from '@/lib/utils/editions'
 import { formatChapterCount, formatReadingTime, formatWordCount } from '@/lib/utils/format'
+import { CATALOG_PATH } from '@/lib/nav'
 
 const DEFAULT_ACCENT = '#d52525'
 
@@ -67,7 +68,7 @@ export function ReleaseEditionToc({
 
   return (
     <div className="min-h-screen bg-cf-bg text-cf-text-1">
-      <SiteHeader activePath="/releases" />
+      <SiteHeader activePath={CATALOG_PATH} />
 
       <section className="mx-auto max-w-6xl px-5 py-10 md:px-8 md:py-16">
         <Link

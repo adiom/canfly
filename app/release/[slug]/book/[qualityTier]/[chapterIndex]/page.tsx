@@ -8,6 +8,7 @@ import { fetchChapterHighlights } from '@/lib/server/chapter-highlights'
 import type { UserRole } from '@/lib/types'
 import { ReleaseBookReader } from '@/components/release-book-reader'
 import { generateBookEditionSchema, generateBreadcrumbSchema, serializeJsonLd } from '@/lib/seo/schema'
+import { CATALOG_PATH } from '@/lib/nav'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
@@ -99,7 +100,7 @@ export default async function ChapterPublicPage({
   }
   const breadcrumbSchema = generateBreadcrumbSchema([
     { label: 'canfly', url: `${BASE_URL}/` },
-    { label: 'Релизы', url: `${BASE_URL}/releases/` },
+    { label: 'Релизы', url: `${BASE_URL}${CATALOG_PATH}` },
     { label: release.title, url: `${BASE_URL}/release/${release.slug}` },
     { label: tierBreadcrumbLabel[qualityTier] ?? 'Книга', url: editionUrl },
     { label: `Глава ${chapterNumber}`, url: `${BASE_URL}/release/${release.slug}/book/${qualityTier}/${chapterNumber}` },

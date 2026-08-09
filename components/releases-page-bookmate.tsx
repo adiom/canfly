@@ -5,6 +5,7 @@ import { SiteHeader } from '@/components/site-header'
 import { SiteFooter } from '@/components/site-footer'
 import { Pagination } from '@/components/ui/pagination'
 import type { ReleasesPage } from '@/lib/server/releases'
+import { CATALOG_PATH, catalogHref } from '@/lib/nav'
 import { cn } from '@/lib/utils'
 
 type CategoryValue = EditionFormat | 'all'
@@ -28,7 +29,7 @@ interface ReleasesPageBookmateProps {
 function categoryHref(value: CategoryValue) {
   const params = new URLSearchParams()
   if (value !== 'all') params.set('category', value)
-  return params.toString() ? `/releases?${params}` : '/releases'
+  return catalogHref(params)
 }
 
 export function ReleasesPageBookmate({
@@ -42,14 +43,14 @@ export function ReleasesPageBookmate({
 
   return (
     <main className="min-h-screen bg-cf-bg text-cf-text-1">
-      <SiteHeader activePath="/releases" />
+      <SiteHeader activePath={CATALOG_PATH} />
 
       <div className="mx-auto max-w-7xl px-4 md:px-8">
         <header className="pt-10 pb-6 md:pt-16 md:pb-8">
           <p className="mb-3 font-mono text-[9px] uppercase tracking-[0.22em] text-cf-accent">
             каталог
           </p>
-          <h1 className="text-4xl font-black uppercase leading-none text-cf-text-heading md:text-6xl">
+          <h1 className="text-sm font-black uppercase leading-none">
             Релизы
           </h1>
           <p className="mt-4 max-w-2xl leading-7 text-cf-text-caption">
@@ -105,7 +106,7 @@ export function ReleasesPageBookmate({
               <Pagination
                 page={page}
                 totalPages={totalPages}
-                basePath="/releases"
+                basePath={CATALOG_PATH}
                 query={{ category: category !== 'all' ? category : undefined }}
               />
             </div>

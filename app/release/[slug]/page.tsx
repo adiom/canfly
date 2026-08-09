@@ -9,6 +9,7 @@ import { fetchPublicHighlightsByRelease } from '@/lib/server/chapter-highlights'
 import { ReleasePagePublic } from '@/components/release-page'
 import { computeEditionMeta, getPrimaryEdition } from '@/lib/utils/editions'
 import { generateReleaseSchema, generateBreadcrumbSchema, serializeJsonLd } from '@/lib/seo/schema'
+import { CATALOG_PATH } from '@/lib/nav'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
@@ -85,7 +86,7 @@ export default async function ReleasePublicPage({ params }: { params: Promise<{ 
   const releaseSchema = generateReleaseSchema(release, formats, BASE_URL, bookEditions, characters)
   const breadcrumbSchema = generateBreadcrumbSchema([
     { label: 'canfly', url: `${BASE_URL}/` },
-    { label: 'Релизы', url: `${BASE_URL}/releases/` },
+    { label: 'Релизы', url: `${BASE_URL}${CATALOG_PATH}` },
     { label: release.title, url: `${BASE_URL}/release/${release.slug}` },
   ])
 

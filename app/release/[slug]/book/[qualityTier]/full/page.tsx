@@ -5,6 +5,7 @@ import { fetchEditionByReleaseFormatTier } from '@/lib/server/editions'
 import { fetchPublishedChaptersByEdition } from '@/lib/server/chapters'
 import { ReleaseFullPage } from '@/components/release-full-page'
 import { generateBookEditionSchema, generateBreadcrumbSchema, serializeJsonLd } from '@/lib/seo/schema'
+import { CATALOG_PATH } from '@/lib/nav'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
@@ -70,7 +71,7 @@ export default async function EditionFullPage({
   }
   const breadcrumbSchema = generateBreadcrumbSchema([
     { label: 'canfly', url: `${BASE_URL}/` },
-    { label: 'Релизы', url: `${BASE_URL}/releases/` },
+    { label: 'Релизы', url: `${BASE_URL}${CATALOG_PATH}` },
     { label: release.title, url: `${BASE_URL}/release/${release.slug}` },
     { label: tierBreadcrumbLabel[qualityTier] ?? 'Книга', url: `${BASE_URL}/release/${release.slug}/book/${qualityTier}/full` },
     { label: 'Полная версия', url: `${BASE_URL}/release/${release.slug}/book/${qualityTier}/full` },

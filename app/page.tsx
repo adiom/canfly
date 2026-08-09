@@ -1,155 +1,122 @@
-import Link from 'next/link'
-import { Suspense } from 'react'
-import { BookOpen, UserRound } from 'lucide-react'
+import type { Metadata } from 'next'
+import { redirect } from 'next/navigation'
+import { fetchReleasesPage } from '@/lib/server/releases'
+import type { EditionFormat } from '@/lib/releases-types'
+import { ReleasesPageBookmate } from '@/components/releases-page-bookmate'
 
-import { HomeHeroSlider } from '@/components/home-hero-slider'
-import { HomeIssuesSection } from '@/components/home-issues-section'
-import { HomeNewsSection } from '@/components/home-news-section'
-import {
-  getPublicHomepageSlides,
-  isHomepageSlidesTableMissing,
-} from '@/lib/homepage-slide-store'
-import { HomepageSlide } from '@/lib/types'
-import { SiteHeader } from '@/components/site-header'
-import { SiteFooter } from '@/components/site-footer'
-import { generateWebSiteSchema, serializeJsonLd } from '@/lib/seo/schema'
+export const dynamic = 'force-dynamic'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
-export const revalidate = 60
+const VALID_CATEGORIES: (EditionFormat | 'all')[] = [
+  'all',
+  'comic',
+  'book',
+  'audiobook',
+  'magazine',
+  'album',
+  'digital',
+]
 
-export const metadata = {
-  title: 'canfly | культура твоего сознания',
-  description:
-    'canfly — литературная вселенная о тревоге, ремесле, памяти, цифровой усталости и людях, которые продолжают функционировать.',
-  openGraph: {
-    title: 'canfly | культура твоего сознания',
-    description:
-      'canfly — литературная вселенная о тревоге, ремесле, памяти, цифровой усталости и людях, которые продолжают функционировать.',
-    url: BASE_URL,
-    siteName: 'canfly',
-    locale: 'ru_RU',
-    type: 'website' as const,
-  },
-  twitter: {
-    card: 'summary_large_image' as const,
-  },
-  alternates: {
-    canonical: BASE_URL,
-  },
+const PAGE_SIZE = 24
+
+interface ReleasesPageProps {
+  searchParams: Promise<{
+    page?: string
+    category?: string
+  }>
 }
 
-export default async function Home() {
-  let slides: HomepageSlide[] = []
-  let isMigrationMissing = false
+function parseParams(searchParams: {
+  page?: string
+  category?: string
+}) {
+  const requestedCategory = (searchParams.category ?? 'all').toLowerCase()
+  const category: EditionFormat | 'all' = VALID_CATEGORIES.includes(
+    requestedCategory as EditionFormat | 'all',
+  )
+    ? (requestedCategory as EditionFormat | 'all')
+    : 'all'
 
-  try {
-    slides = await getPublicHomepageSlides()
-  } catch (error) {
-    if (!isHomepageSlidesTableMissing(error)) {
-      throw error
-    }
+  const requestedPage = Number.parseInt(searchParams.page ?? '1', 10)
+  const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1
 
-    isMigrationMissing = true
+  return { category, page }
+}
+
+/** Корень без параметров — канонический адрес каталога, без хвоста `/`. */
+function catalogUrl(category: EditionFormat | 'all', page: number, base = ''): string {
+  const params = new URLSearchParams()
+  if (category !== 'all') params.set('category', category)
+  if (page > 1) params.set('page', String(page))
+  const qs = params.toString()
+  return qs ? `${base}/?${qs}` : base || '/'
+}
+
+export async function generateMetadata({
+  searchParams,
+}: ReleasesPageProps): Promise<Metadata> {
+  const sp = await searchParams
+  const { category, page } = parseParams(sp)
+
+  const CATEGORY_LABELS: Record<EditionFormat | 'all', string> = {
+    all: '',
+    comic: ' · комиксы',
+    book: ' · книги',
+    audiobook: ' · аудиокниги',
+    audiorelease: ' · аудиорелизы',
+    magazine: ' · журналы',
+    album: ' · альбомы',
+    digital: ' · цифровые релизы',
+  }
+  const categoryLabel = CATEGORY_LABELS[category]
+
+  // Заголовок корня без фильтров — витрина, а не служебное «Релизы»
+  const title =
+    category === 'all' && page === 1
+      ? 'canfly | культура твоего сознания'
+      : `Релизы${categoryLabel}${page > 1 ? ` — стр. ${page}` : ''} | canfly`
+
+  const description =
+    category === 'all' && page === 1
+      ? 'canfly — литературная вселенная: комиксы, книги, аудиокниги и журналы о тревоге, ремесле, памяти и людях, которые продолжают функционировать.'
+      : 'Каталог всех релизов вселенной canfly: комиксы, книги, аудиокниги и многое другое.'
+
+  const canonical = catalogUrl(category, page, BASE_URL)
+
+  return {
+    title,
+    description,
+    alternates: { canonical },
+    openGraph: {
+      title,
+      description,
+      url: canonical,
+      siteName: 'canfly',
+      locale: 'ru_RU',
+      type: 'website',
+    },
+    twitter: { card: 'summary_large_image' },
+  }
+}
+
+export default async function HomeCatalogPage({ searchParams }: ReleasesPageProps) {
+  const sp = await searchParams
+  const { category, page } = parseParams(sp)
+
+  const data = await fetchReleasesPage({
+    status: 'published',
+    format: category,
+    page,
+    pageSize: PAGE_SIZE,
+  })
+
+  // Запрошена несуществующая страница → redirect на последнюю валидную
+  if (page > data.totalPages) {
+    redirect(catalogUrl(category, data.totalPages))
   }
 
-  const webSiteSchema = generateWebSiteSchema(BASE_URL)
-
   return (
-    <main className="min-h-screen bg-cf-bg text-cf-text-1">
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: serializeJsonLd(webSiteSchema) }}
-      />
-      <SiteHeader activePath="/" />
-
-      {slides.length > 0 ? (
-        <HomeHeroSlider slides={slides} />
-      ) : (
-        <section className="border-b border-cf-text-1/10 bg-cf-bg px-4 py-24 md:px-8">
-          <div className="mx-auto max-w-7xl">
-            <p className="mb-4 text-xs font-black uppercase tracking-[0.22em] text-cf-accent">
-              hero-слайдер
-            </p>
-            <h1 className="max-w-4xl text-5xl font-black uppercase leading-none text-cf-text-heading md:text-7xl">
-              {isMigrationMissing ? 'Создайте таблицу слайдера' : 'Добавьте первый слайд в админке'}
-            </h1>
-            <p className="mt-6 max-w-2xl text-lg leading-8 text-cf-text-caption">
-              {isMigrationMissing
-                ? 'Главная страница больше не использует fallback. Выполните SQL из `postgres/schema.sql`, чтобы создать `homepage_slides` в Postgres.'
-                : 'Главная страница читает слайды только из таблицы Postgres `homepage_slides`.'}
-            </p>
-            <Link
-              href="/admin"
-              className="mt-8 inline-flex h-12 items-center rounded-sm bg-cf-warm px-5 text-sm font-black uppercase text-cf-text-heading"
-            >
-              Открыть админку
-            </Link>
-          </div>
-        </section>
-      )}
-
-      <Suspense fallback={
-        <section id="issues" className="border-b border-cf-text-1/10 bg-cf-bg-2 px-4 py-12 text-cf-text-1 md:px-8 md:py-16">
-          <div className="mx-auto max-w-7xl">
-            <div className="mb-8">
-              <p className="mb-2 text-xs font-black uppercase tracking-[0.22em] text-cf-accent">новые выпуски</p>
-              <div className="h-12 w-40 animate-pulse rounded bg-cf-text-1/10" />
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className="animate-pulse">
-                  <div className="aspect-[4/5] rounded bg-cf-text-1/10" />
-                  <div className="mt-3 h-6 rounded bg-cf-text-1/10" />
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-      }>
-        <HomeIssuesSection />
-      </Suspense>
-
-      <Suspense fallback={
-        <section id="news" className="border-b border-cf-text-1/10 bg-cf-bg px-4 py-12 md:px-8 md:py-16">
-          <div className="mx-auto max-w-7xl">
-            <div className="mb-8">
-              <p className="mb-3 text-xs font-black uppercase tracking-[0.22em] text-cf-accent">canfly dispatch</p>
-              <div className="h-12 w-60 animate-pulse rounded bg-cf-text-1/10" />
-            </div>
-          </div>
-        </section>
-      }>
-        <HomeNewsSection />
-      </Suspense>
-
-      <section id="worlds" className="bg-cf-bg-2 px-4 py-12 md:px-8 md:py-16">
-        <div className="mx-auto max-w-7xl">
-          <div className="mb-8">
-            <p className="mb-3 text-xs font-black uppercase tracking-[0.22em] text-cf-accent">
-              explore canfly
-            </p>
-            <h2 className="text-2xl font-black uppercase leading-none text-cf-text-heading sm:text-3xl md:text-5xl">
-              Входы во вселенную
-            </h2>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <Link href="/releases/" className="group border border-cf-text-1/10 bg-cf-bg p-4 hover:border-cf-warm/45 sm:p-6">
-              <BookOpen className="mb-8 h-7 w-7 text-cf-warm sm:mb-10" />
-              <h3 className="text-xl font-black uppercase text-cf-text-heading sm:text-2xl">Книги</h3>
-              <p className="mt-3 leading-7 text-cf-text-caption sm:mt-4">Романы, повести и циклы как самостоятельные точки входа.</p>
-            </Link>
-            <Link href="/characters" className="group border border-cf-text-1/10 bg-cf-bg p-4 hover:border-cf-blue/45 sm:p-6">
-              <UserRound className="mb-8 h-7 w-7 text-cf-blue sm:mb-10" />
-              <h3 className="text-xl font-black uppercase text-cf-text-heading sm:text-2xl">Персонажи</h3>
-              <p className="mt-3 leading-7 text-cf-text-caption sm:mt-4">Люди функции: швеи, инженеры, операторы, сотрудники ПВЗ.</p>
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      <SiteFooter variant="full" />
-    </main>
+    <ReleasesPageBookmate data={data} category={category} page={data.page} />
   )
 }

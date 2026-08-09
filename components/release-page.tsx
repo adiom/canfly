@@ -16,6 +16,7 @@ import {
   formatTotalDuration, getEditionLabel, isAudioFormat, isDigitalFormat,
 } from '@/lib/utils/editions'
 import { formatChapterCount, formatReadingTime, formatWordCount, pluralRu } from '@/lib/utils/format'
+import { CATALOG_PATH } from '@/lib/nav'
 
 const defaultConfig: ReleaseDesignConfig = {
   accent_color: '#d52525',
@@ -68,7 +69,7 @@ export function ReleasePagePublic({
 
   return (
     <div className="min-h-screen bg-cf-bg text-cf-text-1">
-      <SiteHeader activePath="/releases" />
+      <SiteHeader activePath={CATALOG_PATH} />
 
       {/* ─── Hero ─────────────────────────────────────────────────────── */}
       <section className="mx-auto max-w-6xl px-5 pt-10 pb-12 md:px-8 md:pt-16 md:pb-20">

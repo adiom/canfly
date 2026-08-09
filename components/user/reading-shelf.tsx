@@ -2,6 +2,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import type { ShelfItem } from '@/lib/server/user-profile'
 import { getChapterUrl } from '@/lib/utils/editions'
+import { CATALOG_PATH } from '@/lib/nav'
 
 const CHAPTER_LABELS: Record<string, string> = {
   book: 'Глава',
@@ -18,7 +19,7 @@ export function ReadingShelf({ items, progressColor }: { items: ShelfItem[]; pro
       <div className="border border-dashed border-cf-text-1/15 p-8 text-center">
         <p className="text-cf-text-3">Полка пуста</p>
         <Link
-          href="/releases"
+          href={CATALOG_PATH}
           className="mt-3 inline-block font-mono text-[9px] uppercase tracking-[0.2em] text-cf-accent hover:underline"
         >
           Выбрать, с чего начать

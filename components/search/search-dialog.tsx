@@ -14,6 +14,7 @@ import {
 import type { AutocompleteItem } from '@/lib/server/search'
 import { highlight } from '@/lib/search-highlight'
 import { getRecentSearches, addRecentSearch, clearRecentSearches } from '@/lib/search-recent'
+import { CATALOG_PATH } from '@/lib/nav'
 
 export function SearchDialog() {
   const router = useRouter()
@@ -175,7 +176,7 @@ export function SearchDialog() {
               </CommandGroup>
             )}
             <CommandGroup heading="Перейти">
-              <CommandItem value="__nav_releases" onSelect={() => saveAndNavigate('', '/releases')}>
+              <CommandItem value="__nav_releases" onSelect={() => saveAndNavigate('', CATALOG_PATH)}>
                 <Search className="mr-2 h-4 w-4 flex-shrink-0 text-cf-text-3" />
                 <span className="text-sm text-cf-text-2">Все релизы</span>
               </CommandItem>
