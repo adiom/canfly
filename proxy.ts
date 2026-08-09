@@ -105,15 +105,26 @@ export async function proxy(request: NextRequest) {
 
   // --- Редиректы со старой системы книг на Release ---
   if (pathname === '/books') {
-    return NextResponse.redirect(new URL('/releases/', request.url))
+    return NextResponse.redirect(new URL('/releases/', request.url), 301)
   }
 
   if (pathname.startsWith('/books/')) {
     // /books/[slug]/[chapter] или /books/[slug]/full -> /release/[slug]
     const slug = pathname.split('/')[2].toLowerCase()
-    return NextResponse.redirect(new URL(`/release/${slug}`, request.url))
+    return NextResponse.redirect(new URL(`/release/${slug}`, request.url), 301)
   }
 
+  // --- Редиректы Shop/Cart на Release ---
+  if (pathname.startsWith('/shop') || pathname.startsWith('/cart')) {
+    return NextResponse.redirect(new URL('/releases/', request.url), 301)
+  }
+
+  // --- Редиректы старой читалки на новую ---
+  if (pathname.startsWith('/reader/')) {
+    // /reader/[editionId] -> /vvvvv/[editionId]
+    const editionId = pathname.split('/')[2]
+    return NextResponse.redirect(new URL(`/vvvvv/${editionId}`, request.url), 301)
+  }
 
   return NextResponse.next({ request })
 }
