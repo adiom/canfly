@@ -1,9 +1,7 @@
 "use client"
 
-import { useCallback, useState, type MouseEvent } from 'react'
 import Link from 'next/link'
 import type { Edition } from '@/lib/releases-types'
-import { Badge } from '@/components/ui/badge'
 import { BookOpen, Headphones, Image, Music, Newspaper, Radio } from 'lucide-react'
 
 const formatIcons: Record<string, React.ElementType> = {
@@ -24,74 +22,55 @@ const formatLabels: Record<string, string> = {
   magazine: 'Журнал',
 }
 
-const statusBadgeStyles: Record<string, string> = {
-  draft: 'bg-amber-50 text-amber-600 border-amber-200/80',
-  published: 'bg-emerald-50 text-emerald-600 border-emerald-200/80',
-  archived: 'bg-gray-100 text-gray-500 border-gray-200/80',
+const tierLabels: Record<string, string> = {
+  standard: 'Стандарт',
+  premium: 'Премиум',
 }
 
-const statusLabels: Record<string, string> = {
-  draft: 'Черновик',
-  published: 'Опубликован',
-  archived: 'Архив',
-}
-
-const formatGradients: Record<string, string> = {
-  book: 'from-violet-100 to-violet-50',
-  comic: 'from-rose-100 to-rose-50',
-  audiobook: 'from-amber-100 to-amber-50',
-  audiorelease: 'from-sky-100 to-sky-50',
-  album: 'from-emerald-100 to-emerald-50',
-  magazine: 'from-orange-100 to-orange-50',
-}
+const STATUS = {
+  draft: { label: 'Черновик', stamp: 'border-cf-text-1/20 text-cf-text-3' },
+  published: { label: 'Опубликован', stamp: 'border-cf-warm/40 text-cf-warm' },
+  archived: { label: 'Архив', stamp: 'border-cf-text-1/15 text-cf-text-4' },
+} as const
 
 export function EditionCard({ edition }: { edition: Edition }) {
-  const [copied, setCopied] = useState(false)
-  const handleCopy = useCallback((e: MouseEvent<HTMLButtonElement>) => {
-    e.preventDefault()
-    e.stopPropagation()
-    if (navigator?.clipboard) {
-      navigator.clipboard.writeText(edition.id).then(() => {
-        setCopied(true)
-        setTimeout(() => setCopied(false), 1500)
-      })
-    }
-  }, [edition.id])
   const Icon = formatIcons[edition.format] ?? BookOpen
-  const gradient = formatGradients[edition.format] ?? 'from-violet-100 to-violet-50'
+  const status = STATUS[edition.status] ?? STATUS.draft
+  const tier = edition.quality_tier ? tierLabels[edition.quality_tier] ?? edition.quality_tier : null
 
   return (
-    <Link href={`/studio/editions/${edition.id}`}>
-      <div className="group bg-white/60 backdrop-blur-md border border-white/70 rounded-2xl shadow-sm shadow-black/5 p-4 md:p-5 transition-all duration-300 hover:bg-white/80 hover:shadow-md hover:shadow-black/8 hover:-translate-y-0.5 hover:border-white/90">
-        <div className="flex items-center gap-4">
-          <div className={`flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br ${gradient} shadow-sm`}>
-            <Icon className="h-5 w-5 text-gray-600 group-hover:text-violet-600 transition-colors" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-bold text-gray-900 group-hover:text-violet-700 transition-colors">
-              {formatLabels[edition.format]}
-            </p>
-            {edition.platform && (
-              <p className="text-sm text-gray-400">{edition.platform}</p>
-            )}
-            <div className="flex items-center gap-2">
-              <p className="text-xs text-gray-400 select-all font-mono break-words">{edition.id}</p>
-              <button
-                type="button"
-                onClick={handleCopy}
-                className="text-xs text-gray-500 hover:text-gray-700"
-                aria-label="Copy edition id"
-              >
-                {copied ? 'Copied' : 'Copy'}
-              </button>
-            </div>
-          </div>
-          
-          <Badge variant="outline" className={`border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] rounded-lg ${statusBadgeStyles[edition.status]}`}>
-            {statusLabels[edition.status]}
-          </Badge>
-        </div>
+    <Link
+      href={`/studio/editions/${edition.id}`}
+      className="group flex items-center gap-4 px-1 py-4 transition-colors hover:bg-cf-text-1/[0.03]"
+    >
+      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center border border-cf-text-1/10 bg-cf-bg-2 transition-colors group-hover:border-cf-warm/45">
+        <Icon className="h-4 w-4 text-cf-text-3 transition-colors group-hover:text-cf-accent" />
       </div>
+
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-sm font-black uppercase leading-none tracking-[0.04em] text-cf-text-heading transition-colors group-hover:text-cf-accent">
+            {formatLabels[edition.format] ?? edition.format}
+          </h3>
+          {tier && (
+            <span className="border border-cf-text-1/15 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.12em] text-cf-text-3">
+              {tier}
+            </span>
+          )}
+          {edition.is_primary && (
+            <span className="border border-cf-warm/40 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.12em] text-cf-warm">
+              Основное
+            </span>
+          )}
+        </div>
+        <p className="truncate font-mono text-[10px] uppercase tracking-[0.12em] text-cf-text-3">
+          {[edition.platform, edition.slug, edition.id.slice(0, 8)].filter(Boolean).join(' · ')}
+        </p>
+      </div>
+
+      <span className={`flex-shrink-0 border px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.12em] ${status.stamp}`}>
+        {status.label}
+      </span>
     </Link>
   )
 }

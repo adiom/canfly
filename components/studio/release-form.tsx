@@ -7,7 +7,6 @@ import { toast } from 'sonner'
 import type { Release } from '@/lib/releases-types'
 import { generateSlug } from '@/lib/slug-utils'
 import { createReleaseAction, updateReleaseAction } from '@/lib/actions/studio'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
@@ -16,6 +15,12 @@ import { CoverImageUploader } from '@/components/studio/cover-image-uploader'
 interface ReleaseFormProps {
   release?: Release | null
 }
+
+const fieldCls =
+  'rounded-none border-cf-text-1/15 bg-cf-bg text-cf-text-1 focus-visible:border-cf-text-1/30 focus-visible:ring-cf-text-1/20'
+
+const labelCls =
+  'inline-block mb-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-cf-text-3'
 
 export function ReleaseForm({ release }: ReleaseFormProps) {
   const router = useRouter()
@@ -81,63 +86,75 @@ export function ReleaseForm({ release }: ReleaseFormProps) {
 
   return (
     <form onSubmit={handleSubmit}>
-      <div className="bg-white/60 backdrop-blur-md border border-white/70 rounded-2xl shadow-sm shadow-black/5 p-5 md:p-6">
-        <h2 className="text-lg font-bold text-gray-900 mb-6">{isEdit ? 'Редактирование' : 'Новый релиз'}</h2>
+      <div className="border border-cf-text-1/10 bg-cf-bg-2 p-5 md:p-6">
+        {!isEdit && (
+          <h2 className="mb-6 font-[family-name:var(--font-cormorant)] text-3xl font-bold italic leading-none text-cf-text-heading">
+            Новый релиз
+          </h2>
+        )}
         <div className="space-y-5">
-          <div className="space-y-2">
-            <Label htmlFor="title" className="text-gray-600">Название</Label>
-            <Input id="title" value={title} onChange={e => handleTitleChange(e.target.value)} placeholder="Название произведения" className="bg-white/60 border-white/70 rounded-xl focus-visible:ring-violet-500/30" />
+          <div className="space-y-1">
+            <Label htmlFor="title" className={labelCls}>Название</Label>
+            <Input id="title" value={title} onChange={e => handleTitleChange(e.target.value)} placeholder="Название произведения" className={fieldCls} />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="slug" className="text-gray-600">Slug</Label>
-            <Input id="slug" value={slug} onChange={e => { setSlug(e.target.value); setSlugManual(true) }} placeholder="url-slug" className="bg-white/60 border-white/70 rounded-xl focus-visible:ring-violet-500/30" />
+          <div className="space-y-1">
+            <Label htmlFor="slug" className={labelCls}>Slug</Label>
+            <Input id="slug" value={slug} onChange={e => { setSlug(e.target.value); setSlugManual(true) }} placeholder="url-slug" className={fieldCls} />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="description" className="text-gray-600">Описание</Label>
-            <Textarea id="description" value={description} onChange={e => setDescription(e.target.value)} rows={4} placeholder="Краткое описание" className="bg-white/60 border-white/70 rounded-xl focus-visible:ring-violet-500/30" />
+          <div className="space-y-1">
+            <Label htmlFor="description" className={labelCls}>Описание</Label>
+            <Textarea id="description" value={description} onChange={e => setDescription(e.target.value)} rows={4} placeholder="Краткое описание" className={fieldCls} />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 border-t border-cf-text-1/10 pt-5">
+            <div className="space-y-1">
+              <Label htmlFor="genre" className={labelCls}>Жанр</Label>
+              <Input id="genre" value={genre} onChange={e => setGenre(e.target.value)} placeholder="Фантастика" className={fieldCls} />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="release_date" className={labelCls}>Дата выпуска</Label>
+              <Input id="release_date" type="date" value={releaseDate} onChange={e => setReleaseDate(e.target.value)} className={fieldCls} />
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="genre" className="text-gray-600">Жанр</Label>
-              <Input id="genre" value={genre} onChange={e => setGenre(e.target.value)} placeholder="Фантастика" className="bg-white/60 border-white/70 rounded-xl" />
+            <div className="space-y-1">
+              <Label htmlFor="isbn" className={labelCls}>ISBN</Label>
+              <Input id="isbn" value={isbn} onChange={e => setIsbn(e.target.value)} placeholder="978-..." className={fieldCls} />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="release_date" className="text-gray-600">Дата выпуска</Label>
-              <Input id="release_date" type="date" value={releaseDate} onChange={e => setReleaseDate(e.target.value)} className="bg-white/60 border-white/70 rounded-xl" />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="isbn" className="text-gray-600">ISBN</Label>
-              <Input id="isbn" value={isbn} onChange={e => setIsbn(e.target.value)} placeholder="978-..." className="bg-white/60 border-white/70 rounded-xl" />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-gray-600">Обложка</Label>
+            <div className="space-y-1">
+              <Label className={labelCls}>Обложка</Label>
               <CoverImageUploader value={coverImage || null} onChange={(url) => setCoverImage(url ?? '')} />
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="annotation" className="text-gray-600">Аннотация</Label>
-            <Textarea id="annotation" value={annotation} onChange={e => setAnnotation(e.target.value)} rows={3} placeholder="Аннотация для читателей" className="bg-white/60 border-white/70 rounded-xl" />
+          <div className="space-y-1">
+            <Label htmlFor="annotation" className={labelCls}>Аннотация</Label>
+            <Textarea id="annotation" value={annotation} onChange={e => setAnnotation(e.target.value)} rows={3} placeholder="Аннотация для читателей" className={fieldCls} />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="editor_notes" className="text-gray-600">Заметки редактора</Label>
-            <Textarea id="editor_notes" value={editorNotes} onChange={e => setEditorNotes(e.target.value)} rows={2} placeholder="Внутренние заметки" className="bg-white/60 border-white/70 rounded-xl" />
+          <div className="space-y-1">
+            <Label htmlFor="editor_notes" className={labelCls}>Заметки редактора</Label>
+            <Textarea id="editor_notes" value={editorNotes} onChange={e => setEditorNotes(e.target.value)} rows={2} placeholder="Внутренние заметки" className={fieldCls} />
           </div>
 
-          <div className="flex gap-3 pt-4">
-            <Button type="submit" disabled={saving} className="rounded-xl bg-gradient-to-r from-violet-600 to-violet-500 text-white shadow-md shadow-violet-500/25 hover:from-violet-700 hover:to-violet-600">
-              {saving ? 'Сохраняю...' : isEdit ? 'Сохранить' : 'Создать'}
-            </Button>
-            <Button type="button" variant="outline" onClick={() => router.back()} className="rounded-xl border-white/70 bg-white/60 text-gray-600 hover:bg-white/80">
+          <div className="flex gap-3 border-t border-cf-text-1/10 pt-5">
+            <button
+              type="submit"
+              disabled={saving}
+              className="inline-flex h-11 items-center gap-2 bg-cf-accent px-6 text-sm font-black uppercase tracking-[0.08em] text-white transition-colors hover:bg-[#b81e1e] disabled:opacity-50"
+            >
+              {saving ? 'Сохраняю…' : isEdit ? 'Сохранить' : 'Создать'}
+            </button>
+            <button
+              type="button"
+              onClick={() => router.back()}
+              className="inline-flex h-11 items-center gap-2 border border-cf-text-1/12 bg-transparent px-5 text-sm font-black uppercase tracking-[0.08em] text-cf-text-2 transition-colors hover:border-cf-text-1/30 hover:text-cf-text-heading"
+            >
               Отмена
-            </Button>
+            </button>
           </div>
         </div>
       </div>
