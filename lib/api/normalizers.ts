@@ -1,4 +1,4 @@
-import type { BookChapter, BookType, HomepageSlideTheme, UserRole } from '@/lib/types'
+import type { HomepageSlideTheme, UserRole } from '@/lib/types'
 
 /** Normalize a string array — filter non-strings, trim, remove empties */
 export function normalizeStringArray(value: unknown): string[] {
@@ -7,24 +7,6 @@ export function normalizeStringArray(value: unknown): string[] {
     .filter((item): item is string => typeof item === 'string')
     .map((item) => item.trim())
     .filter(Boolean)
-}
-
-/** Deduplicate character IDs via normalizeStringArray */
-export function normalizeCharacterIds(value: unknown): string[] {
-  return Array.from(new Set(normalizeStringArray(value)))
-}
-
-/** Normalize external links object */
-export function normalizeExternalLinks(value: unknown): Record<string, string> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return {}
-  }
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>)
-      .filter(([, url]) => typeof url === 'string' && url.trim())
-      .map(([store, url]) => [store.trim(), (url as string).trim()])
-      .filter(([store]) => store),
-  )
 }
 
 /** Parse abilities from JSON string or array — for DB response parsing */
@@ -45,110 +27,6 @@ export function parseAbilities(value: unknown): string[] {
 /** Helper: optional trimmed string or null */
 export function optionalString(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null
-}
-
-/** @deprecated Books system retired. Used only by admin museum. */
-export function normalizeChapters(
-  value: unknown,
-): BookChapter[] | { error: string } {
-  if (value === undefined || value === null) return []
-  if (!Array.isArray(value)) return { error: 'chapters must be an array' }
-
-  for (let i = 0; i < value.length; i++) {
-    const item = value[i]
-    if (!item || typeof item !== 'object')
-      return { error: `chapter[${i}] must be an object` }
-    const title =
-      typeof (item as Record<string, unknown>).title === 'string'
-        ? ((item as Record<string, unknown>).title as string).trim()
-        : ''
-    const content =
-      typeof (item as Record<string, unknown>).content === 'string'
-        ? ((item as Record<string, unknown>).content as string).trim()
-        : ''
-    if (!title) return { error: `chapter[${i}].title is required` }
-    if (!content) return { error: `chapter[${i}].content is required` }
-    if (title.length > 500)
-      return { error: `chapter[${i}].title exceeds 500 chars` }
-    if (content.length > 500_000)
-      return { error: `chapter[${i}].content exceeds 500000 chars` }
-  }
-
-  return (value as Array<Record<string, unknown>>).map((ch) => ({
-    title: (ch.title as string).trim(),
-    content: (ch.content as string).trim(),
-  }))
-}
-
-/** @deprecated Books system retired. */
-export const BOOK_TYPES: BookType[] = ['comic', 'book', 'audiobook']
-
-interface NormalizedBookResult {
-  data: {
-    title: string
-    slug: string
-    type: BookType
-    description: string | null
-    cover_image: string | null
-    preview_pages: string[]
-    external_links: Record<string, string>
-    price: number | null
-    is_featured: boolean
-    display_order: number
-    chapters?: BookChapter[]
-  }
-  characterIds: string[]
-}
-
-/** @deprecated Books system retired. Used only by admin museum. */
-export function normalizeBookPayload(
-  body: Record<string, unknown>,
-): { error: string } | NormalizedBookResult {
-  const title = typeof body.title === 'string' ? body.title.trim() : ''
-  const slug = typeof body.slug === 'string' ? body.slug.trim() : ''
-  const type = BOOK_TYPES.includes(body.type as BookType)
-    ? (body.type as BookType)
-    : 'comic'
-  const price =
-    typeof body.price === 'number' && Number.isFinite(body.price)
-      ? body.price
-      : null
-  const displayOrder =
-    typeof body.display_order === 'number' && Number.isFinite(body.display_order)
-      ? body.display_order
-      : 0
-
-  if (!title || !slug) {
-    return { error: 'Title and slug are required' }
-  }
-
-  const chaptersResult = normalizeChapters(body.chapters)
-  if ('error' in chaptersResult) {
-    return { error: chaptersResult.error }
-  }
-
-  return {
-    data: {
-      title,
-      slug,
-      type,
-      description:
-        typeof body.description === 'string' && body.description.trim()
-          ? body.description.trim()
-          : null,
-      cover_image:
-        typeof body.cover_image === 'string' && body.cover_image.trim()
-          ? body.cover_image.trim()
-          : null,
-      preview_pages: normalizeStringArray(body.preview_pages),
-      external_links: normalizeExternalLinks(body.external_links),
-      price,
-      is_featured: Boolean(body.is_featured),
-      display_order: displayOrder,
-      ...(body.chapters !== undefined ? { chapters: chaptersResult } : {}),
-    },
-    characterIds: normalizeCharacterIds(body.character_ids),
-  }
 }
 
 /** Normalize a character payload from admin API */

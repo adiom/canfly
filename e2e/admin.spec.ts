@@ -4,7 +4,6 @@ import { loginViaMagicLink } from './setup/login-helper'
 
 const ADMIN_ROUTES = [
   '/admin',
-  '/admin/books/new',
   '/admin/characters/new',
   '/admin/news/new',
   '/admin/homepage-slides/new',

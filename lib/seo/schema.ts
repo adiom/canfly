@@ -1,4 +1,3 @@
-import { BookWithCharacters } from '@/lib/types'
 import type { Release, Edition, EditionFormat, QualityTier } from '@/lib/releases-types'
 
 export type SchemaType =
@@ -291,70 +290,6 @@ export function generateCharacterSchema(
       ? { '@type': 'ImageObject', url: character.avatar }
       : undefined,
     url,
-  }
-}
-
-/** @deprecated Books system retired. Used only by old books pages (museum). */
-export function generateBookSchema(
-  book: BookWithCharacters,
-  baseUrl: string
-) {
-  const bookUrl = baseUrl + '/books/' + book.slug
-
-  return {
-    '@context': 'https://schema.org',
-    '@type': book.type === 'audiobook' ? 'AudioBook' : 'Book',
-    '@id': bookUrl,
-    name: book.title,
-    description: book.description,
-    image: book.cover_image
-      ? { '@type': 'ImageObject', url: book.cover_image }
-      : undefined,
-    url: bookUrl,
-    datePublished: book.created_at ? new Date(book.created_at).toISOString().split('T')[0] : undefined,
-    dateModified: book.updated_at ? new Date(book.updated_at).toISOString().split('T')[0] : undefined,
-    author: CANFLY_AUTHOR,
-    publisher: { '@type': 'Organization', name: 'canfly', url: baseUrl },
-    genre: ['Fiction', 'Contemporary Fiction'],
-    inLanguage: 'ru-RU',
-    ...(book.price && {
-      offers: {
-        '@type': 'Offer',
-        url: bookUrl,
-        priceCurrency: 'RUB',
-        price: (book.price / 100).toString(),
-        availability: 'https://schema.org/InStock',
-        seller: { '@type': 'Organization', name: 'canfly' },
-      },
-    }),
-    ...(book.characters && book.characters.length > 0 && {
-      character: book.characters.map((char) => ({
-        '@type': 'Person',
-        name: char.name,
-        url: baseUrl + '/characters/' + char.slug,
-        image: char.avatar
-          ? { '@type': 'ImageObject', url: char.avatar }
-          : undefined,
-      })),
-    }),
-  }
-}
-
-/** @deprecated Books system retired. Used only by old books pages (museum). */
-export function generateBooksCollectionSchema(
-  books: BookWithCharacters[],
-  baseUrl: string
-) {
-  return {
-    '@context': 'https://schema.org',
-    '@type': 'Collection',
-    name: 'Canfly Books',
-    url: baseUrl + '/books',
-    itemListElement: books.map((book, index) => ({
-      '@type': 'ListItem',
-      position: index + 1,
-      item: generateBookSchema(book, baseUrl),
-    })),
   }
 }
 

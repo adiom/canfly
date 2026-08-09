@@ -38,18 +38,21 @@ pnpm sync:tasks     # регенерация docs/BUGS.md и docs/TASKS.md из 
 
 ## Архитектура: что нужно понимать до правок
 
-### 1. Две параллельные системы контента
+### 1. Система контента — только Release
 
-В репозитории сосуществуют legacy- и актуальная системы. **Все новые фичи — только в Release-систему.**
+Legacy-система книг удалена 9 августа 2026: страницы `/books/**`, витрина `/shop`, корзина `/cart` с `lib/cart-context.tsx`, админка книг (`app/admin/books/**`, `app/api/admin/books/**`, `book-form.tsx`), `lib/server/books.ts` и компоненты `book-reader.tsx` / `books-client.tsx` / `comic-reader.tsx` больше не существуют. Осталось три следа, и трогать их не нужно:
 
-| Legacy (заморожен) | Release (актуальный) |
-|---|---|
-| таблицы `books`, `characters` | `releases` → `editions` → `chapters` (+ `chapter_versions`) |
-| `app/books/[slug]`, `components/book-reader.tsx` | `app/release/[slug]/**`, `components/release-*.tsx` |
-| `app/admin/` + `app/api/admin/` | `app/studio/` + server actions в `lib/actions/` |
-| `/shop`, `/cart`, `POST /api/orders` (отвечает 410) | `app/releases/` — каталог |
+- **301-редиректы в `proxy.ts`**: `/books/*` → `/release/[slug]`, `/shop` и `/cart` → `/releases/`, `/reader/*` → `/vvvvv/*`. Держат старые URL, которые годами живут в индексе Google.
+- **Надгробия API**: `GET|POST /api/books` и `POST /api/orders` отвечают «retired» (у orders — 410). `/api/orders` принимал анонимный POST с ценой из тела запроса, поэтому его нельзя просто вернуть.
+- **Таблицы `books`, `book_characters`, `orders`** остались в `postgres/schema.sql` и в базе как архив — живого кода к ним нет.
 
-`proxy.ts` уже редиректит legacy-маршруты (`/books/*`, `/shop/*`, `/cart/*`) в Release-систему — новые ссылки на них не создавать.
+| Актуальная система |
+|---|
+| `releases` → `editions` → `chapters` (+ `chapter_versions`) |
+| `app/release/[slug]/**`, `components/release-*.tsx` |
+| `app/studio/` + server actions в `lib/actions/` — создание и редактирование контента |
+| `app/admin/` — только персонажи, новости, слайды и пользователи |
+| `app/releases/` — каталог |
 
 Иерархия данных: **release** (произведение) → **edition** (издание конкретного формата: book/comic/magazine/audio, у book ещё `quality_tier` ∈ draft/standard/premium) → **chapter** (+ версии). Один и тот же релиз может иметь несколько изданий разных форматов, отсюда две ветки маршрутов ридера:
 
@@ -120,7 +123,7 @@ Server actions лежат в `lib/actions/` (`studio.ts`, `studio-create.ts`, `s
 
 ### Не делать
 - Не создавать `middleware.ts` (см. `proxy.ts`), не ссылаться на удалённые `lib/admin-auth.ts` и `components/character-graph.tsx`.
-- Не добавлять фичи в legacy-систему `/books/`, `/shop/`, `/cart/`.
+- Не воскрешать legacy-систему `/books/`, `/shop/`, `/cart/` — она удалена, в `proxy.ts` от неё остались только 301-редиректы.
 - Не менять структуру БД без миграции в `postgres/`.
 - Не использовать `any`; не оставлять `console.log` в проде.
 - Не удалять файлы без разрешения; не коммитить `.env.local`.

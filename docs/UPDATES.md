@@ -2,6 +2,85 @@
 
 ---
 
+## [9 августа 2026] Удалён legacy-контур книг: /books, /shop, /cart и админка книг
+
+### Что изменено
+
+**Удалены публичные страницы и читалки legacy-системы:**
+- `app/books/**` (каталог, страница книги, глава, полная версия)
+- `components/book-reader.tsx`, `components/books-client.tsx`, `components/comic-reader.tsx`
+- `app/shop/page.tsx`, `app/cart/**`, `lib/cart-context.tsx` вместе с `CartProvider` из `app/layout.tsx`
+
+**Удалена админка книг и заказов:**
+- `app/admin/books/**`, `app/api/admin/books/**`, `app/api/admin/orders/route.ts`
+- `app/admin/_components/`: `book-form.tsx`, `chapter-editor.tsx`, `comic-pages-editor.tsx` (использовались только формой книги; у Студии свои `components/studio/chapter-editor-page.tsx` и `comic-pages-editor.tsx`)
+- В `app/admin/page.tsx` убраны вкладки «Книги» и «Заказы» — остались персонажи, новости, пользователи
+
+**Удалён слой данных и типы:**
+- `lib/server/books.ts` — единственный код, который читал таблицы `books` и `book_characters`
+- `lib/types.ts`: `Book`, `BookType`, `BookChapter`, `BookCharacterLink`, `BookWithCharacters`, `BookCharacterRole`, `CharacterBookAppearance`, `BookReview`, `CartItem`, `Order`, `OrderItem`, `OrderStatus`, а также `Highlight` и `ChapterRating` — обе висели на `book_id` из мёртвой системы, живой хайлайт живёт в `chapter_highlights`
+- `lib/api/normalizers.ts`: `normalizeBookPayload`, `normalizeChapters`, `BOOK_TYPES`, `normalizeExternalLinks`, `normalizeCharacterIds` — после удаления `/api/admin/books` их никто не звал
+- `lib/seo/schema.ts`: `generateBookSchema`, `generateBooksCollectionSchema` (`generateBookEditionSchema` для Release-системы остался)
+- `components/markdown-renderer.tsx`: функция `highlightText` и проп `highlights` — опирались на удалённый тип `Highlight`, а единственный вызов компонента (`components/studio/passport-editor.tsx`) их не передавал
+
+### Что осталось намеренно
+
+- **301-редиректы в `proxy.ts`** (`/books/*` → `/release/[slug]`, `/shop`, `/cart` → `/releases/`). Старые URL годами живут в индексе Google — без редиректа они отдавали бы 404 и теряли вес.
+- **Надгробия API**: `GET|POST /api/books` и `POST /api/orders` продолжают отвечать «retired» (у orders — 410). Возвращать `/api/orders` нельзя: он принимал анонимный POST с ценой из тела запроса.
+- **Таблицы `books`, `book_characters`, `orders`** в `postgres/schema.sql` и в базе — как архив. Живого кода к ним больше нет, миграцию с `DROP TABLE` не делали.
+- Из `app/robots.ts` убран `disallow: '/cart'` — страницы нет, есть редирект на каталог.
+
+### Файлы
+- Удалены: `app/books/**`, `app/shop/`, `app/cart/`, `app/admin/books/**`, `app/api/admin/books/**`, `app/api/admin/orders/`, `app/admin/_components/{book-form,chapter-editor,comic-pages-editor}.tsx`, `components/{book-reader,books-client,comic-reader}.tsx`, `lib/server/books.ts`, `lib/cart-context.tsx`
+- Изменены: `app/layout.tsx`, `app/admin/page.tsx`, `app/robots.ts`, `lib/types.ts`, `lib/api/normalizers.ts`, `lib/seo/schema.ts`, `components/markdown-renderer.tsx`, `e2e/admin.spec.ts`, `AGENTS.md`
+
+### Как использовать
+1. Контент создаётся только в Студии (`/studio`), админка отвечает за персонажей, новости, слайды и пользователей.
+2. Старые ссылки на книги, витрину и корзину продолжают работать через 301 — новых ссылок на них не создавать.
+3. `npx tsc --noEmit` проходит чисто.
+
+---
+
+## [9 августа 2026] Одна читалка-разворот: `/reader` удалён, `/vvvvv` забрал SEO
+
+### Что изменено
+
+**Удалён маршрут `/reader/[editionId]`** — он на 80% дублировал `/vvvvv/[slug]`: та же цепочка загрузки, тот же `SpreadReader`, те же пропсы. Отличался только SEO-блоком и отсутствием диспетчеризации по формату (любое издание уходило в `SpreadReader`, включая comic и audio).
+
+**`/vvvvv/[slug]` — полный SEO-блок вместо заглушки A/B:**
+- `title` теперь `«Название» — читать | canfly` (было `— A/B reader`)
+- `description` — `release.description` (фолбэк: `annotation`, затем автогенерация с названием формата)
+- OpenGraph: `title`, `description`, `url`, `type: 'article'`, `locale: 'ru_RU'`, `siteName`, обложка 600×900 при наличии `cover_image`
+- Twitter Card: `summary_large_image` с обложкой, `summary` без неё
+- `alternates.canonical`
+- `robots: { index: false, follow: true }` — читалку не индексируем, но вес по ссылкам со страницы передаём (было `follow: false`)
+- В `formatLabels` добавлен `digital`
+
+**301-редирект в `proxy.ts`**: `/reader/[editionId]` → `/vvvvv/[editionId]` — старые прямые ссылки и закладки не ломаются. Добавлен матчер `/reader/:path*`.
+
+**`/vvvvv/[slug]` открывается и по UUID, и по слагу издания.** Новая функция `fetchEditionByIdOrSlug()` в `lib/server/editions.ts` ветвится по форме строки: UUID-регексп → `fetchEditionById`, иначе → `fetchEditionBySlug`. Без проверки формата Postgres бросал бы `invalid input syntax for type uuid`, то есть слаг в URL давал 500 вместо 404. Канонический адрес в метаданных — по слагу (фолбэк на id, если слаг пуст).
+
+**Убран водопад запросов на странице читалки.** Было ~9 последовательных round-trip к Neon на холодный заход, стало ~5:
+- `loadEdition` / `loadRelease` / `loadChapters` обёрнуты в React `cache()` — `generateMetadata` и сам рендер больше не дублируют одни и те же два запроса (`dbQuery` своей дедупликации не имеет);
+- релиз, главы и `getCurrentUser()` уходят одним `Promise.all` — они друг от друга не зависят;
+- роли и прогресс чтения — вторым `Promise.all`.
+
+Порядок проверок сохранён: сначала `notFound()` по релизу, затем по пустым главам, затем диспетчеризация по формату.
+
+### Файлы
+- `app/reader/[editionId]/page.tsx` — удалён
+- `app/vvvvv/[slug]/page.tsx` — SEO-метаданные, `digital` в `formatLabels`, резолв по id/слагу, `cache()` + `Promise.all`
+- `lib/server/editions.ts` — `fetchEditionByIdOrSlug()`
+- `proxy.ts` — редирект `/reader/*` + матчер
+- `docs/HIGHLIGHT.md` — маршрут постраничной читалки обновлён на `/vvvvv/[editionId]`
+
+### Как использовать
+1. Читалка-разворот живёт по `/vvvvv/<слаг или UUID издания>`; ссылка из UI — в `components/release-edition-toc.tsx:157`.
+2. Старые ссылки `/reader/<UUID>` отдают 301 на новый адрес.
+3. Диспетчеризация по формату: `comic` → `ReleaseComicReader`, `audiobook`/`audiorelease`/`album` → `ReleaseAudioPlayer`, `book`/`magazine` → `SpreadReader`, остальное → 404.
+
+---
+
 ## [9 августа 2026] Редизайн страницы релиза + цифровые издания
 
 ### Что изменено

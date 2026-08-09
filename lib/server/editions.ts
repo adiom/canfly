@@ -30,6 +30,19 @@ export async function fetchEditionBySlug(slug: string) {
   )
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * Издание по UUID или по слагу. Проверка формата обязательна: Postgres бросает
+ * `invalid input syntax for type uuid` на неподходящей строке, поэтому запрос
+ * по id со слагом отдал бы 500 вместо 404.
+ */
+export async function fetchEditionByIdOrSlug(idOrSlug: string) {
+  return UUID_PATTERN.test(idOrSlug)
+    ? fetchEditionById(idOrSlug)
+    : fetchEditionBySlug(idOrSlug)
+}
+
 export async function fetchEditionByReleaseFormatTier(
   releaseId: string,
   format: string,

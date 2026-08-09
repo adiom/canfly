@@ -114,10 +114,6 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL(`/release/${slug}`, request.url))
   }
 
-  // --- Редиректы Shop/Cart на Release ---
-  if (pathname.startsWith('/shop') || pathname.startsWith('/cart')) {
-    return NextResponse.redirect(new URL('/releases/', request.url))
-  }
 
   return NextResponse.next({ request })
 }
@@ -134,5 +130,6 @@ export const config = {
     '/books/:path*',
     '/shop/:path*',
     '/cart/:path*',
+    '/reader/:path*',
   ],
 }

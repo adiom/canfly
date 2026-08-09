@@ -1,13 +1,11 @@
 import type { Metadata } from 'next'
 import { Geist, Geist_Mono, Cormorant_Garamond, EB_Garamond, Libre_Franklin } from 'next/font/google'
 import { SessionProvider } from 'next-auth/react'
-import { CartProvider } from '@/lib/cart-context'
 import { ThemeProvider } from '@/components/theme-provider'
 import { generateOrganizationSchema, serializeJsonLd } from '@/lib/seo/schema'
 import { Analytics } from '@vercel/analytics/next'
 import { SpeedInsights } from "@vercel/speed-insights/next"
 import { YandexMetrika } from '@/components/yandex-metrika'
-import { FeedbackWidget } from '@/components/feedback-widget'
 import './globals.css'
 
 const geistSans = Geist({ subsets: ['latin'], variable: '--font-geist-sans' })
@@ -74,9 +72,7 @@ export default function RootLayout({
           <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
             <Analytics />
             <SpeedInsights/>
-            <CartProvider>
               {children}
-            </CartProvider>
           </ThemeProvider>
         </SessionProvider>
         <YandexMetrika />

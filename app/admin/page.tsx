@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { signOut } from 'next-auth/react';
 import { Button } from '@/components/ui/button';
-import { AdminUserProfile, Book, Order, Character, NewsPost, UserRole } from '@/lib/types';
+import { AdminUserProfile, Character, NewsPost, UserRole } from '@/lib/types';
 import Link from 'next/link';
 
 const userRoles: UserRole[] = ['reader', 'author', 'editor', 'admin'];
@@ -12,12 +12,10 @@ const userRoles: UserRole[] = ['reader', 'author', 'editor', 'admin'];
 export default function AdminPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [books, setBooks] = useState<Book[]>([]);
-  const [orders, setOrders] = useState<Order[]>([]);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [newsPosts, setNewsPosts] = useState<NewsPost[]>([]);
   const [users, setUsers] = useState<AdminUserProfile[]>([]);
-  const [activeTab, setActiveTab] = useState<'books' | 'characters' | 'news' | 'orders' | 'users'>('books');
+  const [activeTab, setActiveTab] = useState<'characters' | 'news' | 'users'>('characters');
   const [error, setError] = useState('');
   const [newUser, setNewUser] = useState({ login: '', password: '', display_name: '' });
   const [passwordDrafts, setPasswordDrafts] = useState<Record<string, string>>({});
@@ -25,18 +23,14 @@ export default function AdminPage() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [booksRes, ordersRes, charsRes, newsRes, usersRes] = await Promise.all([
-          fetch('/api/admin/books'),
-          fetch('/api/admin/orders'),
+        const [charsRes, newsRes, usersRes] = await Promise.all([
           fetch('/api/admin/characters'),
           fetch('/api/admin/news'),
           fetch('/api/admin/users'),
         ]);
 
         if (
-          booksRes.status === 401 ||
           charsRes.status === 401 ||
-          ordersRes.status === 401 ||
           newsRes.status === 401 ||
           usersRes.status === 401
         ) {
@@ -44,25 +38,11 @@ export default function AdminPage() {
           return;
         }
 
-        if (booksRes.ok) {
-          const data = await booksRes.json();
-          setBooks(data);
-        } else {
-          setError('Не удалось загрузить книги');
-        }
-
         if (charsRes.ok) {
           const data = await charsRes.json();
           setCharacters(data);
         } else {
           setError('Не удалось загрузить персонажей');
-        }
-
-        if (ordersRes.ok) {
-          const data = await ordersRes.json();
-          setOrders(data);
-        } else {
-          setError('Не удалось загрузить заказы');
         }
 
         if (newsRes.ok) {
@@ -91,24 +71,6 @@ export default function AdminPage() {
 
   const handleLogout = () => {
     signOut({ callbackUrl: '/login' });
-  };
-
-  const deleteBook = async (book: Book) => {
-    if (!window.confirm(`Удалить книгу "${book.title}"?`)) return;
-
-    const response = await fetch(`/api/admin/books/${book.id}`, { method: 'DELETE' });
-
-    if (response.status === 401) {
-      router.push('/admin/login');
-      return;
-    }
-
-    if (!response.ok) {
-      setError('Не удалось удалить книгу');
-      return;
-    }
-
-    setBooks((current) => current.filter((item) => item.id !== book.id));
   };
 
   const deleteCharacter = async (character: Character) => {
@@ -299,7 +261,11 @@ export default function AdminPage() {
             <Link href="/studio/characters" className="font-semibold underline underline-offset-2 hover:text-purple-50">
               Студии
             </Link>
-            . Здесь остались заказы, книги, слайды и пользователи.
+            . Здесь остались слайды и пользователи. Релизы, издания и главы — в{' '}
+            <Link href="/studio" className="font-semibold underline underline-offset-2 hover:text-purple-50">
+              Студии
+            </Link>
+            .
           </p>
         </div>
         {error && (
@@ -309,16 +275,6 @@ export default function AdminPage() {
         )}
 
         <div className="flex gap-4 mb-8 border-b border-slate-800">
-          <button
-            onClick={() => setActiveTab('books')}
-            className={`px-4 py-2 font-medium transition-colors ${
-              activeTab === 'books'
-                ? 'text-purple-400 border-b-2 border-purple-400'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Книги ({books.length})
-          </button>
           <button
             onClick={() => setActiveTab('characters')}
             className={`px-4 py-2 font-medium transition-colors ${
@@ -340,16 +296,6 @@ export default function AdminPage() {
             Новости ({newsPosts.length})
           </button>
           <button
-            onClick={() => setActiveTab('orders')}
-            className={`px-4 py-2 font-medium transition-colors ${
-              activeTab === 'orders'
-                ? 'text-purple-400 border-b-2 border-purple-400'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Заказы ({orders.length})
-          </button>
-          <button
             onClick={() => setActiveTab('users')}
             className={`px-4 py-2 font-medium transition-colors ${
               activeTab === 'users'
@@ -360,46 +306,6 @@ export default function AdminPage() {
             Пользователи ({users.length})
           </button>
         </div>
-
-        {/* Books Tab */}
-        {activeTab === 'books' && (
-          <div>
-            <div className="mb-6 flex justify-between items-center">
-              <h2 className="text-2xl font-bold text-white">Управление книгами</h2>
-              <Link href="/admin/books/new">
-                <Button className="bg-purple-600 hover:bg-purple-700">
-                  Добавить книгу
-                </Button>
-              </Link>
-            </div>
-
-            <div className="space-y-4">
-              {books.map((book) => (
-                <div key={book.id} className="bg-slate-800 border border-slate-700 rounded-lg p-6 flex justify-between items-center">
-                  <div className="flex-1">
-                    <h3 className="text-lg font-bold text-white">{book.title}</h3>
-                    <p className="text-slate-400 text-sm">
-                      {book.type} • {book.price ? `₽${(book.price / 100).toFixed(2)}` : 'Цена не указана'}
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Link href={`/admin/books/${book.id}/edit`}>
-                      <Button variant="outline" size="sm">Редактировать</Button>
-                    </Link>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-red-400 hover:text-red-300"
-                      onClick={() => deleteBook(book)}
-                    >
-                      Удалить
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* Characters Tab */}
         {activeTab === 'characters' && (
@@ -494,57 +400,6 @@ export default function AdminPage() {
               ) : (
                 <div className="text-center py-12 text-slate-400">
                   Новости пока не добавлены
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Orders Tab */}
-        {activeTab === 'orders' && (
-          <div>
-            <h2 className="text-2xl font-bold text-white mb-6">Заказы</h2>
-
-            <div className="space-y-4">
-              {orders.length > 0 ? (
-                orders.map((order) => (
-                  <div key={order.id} className="bg-slate-800 border border-slate-700 rounded-lg p-6">
-                    <div className="flex justify-between items-start mb-4">
-                      <div>
-                        <h3 className="text-lg font-bold text-white">{order.customer_name}</h3>
-                        <p className="text-slate-400 text-sm">{order.customer_email}</p>
-                      </div>
-                      <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                        order.status === 'completed' ? 'bg-green-900/50 text-green-200' :
-                        order.status === 'confirmed' ? 'bg-blue-900/50 text-blue-200' :
-                        order.status === 'pending' ? 'bg-yellow-900/50 text-yellow-200' :
-                        'bg-slate-700 text-slate-300'
-                      }`}>
-                        {order.status}
-                      </span>
-                    </div>
-
-                    <div className="grid md:grid-cols-2 gap-4 mb-4 pb-4 border-b border-slate-700">
-                      {order.items.map((item, idx) => (
-                        <div key={idx} className="text-sm text-slate-300">
-                          {item.title} × {item.quantity}
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="flex justify-between items-center">
-                      <div className="text-xl font-bold text-purple-300">
-                        ₽{(order.total / 100).toFixed(2)}
-                      </div>
-                      <p className="text-slate-400 text-sm">
-                        {new Date(order.created_at).toLocaleDateString('ru-RU')}
-                      </p>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="text-center py-12 text-slate-400">
-                  Заказов не найдено
                 </div>
               )}
             </div>

@@ -1,6 +1,7 @@
+import { cache } from 'react'
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
-import { fetchEditionById } from '@/lib/server/editions'
+import { fetchEditionByIdOrSlug } from '@/lib/server/editions'
 import { fetchReleaseById } from '@/lib/server/releases'
 import { fetchPublishedChaptersByEdition } from '@/lib/server/chapters'
 import { getCurrentUser, getUserRoles } from '@/lib/server/session'
@@ -13,6 +14,8 @@ import type { UserRole } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
+
 const formatLabels: Record<string, string> = {
   book: 'Книга',
   magazine: 'Журнал',
@@ -20,7 +23,17 @@ const formatLabels: Record<string, string> = {
   audiobook: 'Аудиокнига',
   audiorelease: 'Аудиорелиз',
   album: 'Альбом',
+  digital: 'Цифровой релиз',
 }
+
+/**
+ * generateMetadata и сама страница запрашивают издание с релизом независимо.
+ * `cache()` схлопывает эти пары в один запрос на рендер — `dbQuery` собственной
+ * дедупликации не имеет.
+ */
+const loadEdition = cache((idOrSlug: string) => fetchEditionByIdOrSlug(idOrSlug))
+const loadRelease = cache((releaseId: string) => fetchReleaseById(releaseId))
+const loadChapters = cache((editionId: string) => fetchPublishedChaptersByEdition(editionId))
 
 export async function generateMetadata({
   params,
@@ -28,21 +41,48 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>
 }): Promise<Metadata> {
   const { slug } = await params
-  const edition = await fetchEditionById(slug)
+  const edition = await loadEdition(slug)
 
   if (!edition || edition.status !== 'published') {
     return { title: 'Не найдено | canfly', robots: { index: false, follow: false } }
   }
 
-  const release = await fetchReleaseById(edition.release_id)
+  const release = await loadRelease(edition.release_id)
   if (!release || release.status !== 'published') {
     return { title: 'Не найдено | canfly', robots: { index: false, follow: false } }
   }
 
+  const title = `${release.title} — читать | canfly`
+  const description =
+    release.description ??
+    release.annotation ??
+    `«${release.title}» — ${(formatLabels[edition.format] ?? edition.format).toLowerCase()} на canfly`
+  // Издание открывается и по UUID, и по слагу — канонический адрес один, по слагу.
+  const url = `${BASE_URL}/vvvvv/${edition.slug || edition.id}`
+
   return {
-    title: `${release.title} — A/B reader | canfly`,
-    description: `Экспериментальная читалка: ${formatLabels[edition.format] ?? edition.format}.`,
-    robots: { index: false, follow: false },
+    title,
+    description,
+    // Саму читалку не индексируем, но ссылки со страницы вес передают.
+    robots: { index: false, follow: true },
+    openGraph: {
+      title,
+      description,
+      url,
+      type: 'article',
+      locale: 'ru_RU',
+      siteName: 'canfly',
+      ...(release.cover_image && {
+        images: [{ url: release.cover_image, width: 600, height: 900, alt: release.title }],
+      }),
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title,
+      description,
+      ...(release.cover_image && { images: [release.cover_image] }),
+    },
+    alternates: { canonical: url },
   }
 }
 
@@ -52,13 +92,17 @@ export default async function VvvvvReaderPage({
   params: Promise<{ slug: string }>
 }) {
   const { slug } = await params
-  const edition = await fetchEditionById(slug)
+  const edition = await loadEdition(slug)
   if (!edition || edition.status !== 'published') notFound()
 
-  const release = await fetchReleaseById(edition.release_id)
-  if (!release || release.status !== 'published') notFound()
+  // Релиз, главы и пользователь друг от друга не зависят — один круг вместо трёх.
+  const [release, chapters, user] = await Promise.all([
+    loadRelease(edition.release_id),
+    loadChapters(edition.id),
+    getCurrentUser(),
+  ])
 
-  const chapters = await fetchPublishedChaptersByEdition(edition.id)
+  if (!release || release.status !== 'published') notFound()
   if (chapters.length === 0) notFound()
 
   if (edition.format === 'comic') {
@@ -75,12 +119,16 @@ export default async function VvvvvReaderPage({
 
   if (edition.format !== 'book' && edition.format !== 'magazine') notFound()
 
-  const user = await getCurrentUser()
-  const roles = user ? await getUserRoles(user.id) : []
+  // Роли и прогресс чтения зависят только от user — тоже параллельно.
+  const readerContext = user
+    ? await Promise.all([getUserRoles(user.id), fetchReadingProgress(edition.id, user.id)])
+    : null
+  const roles: UserRole[] = readerContext?.[0] ?? []
+  const progress = readerContext?.[1] ?? null
+
   const userRole: UserRole | null =
     (roles.find(role => ['editor', 'admin', 'author'].includes(role)) ?? roles[0] ?? null) as UserRole | null
 
-  const progress = user ? await fetchReadingProgress(edition.id, user.id) : null
   const progressChapterIndex = progress
     ? chapters.findIndex(chapter => chapter.id === progress.chapter_id)
     : -1
