@@ -1,10 +1,8 @@
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 
-import { SiteHeader } from '@/components/site-header'
-import { SiteFooter } from '@/components/site-footer'
-import { CharacterProfileHeader } from '@/components/character-profile-header'
-import { CharacterProfileTabs } from '@/components/character-profile-tabs'
+import { CharacterProfileHero } from '@/components/character-profile-hero'
+import { CharacterProfileSections } from '@/components/character-profile-sections'
 import {
   fetchCharacterBySlug,
   fetchCharacterFriends,
@@ -22,6 +20,14 @@ const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 interface CharacterPageProps {
   params: Promise<{ slug: string }>
   searchParams: Promise<{ tab?: string }>
+}
+
+/** Прежние вкладки → якоря разделов на одной странице */
+const LEGACY_TAB_ANCHOR: Record<string, string> = {
+  feed: 'posts',
+  about: 'about',
+  relations: 'relations',
+  wall: 'wall',
 }
 
 async function getCharacterData(slug: string) {
@@ -54,20 +60,17 @@ export async function generateMetadata({ params }: CharacterPageProps) {
   })
 }
 
-const VALID_TABS = ['feed', 'about', 'relations', 'wall'] as const
-type Tab = (typeof VALID_TABS)[number]
-
-function normalizeTab(value: string | undefined): Tab {
-  return VALID_TABS.includes(value as Tab) ? (value as Tab) : 'feed'
-}
-
 export default async function CharacterPage({ params, searchParams }: CharacterPageProps) {
   const { slug } = await params
+  // ?tab= из прежней версии профиля: вкладок больше нет, но старые ссылки
+  // из индекса и переписок должны попадать на свой раздел.
   const { tab } = await searchParams
   const data = await getCharacterData(slug)
   if (!data?.character) notFound()
 
-  const activeTab = normalizeTab(tab)
+  if (tab && LEGACY_TAB_ANCHOR[tab]) {
+    redirect(`/characters/${slug}#${LEGACY_TAB_ANCHOR[tab]}`)
+  }
 
   const characterSchema = generateCharacterSchema(data.character)
   const breadcrumbSchema = generateBreadcrumbSchema([
@@ -89,36 +92,34 @@ export default async function CharacterPage({ params, searchParams }: CharacterP
     : false
 
   return (
-    <main className="min-h-screen bg-cf-bg text-cf-text-1">
+    <main className="relative mx-auto w-full max-w-3xl px-6 pb-32">
       <JsonLd schemas={[characterSchema, breadcrumbSchema]} />
-      <SiteHeader activePath="/characters" />
 
-      <section className="max-w-5xl mx-auto px-4 md:px-8 py-12">
-        <div className="mb-6">
-          <Link
-            href="/characters"
-            className="text-xs font-black uppercase tracking-[0.18em] text-cf-text-3 hover:text-cf-text-heading transition-colors"
-          >
-            ← Персонажи
-          </Link>
-        </div>
+      <CharacterProfileHero
+        character={data.character}
+        stats={stats}
+        relationships={data.relationships ?? []}
+      />
 
-        <CharacterProfileHeader character={data.character} stats={stats} />
+      <CharacterProfileSections
+        slug={data.character.slug}
+        character={data.character}
+        relationships={data.relationships ?? []}
+        posts={posts}
+        friends={friends}
+        wall={wall}
+        currentUserId={currentUser?.id ?? null}
+        isAdmin={isAdmin}
+      />
 
-        <CharacterProfileTabs
-          slug={data.character.slug}
-          activeTab={activeTab}
-          character={data.character}
-          relationships={data.relationships ?? []}
-          posts={posts}
-          friends={friends}
-          wall={wall}
-          currentUserId={currentUser?.id ?? null}
-          isAdmin={isAdmin}
-        />
-      </section>
-
-      <SiteFooter />
+      <div className="mt-24 text-center">
+        <Link
+          href="/characters"
+          className="text-[11px] uppercase tracking-[0.28em] text-cf-text-4 transition-colors hover:text-cf-text-heading"
+        >
+          все герои
+        </Link>
+      </div>
     </main>
   )
 }

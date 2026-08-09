@@ -3,6 +3,7 @@ import {
   Character,
   CharacterFriendSummary,
   CharacterRelationship,
+  CharacterRelationshipWithTarget,
   CharacterStats,
 } from '@/lib/types'
 
@@ -37,7 +38,7 @@ export async function fetchRelationshipsForCharacters(
 
 export async function fetchCharacterBySlug(slug: string): Promise<{
   character: Character
-  relationships: CharacterRelationship[]
+  relationships: CharacterRelationshipWithTarget[]
 } | null> {
   const character = await dbQueryOne<Character>('SELECT * FROM characters WHERE slug = $1 LIMIT 1', [
     slug,
@@ -47,8 +48,17 @@ export async function fetchCharacterBySlug(slug: string): Promise<{
     return null
   }
 
-  const relationships = await dbQuery<CharacterRelationship>(
-    'SELECT * FROM character_relationships WHERE character_id = $1',
+  // JOIN, а не голый uuid: связь без имени героя на странице бесполезна
+  const relationships = await dbQuery<CharacterRelationshipWithTarget>(
+    `SELECT r.*,
+            c.name AS related_name,
+            c.slug AS related_slug,
+            c.avatar AS related_avatar,
+            c.character_type AS related_type
+     FROM character_relationships r
+     JOIN characters c ON c.id = r.related_character_id
+     WHERE r.character_id = $1
+     ORDER BY c.name`,
     [character.id],
   )
 
@@ -63,18 +73,25 @@ export async function fetchCharacterById(id: string) {
 }
 
 export async function fetchCharacterStats(characterId: string): Promise<CharacterStats> {
-  const [friendsRow, postsRow] = await Promise.all([
+  const [friendsRow, postsRow, relationsRow] = await Promise.all([
     dbQueryOne<{ count: string }>(
       `SELECT COUNT(*)::text AS count
        FROM character_friendships
        WHERE character_id = $1 AND status = 'accepted'`,
       [characterId],
     ),
-    dbQueryOne<{ count: string }>(
-      `SELECT COUNT(*)::text AS count
+    dbQueryOne<{ count: string; last_spoke_at: string | null }>(
+      `SELECT COUNT(*)::text AS count,
+              MAX(COALESCE(scheduled_at, created_at)) AS last_spoke_at
        FROM character_posts
        WHERE character_id = $1
          AND (scheduled_at IS NULL OR scheduled_at <= NOW())`,
+      [characterId],
+    ),
+    dbQueryOne<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+       FROM character_relationships
+       WHERE character_id = $1`,
       [characterId],
     ),
   ])
@@ -82,7 +99,8 @@ export async function fetchCharacterStats(characterId: string): Promise<Characte
   return {
     friends: friendsRow ? Number(friendsRow.count) : 0,
     posts: postsRow ? Number(postsRow.count) : 0,
-    books: 0,
+    relations: relationsRow ? Number(relationsRow.count) : 0,
+    last_spoke_at: postsRow?.last_spoke_at ?? null,
   }
 }
 

@@ -141,11 +141,11 @@ export function CharacterChat({ characterSlug, characterName, characterAvatar }:
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full flex-col">
       {/* Messages Container */}
-      <div className="flex-1 overflow-y-auto space-y-4 mb-6">
+      <div className="mb-6 flex-1 space-y-4 overflow-y-auto">
         {historyLoading && (
-          <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-4 py-3 text-sm text-slate-400">
+          <div className="cf-glass rounded-2xl px-4 py-3 text-sm text-cf-text-3">
             Загружаем историю диалога...
           </div>
         )}
@@ -153,63 +153,35 @@ export function CharacterChat({ characterSlug, characterName, characterAvatar }:
         {messages.map((message) => (
           <div
             key={message.id}
-            className={`flex gap-4 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}
+            className={`flex gap-3 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}
           >
-            {message.role === 'assistant' && (
-              <div className="relative w-10 h-10 rounded-full overflow-hidden flex-shrink-0 border border-slate-600">
-                {characterAvatar ? (
-                  <Image
-                    src={characterAvatar}
-                    alt={characterName}
-                    fill
-                    className="object-cover"
-                  />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center bg-slate-800 text-xs text-slate-300">
-                    {characterName.slice(0, 1)}
-                  </div>
-                )}
-              </div>
-            )}
+            {message.role === 'assistant' && <CharacterAvatar name={characterName} avatar={characterAvatar} />}
 
             <div
-              className={`max-w-sm lg:max-w-md px-4 py-3 rounded-lg ${
+              className={`max-w-sm px-5 py-3 lg:max-w-md ${
                 message.role === 'user'
-                  ? 'bg-purple-600 text-white'
-                  : 'bg-slate-700 text-slate-100'
+                  ? 'rounded-3xl rounded-br-md bg-cf-air-accent text-white'
+                  : 'cf-glass rounded-3xl rounded-bl-md text-cf-text-2'
               }`}
             >
-              <p className="text-sm leading-relaxed">{message.content}</p>
+              <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
             </div>
 
             {message.role === 'user' && (
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex-shrink-0 flex items-center justify-center">
-                <span className="text-sm font-bold text-white">Я</span>
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-cf-air-surface-2 text-xs font-medium uppercase tracking-[0.1em] text-cf-text-3">
+                Я
               </div>
             )}
           </div>
         ))}
         {isLoading && (
-          <div className="flex gap-4">
-            <div className="relative w-10 h-10 rounded-full overflow-hidden flex-shrink-0 border border-slate-600">
-              {characterAvatar ? (
-                <Image
-                  src={characterAvatar}
-                  alt={characterName}
-                  fill
-                  className="object-cover"
-                />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center bg-slate-800 text-xs text-slate-300">
-                  {characterName.slice(0, 1)}
-                </div>
-              )}
-            </div>
-            <div className="bg-slate-700 px-4 py-3 rounded-lg">
+          <div className="flex gap-3">
+            <CharacterAvatar name={characterName} avatar={characterAvatar} />
+            <div className="cf-glass rounded-3xl rounded-bl-md px-5 py-4">
               <div className="flex gap-2">
-                <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" />
-                <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce delay-100" />
-                <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce delay-200" />
+                <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-cf-live-on" />
+                <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-cf-live-on delay-100" />
+                <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-cf-live-on delay-200" />
               </div>
             </div>
           </div>
@@ -224,16 +196,30 @@ export function CharacterChat({ characterSlug, characterName, characterAvatar }:
           onChange={(e) => setInput(e.target.value)}
           placeholder={`Спроси ${characterName}...`}
           disabled={isLoading}
-          className="flex-1 bg-slate-700 border-slate-600 text-white placeholder-slate-400"
+          className="h-12 flex-1 rounded-full border-cf-air-line bg-cf-air-surface px-5 text-cf-text-1 backdrop-blur-xl placeholder:text-cf-text-4"
         />
         <Button
           type="submit"
           disabled={isLoading || !input.trim()}
-          className="bg-purple-600 hover:bg-purple-700 text-white"
+          className="h-12 rounded-full bg-cf-air-accent px-6 font-medium text-white hover:bg-cf-air-accent-ink"
         >
           {isLoading ? 'Думает...' : 'Отправить'}
         </Button>
       </form>
+    </div>
+  )
+}
+
+function CharacterAvatar({ name, avatar }: { name: string; avatar: string }) {
+  return (
+    <div className="relative h-10 w-10 flex-shrink-0 overflow-hidden rounded-full bg-cf-air-surface-2">
+      {avatar ? (
+        <Image src={avatar} alt={name} fill sizes="40px" className="object-cover" />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center text-xs font-medium uppercase text-cf-text-3">
+          {name.slice(0, 1)}
+        </div>
+      )}
     </div>
   )
 }

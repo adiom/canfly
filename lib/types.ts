@@ -142,7 +142,9 @@ export interface CharacterWallPostWithUser extends CharacterWallPost {
 export interface CharacterStats {
   friends: number;
   posts: number;
-  books: number;
+  relations: number;
+  /** Дата последнего видимого поста — «когда герой говорил в последний раз» */
+  last_spoke_at: string | null;
 }
 
 export interface CharacterFriendSummary {
@@ -161,6 +163,14 @@ export interface CharacterRelationship {
   relationship_type: string;
   description: string | null;
   created_at: string;
+}
+
+/** Связь вместе с героем, на которого она указывает — чтобы показать имя, а не uuid */
+export interface CharacterRelationshipWithTarget extends CharacterRelationship {
+  related_name: string;
+  related_slug: string;
+  related_avatar: string | null;
+  related_type: CharacterType;
 }
 
 export type HighlightType = 'quote' | 'editorial_comment' | 'author_note';

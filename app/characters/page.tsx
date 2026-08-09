@@ -2,8 +2,6 @@ import { Character } from '@/lib/types';
 import { fetchCharactersList } from '@/lib/server/characters';
 import { CharacterCard } from '@/components/character-card';
 import { Suspense } from 'react';
-import { SiteHeader } from '@/components/site-header';
-import { SiteFooter } from '@/components/site-footer';
 import { JsonLd } from '@/components/seo/json-ld';
 import { generateCollectionSchema, generateBreadcrumbSchema } from '@/lib/seo/schema';
 import { buildMetadata } from '@/lib/seo/metadata';
@@ -13,14 +11,13 @@ export const dynamic = 'force-dynamic';
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
-const CHARACTERS_DESCRIPTION = 'Встретьте героев вселенной и откройте их взаимосвязи'
+const CHARACTERS_DESCRIPTION = 'Встретьте героев вселенной и заговорите с ними'
 
 export const metadata = buildMetadata({
   title: 'Персонажи | canfly — культура твоего сознания',
   description: CHARACTERS_DESCRIPTION,
   path: '/characters',
 })
-
 
 async function CharactersContent() {
   let characters: Character[] = []
@@ -43,53 +40,51 @@ async function CharactersContent() {
   })
 
   return (
-      <section>
-        <JsonLd
-          schemas={[
-            collectionSchema,
-            generateBreadcrumbSchema([
-              { label: 'canfly', url: `${BASE_URL}${CATALOG_PATH}` },
-              { label: 'Персонажи', url: `${BASE_URL}/characters` },
-            ]),
-          ]}
-        />
-        <div className="mb-8">
-          <p className="mb-2 text-xs font-black uppercase tracking-[0.22em] text-cf-accent">профили</p>
-          <h2 className="text-3xl font-black uppercase text-cf-text-heading mb-2">Персонажи</h2>
-          <p className="text-cf-text-caption">Исследуйте героев, их посты и историю</p>
-        </div>
-
-        {characters.length > 0 ? (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <section>
+      <JsonLd
+        schemas={[
+          collectionSchema,
+          generateBreadcrumbSchema([
+            { label: 'canfly', url: `${BASE_URL}${CATALOG_PATH}` },
+            { label: 'Персонажи', url: `${BASE_URL}/characters` },
+          ]),
+        ]}
+      />
+      {characters.length > 0 ? (
+        <div className="grid grid-cols-2 gap-x-6 gap-y-12 sm:grid-cols-3 md:grid-cols-4">
           {characters.map((char, i) => (
-            <CharacterCard key={char.id} character={char} priority={i < 3} />
+            <CharacterCard key={char.id} character={char} priority={i < 4} />
           ))}
-          </div>
-        ) : (
-          <div className="text-center py-12">
-            <p className="text-cf-text-3">Персонажей не найдено</p>
-          </div>
-        )}
-      </section>
-    );
+        </div>
+      ) : (
+        <p className="py-16 text-center text-[15px] text-cf-text-3">
+          Здесь пока тихо — герои ещё не заселили эту вселенную.
+        </p>
+      )}
+    </section>
+  );
 }
 
 export default function CharactersPage() {
   return (
-    <main className="min-h-screen bg-cf-bg text-cf-text-1">
-      <SiteHeader activePath="/characters" />
+    <main className="relative mx-auto w-full max-w-4xl px-6 pb-32">
+      <div className="cf-rise pt-24 text-center md:pt-28">
+        <p className="text-[11px] uppercase tracking-[0.34em] text-cf-text-3">
+          персонажи вселенной
+        </p>
+        <h1 className="mt-3 text-[34px] font-light leading-tight tracking-tight text-cf-text-heading md:text-[40px]">
+          Герои canfly
+        </h1>
+        <p className="mx-auto mt-3 max-w-md text-[15px] leading-relaxed text-cf-text-3">
+          {CHARACTERS_DESCRIPTION}
+        </p>
+      </div>
 
-      <section className="max-w-7xl mx-auto px-4 md:px-8 py-16">
-        <div className="mb-12">
-          <p className="mb-3 text-xs font-black uppercase tracking-[0.22em] text-cf-accent">персонажи вселенной</p>
-          <h1 className="text-4xl font-black uppercase leading-none text-cf-text-heading md:text-6xl">Герои canfly</h1>
-        </div>
-        <Suspense fallback={<div className="text-center text-cf-text-3 py-12">Загрузка персонажей...</div>}>
+      <div className="cf-rise-late mt-16">
+        <Suspense fallback={<p className="py-16 text-center text-[15px] text-cf-text-3">Собираем вселенную...</p>}>
           <CharactersContent />
         </Suspense>
-      </section>
-
-      <SiteFooter />
+      </div>
     </main>
   );
 }

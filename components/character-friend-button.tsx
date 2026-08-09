@@ -86,7 +86,7 @@ export function CharacterFriendButton({
           onClick={removeFriend}
           disabled={loading}
           variant="outline"
-          className="h-12 border-[#f4efe5]/15 bg-transparent px-5 text-sm font-black uppercase text-[#f4efe5] hover:border-[#d52525]/45 hover:bg-[#d52525]/10 hover:text-[#d52525]"
+          className="h-11 rounded-full border-cf-air-line bg-cf-air-surface px-6 text-sm font-medium text-cf-text-2 backdrop-blur-xl hover:border-cf-accent/40 hover:bg-cf-accent/10 hover:text-cf-accent"
         >
           <UserMinus className="mr-2 h-4 w-4" />
           Удалить из друзей
@@ -96,7 +96,7 @@ export function CharacterFriendButton({
           type="button"
           onClick={addFriend}
           disabled={loading}
-          className="h-12 bg-[#d52525] px-5 text-sm font-black uppercase text-white hover:bg-[#b91f1f]"
+          className="h-11 rounded-full bg-cf-air-accent px-6 text-sm font-medium text-white hover:bg-cf-air-accent-ink"
         >
           <UserPlus className="mr-2 h-4 w-4" />
           {loading ? 'Проверка...' : 'Добавить в друзья'}
@@ -107,7 +107,7 @@ export function CharacterFriendButton({
         <Button
           asChild
           variant="outline"
-          className="h-12 border-[#f4efe5]/15 bg-transparent px-5 text-sm font-black uppercase text-[#f4efe5] hover:border-[#f6d6a8]/45 hover:bg-[#f6d6a8]/10"
+          className="h-11 rounded-full border-cf-air-line bg-cf-air-surface px-6 text-sm font-medium text-cf-air-accent-ink backdrop-blur-xl hover:border-cf-air-accent/40 hover:bg-cf-air-surface-2 hover:text-cf-air-accent-ink"
         >
           <Link href={`/characters/${characterSlug}/chat`}>
             <MessageCircle className="mr-2 h-4 w-4" />
@@ -119,7 +119,7 @@ export function CharacterFriendButton({
           type="button"
           variant="outline"
           disabled
-          className="h-12 border-[#f4efe5]/15 bg-transparent px-5 text-sm font-black uppercase text-[#f4efe5]"
+          className="h-11 rounded-full border-cf-air-line bg-cf-air-surface px-6 text-sm font-medium text-cf-text-3 backdrop-blur-xl"
         >
           <MessageCircle className="mr-2 h-4 w-4" />
           Недоступно

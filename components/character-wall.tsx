@@ -63,8 +63,8 @@ export function CharacterWall({ slug, initialPosts, currentUserId, isAdmin }: Ch
 
   return (
     <div className="space-y-6">
-      <form onSubmit={handleSubmit} className="space-y-3 border border-[#f4efe5]/10 bg-[#1b1c19] p-4">
-        <h3 className="text-xs font-black uppercase tracking-[0.22em] text-[#f6d6a8]">
+      <form onSubmit={handleSubmit} className="cf-glass space-y-3 rounded-3xl p-5">
+        <h3 className="text-[10px] font-medium uppercase tracking-[0.24em] text-cf-air-accent-ink">
           Оставить запись на стене
         </h3>
         <Textarea
@@ -73,41 +73,42 @@ export function CharacterWall({ slug, initialPosts, currentUserId, isAdmin }: Ch
           rows={3}
           maxLength={MAX_LENGTH}
           placeholder="Что ты хочешь сказать этому персонажу?"
+          className="rounded-2xl border-cf-air-line bg-cf-air-surface"
         />
         <div className="flex items-center justify-between">
-          <span className="text-xs text-[#ded7cc]/60">
+          <span className="text-xs text-cf-text-3">
             {content.length} / {MAX_LENGTH}
           </span>
           <Button
             type="submit"
             disabled={submitting || !content.trim()}
-            className="bg-[#d52525] hover:bg-[#b91f1f]"
+            className="h-11 rounded-full bg-cf-air-accent px-6 font-medium text-white hover:bg-cf-air-accent-ink"
           >
             {submitting ? 'Публикация…' : 'Опубликовать'}
           </Button>
         </div>
-        {error ? <p className="text-sm text-[#d52525]">{error}</p> : null}
-        <p className="text-xs text-[#ded7cc]/60">
+        {error ? <p className="text-sm text-cf-accent">{error}</p> : null}
+        <p className="text-xs text-cf-text-3">
           Запись появится на стене после публикации. Можно удалить свою запись в любой момент.
         </p>
       </form>
 
       <div className="space-y-3">
         {posts.length === 0 ? (
-          <p className="py-8 text-center text-[#ded7cc]/60">На стене пока никого нет</p>
+          <p className="py-8 text-center text-cf-text-3">На стене пока никого нет</p>
         ) : (
           posts.map((post) => (
-            <Card key={post.id} className="bg-[#1b1c19] border-[#f4efe5]/10 p-4">
+            <Card key={post.id} className="cf-glass rounded-3xl p-5">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
-                  <div className="mb-2 flex items-center gap-2 text-sm">
-                    <span className="font-medium text-[#f4efe5]">{post.user.display_name}</span>
-                    <span className="text-[#ded7cc]/60">@{post.user.handle}</span>
-                    <span className="text-xs text-[#ded7cc]/40">
+                  <div className="mb-2 flex flex-wrap items-center gap-2 text-sm">
+                    <span className="text-cf-text-1">{post.user.display_name}</span>
+                    <span className="text-cf-text-3">@{post.user.handle}</span>
+                    <span className="text-xs text-cf-text-4">
                       · {new Date(post.created_at).toLocaleString('ru-RU')}
                     </span>
                   </div>
-                  <p className="whitespace-pre-wrap text-sm leading-6 text-[#ded7cc]">
+                  <p className="whitespace-pre-wrap text-sm leading-6 text-cf-text-caption">
                     {post.content}
                   </p>
                 </div>
@@ -118,6 +119,7 @@ export function CharacterWall({ slug, initialPosts, currentUserId, isAdmin }: Ch
                     size="icon"
                     onClick={() => handleDelete(post.id)}
                     aria-label="Удалить запись"
+                    className="rounded-full text-cf-text-3 hover:text-cf-accent"
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>

@@ -1,44 +1,69 @@
 import { Character } from '@/lib/types';
 import Image from 'next/image';
 import Link from 'next/link';
-import { Button } from '@/components/ui/button';
+
+import { presenceOf } from '@/components/character-presence';
 
 interface CharacterCardProps {
   character: Character;
   priority?: boolean;
 }
 
+const TONE_DOT: Record<'on' | 'slow' | 'quiet', string> = {
+  on: 'bg-cf-live-on cf-live-pulse',
+  slow: 'bg-cf-live-slow',
+  quiet: 'bg-cf-live-quiet',
+};
+
+/**
+ * Герой в каталоге — портрет, а не плитка: круглый аватар со своим свечением,
+ * имя тонким весом, сигнал присутствия. Карточки-рамки нет намеренно, чтобы
+ * список читался как созвездие лиц, а не как сетка товаров.
+ */
 export function CharacterCard({ character, priority = false }: CharacterCardProps) {
+  const presence = presenceOf(character);
+
   return (
-    <Link href={`/characters/${character.slug}`}>
-      <div className="bg-slate-800 hover:bg-slate-700 transition-colors rounded-lg overflow-hidden border border-slate-700 hover:border-purple-500 group cursor-pointer h-full">
-        {/* Avatar */}
-        {character.avatar ? (
-          <div className="relative w-full h-64 overflow-hidden bg-slate-900">
+    <Link
+      href={`/characters/${character.slug}`}
+      className="group flex flex-col items-center text-center"
+    >
+      <span className="relative">
+        <span
+          aria-hidden
+          className="absolute inset-0 rounded-full opacity-0 blur-2xl transition-opacity duration-700 group-hover:opacity-100"
+          style={{
+            background:
+              'radial-gradient(circle, color-mix(in srgb, var(--cf-air-accent) 45%, transparent) 0%, transparent 70%)',
+            transform: 'scale(1.6)',
+          }}
+        />
+        <span className="relative block h-24 w-24 overflow-hidden rounded-full bg-cf-air-surface-2 ring-1 ring-cf-air-line transition-transform duration-700 group-hover:-translate-y-1 md:h-28 md:w-28">
+          {character.avatar ? (
             <Image
               src={character.avatar}
               alt={character.name}
               fill
               priority={priority}
-              sizes="(max-width:768px) 100vw, (max-width:1024px) 50vw, 33vw"
-              className="object-cover group-hover:scale-105 transition-transform duration-300"
+              sizes="112px"
+              className="object-cover"
             />
-          </div>
-        ) : (
-          <div className="w-full h-64 bg-gradient-to-br from-slate-700 to-slate-800 flex items-center justify-center text-slate-400">
-            Нет фото
-          </div>
-        )}
+          ) : (
+            <span className="flex h-full w-full items-center justify-center text-2xl font-light text-cf-text-3">
+              {character.name.trim()[0]}
+            </span>
+          )}
+        </span>
+      </span>
 
-        {/* Info */}
-        <div className="p-4">
-          <h3 className="text-xl font-bold text-white mb-2">{character.name}</h3>
-          <p className="text-slate-400 text-sm mb-4 line-clamp-2">{character.bio}</p>
-          <Button variant="outline" size="sm" className="w-full">
-            Узнать больше
-          </Button>
-        </div>
-      </div>
+      <span className="mt-4 text-[15px] text-cf-text-heading transition-colors group-hover:text-cf-air-accent-ink">
+        {character.name}
+      </span>
+
+      <span className="mt-1.5 inline-flex items-center gap-1.5 text-[11px] text-cf-text-4">
+        <span className={`h-1.5 w-1.5 rounded-full ${TONE_DOT[presence.tone]}`} aria-hidden />
+        {presence.label}
+      </span>
     </Link>
   );
 }

@@ -24,6 +24,23 @@
   --cf-status-open: #8a4a10;
   --cf-status-resolved: #3f6b2f;
   --cf-status-ignored: var(--cf-text-3);
+
+  /* ── Воздушный слой ───────────────────────────────────────────────────────
+     Прозрачные поверхности и сигналы жизни. Глубина строится светом и тоном,
+     а не линиями и красным контрастом. Акцент — CF-002 canfly (заливка) и
+     CF-018 zenith (текст: #6a9ab8 на кремовом даёт лишь 2.6:1, зенит — 4.9:1). */
+  --cf-air-surface: rgba(255, 255, 255, 0.62);
+  --cf-air-surface-2: rgba(255, 255, 255, 0.82);
+  --cf-air-line: rgba(255, 255, 255, 0.85);
+  --cf-air-accent: #6a9ab8;
+  --cf-air-accent-ink: #3d6e8c;
+  --cf-air-shadow: 0 20px 60px rgba(26, 24, 22, 0.07);
+  /* Присутствие персонажа. На кремовом фоне неоновые CF-013/CF-012 не читаются,
+     поэтому в светлой теме — приглушённые тона тех же цветов: метка красится
+     тем же токеном, что и точка, и обязана проходить AA. */
+  --cf-live-on: #3f8d7e;
+  --cf-live-slow: #427f95;
+  --cf-live-quiet: #7e8a86;
 }
 
 .dark {
@@ -45,6 +62,17 @@
   --cf-status-open: #e0a75e;
   --cf-status-resolved: #9dbb85;
   --cf-status-ignored: var(--cf-text-3);
+
+  /* Воздушный слой в темноте: стекло — тонкая плёнка манускрипта поверх void */
+  --cf-air-surface: rgba(244, 239, 229, 0.05);
+  --cf-air-surface-2: rgba(244, 239, 229, 0.08);
+  --cf-air-line: rgba(244, 239, 229, 0.1);
+  --cf-air-accent: #6a9ab8;
+  --cf-air-accent-ink: #9db5c8;
+  --cf-air-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
+  --cf-live-on: #75f1d9;
+  --cf-live-slow: #63c0d9;
+  --cf-live-quiet: #d9e2e4;
 }
 
 /* ── VVVVV ───────────────────────────────────────────────────────────────────
@@ -145,6 +173,14 @@
   --color-cf-status-open: var(--cf-status-open);
   --color-cf-status-resolved: var(--cf-status-resolved);
   --color-cf-status-ignored: var(--cf-status-ignored);
+  --color-cf-air-surface: var(--cf-air-surface);
+  --color-cf-air-surface-2: var(--cf-air-surface-2);
+  --color-cf-air-line: var(--cf-air-line);
+  --color-cf-air-accent: var(--cf-air-accent);
+  --color-cf-air-accent-ink: var(--cf-air-accent-ink);
+  --color-cf-live-on: var(--cf-live-on);
+  --color-cf-live-slow: var(--cf-live-slow);
+  --color-cf-live-quiet: var(--cf-live-quiet);
   --font-cormorant: var(--font-cormorant, 'Cormorant Garamond', Georgia, serif);
   --font-cormorant-serif: var(--font-cormorant, 'Cormorant Garamond', Georgia, serif);
   --font-ebgaramond: var(--font-ebgaramond, 'EB Garamond', 'Cormorant Garamond', Georgia, serif);
@@ -191,6 +227,138 @@
 .cf-scroll-flash {
   animation: cf-flash 1.8s ease forwards;
   border-radius: 2px;
+}
+
+/* ── Воздушный слой: поверхности и свет ──────────────────────────────────────
+   Глубина = прозрачная заливка + размытие + волосяная линия света. Тень мягкая
+   и рассеянная, а не материальная: описана один раз здесь, чтобы в компонентах
+   не расползались arbitrary-значения.                                          */
+.cf-glass {
+  background-color: var(--cf-air-surface);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--cf-air-line);
+  box-shadow: var(--cf-air-shadow);
+}
+
+.cf-glass-2 {
+  background-color: var(--cf-air-surface-2);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--cf-air-line);
+}
+
+/* Фон-атмосфера: три радиальных пятна под белёсой плёнкой, чтобы контраст
+   текста оставался ровным по всей странице. Цвета — из палитры canfly. */
+.cf-air-field {
+  position: relative;
+  isolation: isolate;
+}
+
+.cf-air-field::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    radial-gradient(circle at 16% 10%, color-mix(in srgb, var(--cf-air-accent) 14%, transparent), transparent 34%),
+    radial-gradient(circle at 84% 6%, color-mix(in srgb, var(--cf-live-on) 11%, transparent), transparent 32%),
+    radial-gradient(circle at 50% 92%, color-mix(in srgb, var(--cf-live-slow) 9%, transparent), transparent 40%);
+}
+
+.cf-air-field::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-color: color-mix(in srgb, var(--cf-bg) 55%, transparent);
+}
+
+/* Дыхание живого персонажа — медленное, на грани заметности */
+@keyframes cf-live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.cf-live-pulse {
+  animation: cf-live-pulse 2.4s ease-in-out infinite;
+}
+
+/* ── Орбитальный портрет персонажа ───────────────────────────────────────────
+   Герой — центр собственного созвездия: аватар тихо светится, связи дрейфуют
+   вокруг. Не интерактивный граф, а портрет. Позиции считаются золотым углом,
+   поэтому поле стабильно между рендерами и безопасно для SSR.               */
+@keyframes cf-orbit-drift {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(4px, -6px);
+  }
+  50% {
+    transform: translate(-3px, -9px);
+  }
+  75% {
+    transform: translate(-6px, -3px);
+  }
+}
+
+@keyframes cf-star-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.02);
+    opacity: 0.96;
+  }
+}
+
+@keyframes cf-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.cf-orbit-dot {
+  animation: cf-orbit-drift 18s ease-in-out infinite;
+  will-change: transform;
+}
+
+.cf-star {
+  animation: cf-star-breathe 7s ease-in-out infinite;
+}
+
+.cf-rise {
+  animation: cf-rise 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.cf-rise-late {
+  animation: cf-rise 900ms cubic-bezier(0.22, 1, 0.36, 1) 260ms both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cf-live-pulse,
+  .cf-orbit-dot,
+  .cf-star,
+  .cf-rise,
+  .cf-rise-late {
+    animation: none;
+  }
 }
 
 
