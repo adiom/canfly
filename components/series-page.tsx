@@ -111,9 +111,7 @@ export function SeriesPage({ series, releases }: SeriesPageProps) {
                       <span className="text-xs font-black uppercase tracking-[0.12em] text-cf-accent">
                         {phase || 'без номера'}
                       </span>
-                      {release.phase_number !== null && (
-                        <span className="text-xs text-cf-text-3">#{release.phase_number}</span>
-                      )}
+                      
                     </div>
                     <h3 className="mt-0.5 text-lg font-black text-cf-text-heading group-hover:text-cf-warm transition-colors">
                       {release.title}

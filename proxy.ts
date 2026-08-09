@@ -23,6 +23,13 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next()
   }
 
+  // --- Редирект дубля главной страницы /home -> / ---
+  if (pathname === '/home' || pathname.startsWith('/home/')) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/'
+    return NextResponse.redirect(url, 301)
+  }
+
   // --- Защита /profile через next-auth JWT ---
   if (
     pathname === '/user' ||
@@ -164,6 +171,8 @@ export const config = {
     '/user-settings/:path*',
     '/admin/:path*',
     '/studio/:path*',
+    '/home',
+    '/home/:path*',
     '/release',
     '/release/:path*',
     '/books/:path*',

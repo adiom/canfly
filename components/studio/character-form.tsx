@@ -178,13 +178,7 @@ export function CharacterForm({ character, characterType }: CharacterFormProps) 
           <>
             <div className="space-y-2">
               <Label htmlFor="abilities" className="text-gray-600">Способности (по одной на строку)</Label>
-              <Textarea
-                id="abilities"
-                name="abilities"
-                rows={5}
-                defaultValue={character?.abilities?.join('\n') ?? ''}
-                className="bg-white/60 border-white/70 rounded-xl"
-              />
+              
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">

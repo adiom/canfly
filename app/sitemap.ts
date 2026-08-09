@@ -4,7 +4,7 @@ import { fetchNewsPosts } from '@/lib/server/news'
 import { fetchCharactersList } from '@/lib/server/characters'
 import { fetchAllSeries } from '@/lib/server/series'
 import { fetchPublishedEditionsForSitemap } from '@/lib/server/editions'
-import { LANDING_PATH } from '@/lib/nav'
+import { CATALOG_PATH, LANDING_PATH } from '@/lib/nav'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
@@ -59,15 +59,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   return [
     {
-      url: BASE_URL,
+      url: `${BASE_URL}${LANDING_PATH}`,
       lastModified: new Date(),
       changeFrequency: 'daily',
       priority: 1,
     },
     {
-      // Каталог временно живёт на корне, `/releases` только редиректит —
-      // в карту сайта попадает прежний лендинг
-      url: `${BASE_URL}${LANDING_PATH}`,
+      url: `${BASE_URL}${CATALOG_PATH}`,
       lastModified: new Date(),
       changeFrequency: 'weekly',
       priority: 0.9,

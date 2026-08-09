@@ -32,6 +32,23 @@ export function truncate(text: string, max = 160): string {
   return `${(lastSpace > max * 0.6 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`
 }
 
+function truncateSeoDescription(text: string, max = 155): string {
+  const clean = stripHtml(text).trim()
+  if (!clean) return DEFAULT_DESCRIPTION
+
+  if (clean.length <= max) {
+    const normalized = clean.replace(/[.?!]+$/u, '').trim()
+    return normalized ? `${normalized}.` : DEFAULT_DESCRIPTION
+  }
+
+  const limit = Math.max(20, max - 1)
+  const cut = clean.slice(0, limit)
+  const lastSpace = cut.lastIndexOf(' ')
+  const trimmed = (lastSpace > limit * 0.6 ? cut.slice(0, lastSpace) : cut).trimEnd()
+  const normalized = trimmed.replace(/[.?!,;:]+$/u, '').trim()
+  return normalized ? `${normalized}.` : DEFAULT_DESCRIPTION
+}
+
 export type OgType = 'website' | 'article' | 'book' | 'profile'
 
 export interface BuildMetadataOptions {
@@ -87,7 +104,7 @@ export function buildMetadata(opts: BuildMetadataOptions): Metadata {
     siteName = 'canfly',
   } = opts
 
-  const description = truncate(stripHtml(opts.description) || DEFAULT_DESCRIPTION)
+  const description = truncateSeoDescription(opts.description)
   const url = `${BASE_URL}${path.startsWith('/') ? path : `/${path}`}`
 
   /*
