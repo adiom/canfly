@@ -3,6 +3,10 @@ import { redirect } from 'next/navigation'
 import { fetchReleasesPage } from '@/lib/server/releases'
 import type { EditionFormat } from '@/lib/releases-types'
 import { ReleasesPageBookmate } from '@/components/releases-page-bookmate'
+import { JsonLd } from '@/components/seo/json-ld'
+import { generateCollectionSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
+import { websiteNode } from '@/lib/seo/entities'
+import { buildMetadata } from '@/lib/seo/metadata'
 
 export const dynamic = 'force-dynamic'
 
@@ -82,22 +86,11 @@ export async function generateMetadata({
       ? 'canfly — литературная вселенная: комиксы, книги, аудиокниги и журналы о тревоге, ремесле, памяти и людях, которые продолжают функционировать.'
       : 'Каталог всех релизов вселенной canfly: комиксы, книги, аудиокниги и многое другое.'
 
-  const canonical = catalogUrl(category, page, BASE_URL)
-
-  return {
+  return buildMetadata({
     title,
     description,
-    alternates: { canonical },
-    openGraph: {
-      title,
-      description,
-      url: canonical,
-      siteName: 'canfly',
-      locale: 'ru_RU',
-      type: 'website',
-    },
-    twitter: { card: 'summary_large_image' },
-  }
+    path: catalogUrl(category, page),
+  })
 }
 
 export default async function HomeCatalogPage({ searchParams }: ReleasesPageProps) {
@@ -116,7 +109,31 @@ export default async function HomeCatalogPage({ searchParams }: ReleasesPageProp
     redirect(catalogUrl(category, data.totalPages))
   }
 
+  const collectionSchema = generateCollectionSchema({
+    name: 'Релизы canfly',
+    description:
+      'Каталог вселенной canfly: комиксы, книги, аудиокниги, журналы и цифровые релизы.',
+    path: catalogUrl(category, data.page),
+    totalItems: data.total,
+    items: data.items.map(release => ({
+      name: release.title,
+      url: `${BASE_URL}/release/${release.slug}`,
+      image: release.cover_image,
+    })),
+  })
+
   return (
-    <ReleasesPageBookmate data={data} category={category} page={data.page} />
+    <>
+      {/* WebSite с SearchAction живёт на корне: sitelinks searchbox Google берёт
+          только с главной, а она переехала с /home сюда. */}
+      <JsonLd
+        schemas={[
+          websiteNode(),
+          collectionSchema,
+          generateBreadcrumbSchema([{ label: 'canfly', url: `${BASE_URL}/` }]),
+        ]}
+      />
+      <ReleasesPageBookmate data={data} category={category} page={data.page} />
+    </>
   )
 }

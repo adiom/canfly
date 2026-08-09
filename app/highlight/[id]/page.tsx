@@ -14,6 +14,10 @@ import { getPrimaryEdition } from '@/lib/utils/editions'
 import { ReleaseBookReader } from '@/components/release-book-reader'
 import { HighlightScroller } from '@/components/highlight-scroller'
 import { fetchPublishedChaptersByEdition } from '@/lib/server/chapters'
+import { generateQuotationSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
+import { buildMetadata, notFoundMetadata } from '@/lib/seo/metadata'
+import { JsonLd } from '@/components/seo/json-ld'
+import { CATALOG_PATH } from '@/lib/nav'
 import type { UserRole } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -44,33 +48,21 @@ async function loadHighlightContext(highlightId: string) {
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { id } = await params
   const ctx = await loadHighlightContext(id)
-  if (!ctx) return { title: 'Цитата не найдена | canfly', robots: { index: false } }
+  if (!ctx) return notFoundMetadata('Цитата не найдена')
 
   const { release, highlight } = ctx
-  const title = `«${highlight.text_content.slice(0, 60)}${highlight.text_content.length > 60 ? '…' : ''}» — ${release.title}`
-  const description = `Цитата из «${release.title}»${highlight.user_name ? `, автор: ${highlight.user_name}` : ''}`
-  const url = `${BASE_URL}/highlight/${highlight.id}`
+  const excerpt = highlight.text_content.slice(0, 60)
 
-  return {
-    title,
-    description,
-    openGraph: {
-      title,
-      description,
-      url,
-      type: 'article',
-      locale: 'ru_RU',
-      siteName: 'canfly',
-      ...(release.cover_image && { images: [{ url: release.cover_image, width: 600, height: 900, alt: release.title }] }),
-    },
-    twitter: {
-      card: 'summary_large_image',
-      title,
-      description,
-      ...(release.cover_image && { images: [release.cover_image] }),
-    },
-    alternates: { canonical: url },
-  }
+  return buildMetadata({
+    title: `«${excerpt}${highlight.text_content.length > 60 ? '…' : ''}» — ${release.title}`,
+    description: `Цитата из «${release.title}»${highlight.user_name ? `, автор: ${highlight.user_name}` : ''}`,
+    path: `/highlight/${highlight.id}`,
+    // og:image — из opengraph-image.tsx рядом: там сама цитата, а не обложка.
+    generatedImage: true,
+    ogType: 'article',
+    publishedTime: highlight.created_at,
+    modifiedTime: highlight.updated_at ?? highlight.created_at,
+  })
 }
 
 export default async function HighlightSharePage({ params }: PageProps) {
@@ -106,8 +98,16 @@ export default async function HighlightSharePage({ params }: PageProps) {
     chapters = [...chapters, chapter]
   }
 
+  const quotationSchema = generateQuotationSchema({ highlight, release, chapter })
+  const breadcrumbSchema = generateBreadcrumbSchema([
+    { label: 'canfly', url: `${BASE_URL}${CATALOG_PATH}` },
+    { label: release.title, url: `${BASE_URL}/release/${release.slug}` },
+    { label: 'Цитата', url: `${BASE_URL}/highlight/${highlight.id}` },
+  ])
+
   return (
     <>
+      <JsonLd schemas={[quotationSchema, breadcrumbSchema]} />
       <div className="fixed top-0 left-0 right-0 z-[60] bg-cf-bg border-b border-cf-text-1/12">
         <div className="mx-auto max-w-3xl flex items-center justify-between px-4 py-3">
           <Link href={`/release/${release.slug}`} className="text-xs font-black uppercase tracking-[0.12em] text-cf-text-2 hover:text-cf-text-heading">

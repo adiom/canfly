@@ -4,29 +4,22 @@ import { CharacterCard } from '@/components/character-card';
 import { Suspense } from 'react';
 import { SiteHeader } from '@/components/site-header';
 import { SiteFooter } from '@/components/site-footer';
+import { JsonLd } from '@/components/seo/json-ld';
+import { generateCollectionSchema, generateBreadcrumbSchema } from '@/lib/seo/schema';
+import { buildMetadata } from '@/lib/seo/metadata';
+import { CATALOG_PATH } from '@/lib/nav';
 
 export const dynamic = 'force-dynamic';
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
-export const metadata = {
+const CHARACTERS_DESCRIPTION = 'Встретьте героев вселенной и откройте их взаимосвязи'
+
+export const metadata = buildMetadata({
   title: 'Персонажи | canfly — культура твоего сознания',
-  description: 'Встретьте героев вселенной и откройте их взаимосвязи',
-  openGraph: {
-    title: 'Персонажи | canfly — культура твоего сознания',
-    description: 'Встретьте героев вселенной и откройте их взаимосвязи',
-    url: `${BASE_URL}/characters`,
-    siteName: 'canfly',
-    locale: 'ru_RU',
-    type: 'website' as const,
-  },
-  twitter: {
-    card: 'summary_large_image' as const,
-  },
-  alternates: {
-    canonical: `${BASE_URL}/characters`,
-  },
-}
+  description: CHARACTERS_DESCRIPTION,
+  path: '/characters',
+})
 
 
 async function CharactersContent() {
@@ -38,8 +31,28 @@ async function CharactersContent() {
     console.error('Error loading characters:', error)
   }
 
+  const collectionSchema = generateCollectionSchema({
+    name: 'Персонажи canfly',
+    description: CHARACTERS_DESCRIPTION,
+    path: '/characters',
+    items: characters.map(character => ({
+      name: character.name,
+      url: `${BASE_URL}/characters/${character.slug}`,
+      image: character.avatar,
+    })),
+  })
+
   return (
       <section>
+        <JsonLd
+          schemas={[
+            collectionSchema,
+            generateBreadcrumbSchema([
+              { label: 'canfly', url: `${BASE_URL}${CATALOG_PATH}` },
+              { label: 'Персонажи', url: `${BASE_URL}/characters` },
+            ]),
+          ]}
+        />
         <div className="mb-8">
           <p className="mb-2 text-xs font-black uppercase tracking-[0.22em] text-cf-accent">профили</p>
           <h2 className="text-3xl font-black uppercase text-cf-text-heading mb-2">Персонажи</h2>

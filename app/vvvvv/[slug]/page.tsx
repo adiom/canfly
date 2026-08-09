@@ -2,7 +2,7 @@ import { cache } from 'react'
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { fetchEditionByIdOrSlug } from '@/lib/server/editions'
-import { fetchReleaseById } from '@/lib/server/releases'
+import { fetchReleaseById, fetchReleaseSeries } from '@/lib/server/releases'
 import { fetchPublishedChaptersByEdition } from '@/lib/server/chapters'
 import { getCurrentUser, getUserRoles } from '@/lib/server/session'
 import { fetchChapterHighlights } from '@/lib/server/chapter-highlights'
@@ -10,21 +10,17 @@ import { fetchReadingProgress } from '@/lib/server/reading-progress'
 import { SpreadReader } from '@/components/spread-reader'
 import { ReleaseComicReader } from '@/components/release-comic-reader'
 import { ReleaseAudioPlayer } from '@/components/release-audio-player'
+import { JsonLd } from '@/components/seo/json-ld'
+import { generateEditionSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
+import { buildMetadata, notFoundMetadata } from '@/lib/seo/metadata'
+import { computeEditionMeta, EDITION_FORMAT_LABELS, isAudioFormat } from '@/lib/utils/editions'
+import { fetchSeriesById } from '@/lib/server/series'
+import { CATALOG_PATH } from '@/lib/nav'
 import type { UserRole } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
-
-const formatLabels: Record<string, string> = {
-  book: 'Книга',
-  magazine: 'Журнал',
-  comic: 'Комикс',
-  audiobook: 'Аудиокнига',
-  audiorelease: 'Аудиорелиз',
-  album: 'Альбом',
-  digital: 'Цифровой релиз',
-}
 
 /**
  * generateMetadata и сама страница запрашивают издание с релизом независимо.
@@ -43,47 +39,29 @@ export async function generateMetadata({
   const { slug } = await params
   const edition = await loadEdition(slug)
 
-  if (!edition || edition.status !== 'published') {
-    return { title: 'Не найдено | canfly', robots: { index: false, follow: false } }
-  }
+  if (!edition || edition.status !== 'published') return notFoundMetadata()
 
   const release = await loadRelease(edition.release_id)
-  if (!release || release.status !== 'published') {
-    return { title: 'Не найдено | canfly', robots: { index: false, follow: false } }
-  }
+  if (!release || release.status !== 'published') return notFoundMetadata()
 
-  const title = `${release.title} — читать | canfly`
-  const description =
-    release.description ??
-    release.annotation ??
-    `«${release.title}» — ${(formatLabels[edition.format] ?? edition.format).toLowerCase()} на canfly`
-  // Издание открывается и по UUID, и по слагу — канонический адрес один, по слагу.
-  const url = `${BASE_URL}/vvvvv/${edition.slug || edition.id}`
+  const formatLabel = (EDITION_FORMAT_LABELS[edition.format] ?? edition.format).toLowerCase()
 
-  return {
-    title,
-    description,
-    // Саму читалку не индексируем, но ссылки со страницы вес передают.
-    robots: { index: false, follow: true },
-    openGraph: {
-      title,
-      description,
-      url,
-      type: 'article',
-      locale: 'ru_RU',
-      siteName: 'canfly',
-      ...(release.cover_image && {
-        images: [{ url: release.cover_image, width: 600, height: 900, alt: release.title }],
-      }),
-    },
-    twitter: {
-      card: 'summary_large_image',
-      title,
-      description,
-      ...(release.cover_image && { images: [release.cover_image] }),
-    },
-    alternates: { canonical: url },
-  }
+  return buildMetadata({
+    title: `${release.title} — ${formatLabel} | canfly`,
+    description:
+      release.description ??
+      release.annotation ??
+      `«${release.title}» — ${formatLabel} на canfly`,
+    // Издание открывается и по UUID, и по слагу — канонический адрес один, по слагу.
+    path: `/vvvvv/${edition.slug || edition.id}`,
+    // og:image — из opengraph-image.tsx рядом.
+    generatedImage: true,
+    // og:type `book` — только для читаемых форматов: у аудио нет ни автора-книги,
+    // ни ISBN, которые ожидает эта разметка.
+    ogType: isAudioFormat(edition.format) ? 'website' : 'book',
+    publishedTime: release.release_date ?? edition.created_at,
+    modifiedTime: edition.updated_at,
+  })
 }
 
 export default async function VvvvvReaderPage({
@@ -105,8 +83,42 @@ export default async function VvvvvReaderPage({
   if (!release || release.status !== 'published') notFound()
   if (chapters.length === 0) notFound()
 
+  // Серия нужна только разметке (`isPartOf`), поэтому берётся отдельно и не
+  // блокирует основной круг запросов.
+  const seriesLinks = await fetchReleaseSeries(release.id)
+  const series = seriesLinks.length > 0 ? await fetchSeriesById(seriesLinks[0].series_id) : null
+
+  const editionSlug = edition.slug || edition.id
+  const jsonLd = (
+    <JsonLd
+      schemas={[
+        generateEditionSchema({
+          edition,
+          release,
+          chapters,
+          meta: computeEditionMeta(chapters),
+          series: series ? { slug: series.slug, title: series.title } : null,
+        }),
+        generateBreadcrumbSchema([
+          { label: 'canfly', url: `${BASE_URL}/` },
+          { label: 'Релизы', url: `${BASE_URL}${CATALOG_PATH}` },
+          { label: release.title, url: `${BASE_URL}/release/${release.slug}` },
+          {
+            label: EDITION_FORMAT_LABELS[edition.format] ?? edition.format,
+            url: `${BASE_URL}/vvvvv/${editionSlug}`,
+          },
+        ]),
+      ]}
+    />
+  )
+
   if (edition.format === 'comic') {
-    return <ReleaseComicReader release={release} edition={edition} chapters={chapters} />
+    return (
+      <>
+        {jsonLd}
+        <ReleaseComicReader release={release} edition={edition} chapters={chapters} />
+      </>
+    )
   }
 
   if (
@@ -114,7 +126,12 @@ export default async function VvvvvReaderPage({
     edition.format === 'audiorelease' ||
     edition.format === 'album'
   ) {
-    return <ReleaseAudioPlayer release={release} edition={edition} chapters={chapters} />
+    return (
+      <>
+        {jsonLd}
+        <ReleaseAudioPlayer release={release} edition={edition} chapters={chapters} />
+      </>
+    )
   }
 
   if (edition.format !== 'book' && edition.format !== 'magazine') notFound()
@@ -140,15 +157,18 @@ export default async function VvvvvReaderPage({
   })
 
   return (
-    <SpreadReader
-      release={release}
-      edition={edition}
-      chapters={chapters}
-      initialChapterIndex={initialChapterIndex}
-      currentUserId={user?.id ?? null}
-      initialHighlights={initialHighlights}
-      userRole={userRole}
-      userName={user?.display_name ?? null}
-    />
+    <>
+      {jsonLd}
+      <SpreadReader
+        release={release}
+        edition={edition}
+        chapters={chapters}
+        initialChapterIndex={initialChapterIndex}
+        currentUserId={user?.id ?? null}
+        initialHighlights={initialHighlights}
+        userRole={userRole}
+        userName={user?.display_name ?? null}
+      />
+    </>
   )
 }

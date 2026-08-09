@@ -2,6 +2,45 @@
 
 ---
 
+## [9 августа 2026] SEO / OG / Schema.org: связный граф сущностей и динамические OG-картинки
+
+### Что изменено
+
+Разметка жила в одном `lib/seo/schema.ts` и покрывала 6 типов; издания, серии, цитаты и профили были невидимы для поисковика. Теперь это модуль `lib/seo/`, а сущности связаны `@id`-ссылками.
+
+**Новое:**
+- `lib/seo/entities.ts` — `@id`-константы, узлы `organizationNode()` / `authorNode()` / `websiteNode()` и карта `EDITION_SCHEMA_TYPE: Record<EditionFormat, string>`: `book→Book`, `comic→ComicIssue`, `magazine→PublicationIssue`, `audiobook→Audiobook`, `audiorelease→AudioObject`, `album→MusicAlbum`, `digital→DigitalDocument`. Новый формат теперь ломает сборку, а не выпадает молча;
+- `lib/seo/metadata.ts` — `buildMetadata()` собирает title/canonical/openGraph/twitter из одного места, плюс `notFoundMetadata()`, `stripHtml()`, `truncate()`;
+- `lib/seo/serialize.ts` — `serializeJsonLd()` вынесен без изменений (защита от XSS, BUGS #18);
+- `components/seo/json-ld.tsx` — `<JsonLd schemas={[...]} />`, один `<script>` с `@graph` вместо грозди тегов;
+- `lib/seo/og-shared.tsx` + `lib/seo/og-fonts.ts` + `assets/og/*.ttf` — вёрстка и шрифты OG-картинок (satori не рендерит кириллицу без явных `fonts`);
+- 8 × `opengraph-image.tsx` (корень, release, series, characters, news, highlight, vvvvv, user) — каждый переживает «сущность не найдена» через `ogFallback()`;
+- `e2e/seo.spec.ts` — 24 теста: парсинг JSON-LD, типы изданий, `Place` для города, XSS-регрессия, OG-теги, матрица noindex;
+- `docs/SEO.md` — как устроено и что осталось доделать.
+
+**Исправлено:**
+- `isbn` висел на `CreativeWork` (валиден только у `Book`) — уехал в `workExample` book-издания;
+- `release.authors` из БД игнорировались, везде был захардкожен `CANFLY_AUTHOR`;
+- города (`character_type = 'city'`) размечались как `Person` — теперь `Place`;
+- `workExample` собирался только из `format === 'book'` — комиксы, аудио и журналы были невидимы;
+- `WebSite` с `SearchAction` отдавался на `/home`, хотя главная переехала на корень;
+- `og:type: 'book'` у серии — заменён на `'website'` (`book` требует `book:author`/`book:isbn`);
+- `post.content.slice(0, 160)` резал сырой HTML — в описание уезжали теги, теперь `stripHtml()`;
+- `/hi/[token]` и `/studio-access-denied` попадали в индекс — закрыты `noindex, nofollow`;
+- **`/release/[slug]/opengraph-image` отдавал 301** — правило «всё глубже `/release/[slug]` ведём на релиз» в `proxy.ts` считало файловую конвенцию Next подмаршрутом. Добавлено исключение для `opengraph-image` / `twitter-image` / `icon`.
+
+**Открыто для индексации:** `/vvvvv/[editionSlug]` — издание индексируется под своим типом, в `app/sitemap.ts` добавлен блок `editionEntries`. `/scroll/**` остаётся `noindex, follow` с self-canonical.
+
+### Как использовать
+
+Метатеги страницы — только через `buildMetadata({ title, description, path, ogType })`. Если рядом лежит `opengraph-image.tsx`, передавать `generatedImage: true` и **не** задавать `image`: Next подставляет файловую картинку лишь когда `openGraph.images` не задан вовсе.
+
+Схемы — через `<JsonLd schemas={[schemaA, schemaB]} />`. Два `<script type="application/ld+json">` на странице (layout + страница) — норма; больше двух значит, что тег вставили напрямую.
+
+**Не доделано:** корневой `/opengraph-image` отвечает 500 (`Input buffer contains unsupported image format` из sharp — похоже на битую нативную сборку, в `node_modules` две версии). Подробности и порядок разбора — в `docs/SEO.md`.
+
+---
+
 ## [9 августа 2026] Общий стандарт тем и шрифтов читалок: lib/reader/reader-preferences.ts
 
 ### Что изменено

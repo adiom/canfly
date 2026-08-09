@@ -1,8 +1,15 @@
+import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { ClientMagicLinkSection } from './client-magic-link-section'
 
 type PageProps = {
   params: Promise<{ token: string }>
+}
+
+/** Ссылка входа с токеном в URL — ни в индексе, ни в обходе ей делать нечего. */
+export const metadata: Metadata = {
+  title: 'Вход | canfly',
+  robots: { index: false, follow: false },
 }
 
 // Токен здесь НЕ гасится: погашение происходит только в Credentials.authorize,

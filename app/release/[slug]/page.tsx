@@ -8,7 +8,9 @@ import { fetchCharactersList } from '@/lib/server/characters'
 import { fetchPublicHighlightsByRelease } from '@/lib/server/chapter-highlights'
 import { ReleasePagePublic } from '@/components/release-page'
 import { computeEditionMeta, getPrimaryEdition } from '@/lib/utils/editions'
-import { generateReleaseSchema, generateBreadcrumbSchema, serializeJsonLd } from '@/lib/seo/schema'
+import { generateReleaseSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
+import { buildMetadata, notFoundMetadata } from '@/lib/seo/metadata'
+import { JsonLd } from '@/components/seo/json-ld'
 import { CATALOG_PATH } from '@/lib/nav'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
@@ -16,24 +18,19 @@ const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params
   const release = await fetchReleaseBySlug(slug)
-  if (!release) return { title: 'Не найдено | canfly' }
+  if (!release || release.status !== 'published') return notFoundMetadata()
 
-  const title = `${release.title} | canfly`
-  const description = release.description ?? release.annotation ?? `«${release.title}» на canfly`
-  const url = `${BASE_URL}/release/${release.slug}`
-
-  return {
-    title,
-    description,
-    openGraph: {
-      title, description, url,
-      type: 'book',
-      locale: 'ru_RU',
-      siteName: 'canfly',
-      ...(release.cover_image && { images: [{ url: release.cover_image, width: 600, height: 900, alt: release.title }] }),
-    },
-    alternates: { canonical: url },
-  }
+  return buildMetadata({
+    title: `${release.title} | canfly`,
+    description: release.description ?? release.annotation ?? `«${release.title}» на canfly`,
+    path: `/release/${release.slug}`,
+    // og:image приходит из opengraph-image.tsx рядом — обложка «как есть» в
+    // 1200×630 обрезалась бы соцсетями.
+    generatedImage: true,
+    ogType: 'book',
+    publishedTime: release.release_date ?? release.created_at,
+    modifiedTime: release.updated_at,
+  })
 }
 
 export default async function ReleasePublicPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -63,6 +60,17 @@ export default async function ReleasePublicPage({ params }: { params: Promise<{ 
     })
     .filter(Boolean) as { id: string; name: string; slug: string; avatar: string | null; role: string }[]
 
+  // Для разметки нужен ещё character_type: город должен стать Place, а не Person.
+  const schemaCharacters = releaseChars
+    .map(rc => allCharacters.find(c => c.id === rc.character_id))
+    .filter(Boolean)
+    .map(ch => ({
+      name: ch!.name,
+      slug: ch!.slug,
+      avatar: ch!.avatar ?? null,
+      character_type: ch!.character_type,
+    }))
+
   const seriesLink = seriesLinks.length > 0
     ? { series: await fetchSeriesById(seriesLinks[0].series_id), phase_number: seriesLinks[0].phase_number }
     : null
@@ -81,9 +89,19 @@ export default async function ReleasePublicPage({ params }: { params: Promise<{ 
     .filter(e => e.status === 'published')
     .map(e => e.format)
 
-  const bookEditions = editions.filter(e => e.format === 'book')
-
-  const releaseSchema = generateReleaseSchema(release, formats, BASE_URL, bookEditions, characters)
+  const releaseSchema = generateReleaseSchema({
+    release,
+    // Все опубликованные издания, а не только book: комиксы, аудиокниги и
+    // журналы раньше в workExample не попадали вообще.
+    editions,
+    formats,
+    characters: schemaCharacters,
+    series: validSeriesLink?.series
+      ? { slug: validSeriesLink.series.slug, title: validSeriesLink.series.title }
+      : null,
+    primaryMeta: meta,
+    primaryEditionId: primaryEdition?.id ?? null,
+  })
   const breadcrumbSchema = generateBreadcrumbSchema([
     { label: 'canfly', url: `${BASE_URL}/` },
     { label: 'Релизы', url: `${BASE_URL}${CATALOG_PATH}` },
@@ -92,14 +110,7 @@ export default async function ReleasePublicPage({ params }: { params: Promise<{ 
 
   return (
     <>
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: serializeJsonLd(releaseSchema) }}
-      />
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: serializeJsonLd(breadcrumbSchema) }}
-      />
+      <JsonLd schemas={[releaseSchema, breadcrumbSchema]} />
       <ReleasePagePublic
         release={release}
         editions={editions}

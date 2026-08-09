@@ -19,8 +19,14 @@ import { SignatureBand } from '@/components/user/signature-band'
 import { ProfileIdentity } from '@/components/user/profile-identity'
 import { ReadingShelf } from '@/components/user/reading-shelf'
 import { CoreSample } from '@/components/user/core-sample'
+import { generateProfilePageSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
+import { buildMetadata, notFoundMetadata } from '@/lib/seo/metadata'
+import { JsonLd } from '@/components/seo/json-ld'
+import { CATALOG_PATH } from '@/lib/nav'
 
 export const dynamic = 'force-dynamic'
+
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
 interface PublicPageProps {
   params: Promise<{ slug: string }>
@@ -29,18 +35,18 @@ interface PublicPageProps {
 export async function generateMetadata({ params }: PublicPageProps) {
   const { slug } = await params
   const user = await fetchUserByHandle(slug)
-  if (!user) return { title: 'Не найдено | canfly' }
-  return {
+  if (!user) return notFoundMetadata()
+
+  return buildMetadata({
     title: `${user.display_name} (@${user.handle}) | canfly`,
-    description: user.tagline ?? user.bio ?? `Профиль читателя canfly.`,
-    alternates: { canonical: `/user/${user.handle}` },
-    openGraph: {
-      title: user.display_name,
-      description: user.tagline ?? user.bio ?? '',
-      type: 'profile',
-      url: `/user/${user.handle}`,
-    },
-  }
+    description: user.tagline ?? user.bio ?? 'Профиль читателя canfly.',
+    path: `/user/${user.handle}`,
+    // og:image — из opengraph-image.tsx рядом.
+    generatedImage: true,
+    ogType: 'profile',
+    // Закрытый профиль виден только владельцу — в индексе ему не место.
+    noindex: !user.profile_is_public,
+  })
 }
 
 export default async function PublicProfilePage({ params }: PublicPageProps) {
@@ -83,8 +89,15 @@ export default async function PublicProfilePage({ params }: PublicPageProps) {
       created_at: quote.created_at,
     }))
 
+  const profileSchema = generateProfilePageSchema(user, { quotes: publicQuotes.length })
+  const breadcrumbSchema = generateBreadcrumbSchema([
+    { label: 'canfly', url: `${BASE_URL}${CATALOG_PATH}` },
+    { label: `@${user.handle}`, url: `${BASE_URL}/user/${user.handle}` },
+  ])
+
   return (
     <main className="min-h-screen bg-cf-bg text-cf-text-1">
+      <JsonLd schemas={[profileSchema, breadcrumbSchema]} />
       <SiteHeader activePath="/characters" />
 
       <SignatureBand theme={theme} caption="Карточка читателя" />

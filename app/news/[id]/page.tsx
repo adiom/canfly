@@ -3,7 +3,9 @@ import Link from 'next/link'
 import Image from 'next/image'
 
 import { fetchNewsPostById } from '@/lib/server/news'
-import { generateNewsArticleSchema, generateBreadcrumbSchema, serializeJsonLd } from '@/lib/seo/schema'
+import { generateNewsArticleSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
+import { buildMetadata, notFoundMetadata } from '@/lib/seo/metadata'
+import { JsonLd } from '@/components/seo/json-ld'
 import { ThemeToggle } from '@/components/theme-toggle'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
@@ -18,26 +20,19 @@ export async function generateMetadata({ params }: NewsPageProps) {
   const { id } = await params
   const post = await fetchNewsPostById(id)
 
-  if (!post) {
-    return { title: 'Новость не найдена — canfly' }
-  }
+  if (!post || post.status !== 'published') return notFoundMetadata('Новость не найдена')
 
-  const url = `${BASE_URL}/news/${post.id}`
-
-  return {
+  return buildMetadata({
     title: `${post.title} — canfly`,
-    description: post.content?.slice(0, 160) ?? post.title,
-    openGraph: {
-      title: post.title,
-      description: post.content?.slice(0, 160) ?? post.title,
-      url,
-      type: 'article',
-      locale: 'ru_RU',
-      siteName: 'canfly',
-      images: post.cover_image ? [{ url: post.cover_image }] : undefined,
-    },
-    alternates: { canonical: url },
-  }
+    // content — HTML: без stripHtml в описание уезжали теги.
+    description: post.content ?? post.title,
+    path: `/news/${post.id}`,
+    // og:image — из opengraph-image.tsx рядом.
+    generatedImage: true,
+    ogType: 'article',
+    publishedTime: post.published_at ?? post.created_at,
+    modifiedTime: post.updated_at ?? post.published_at ?? post.created_at,
+  })
 }
 
 export default async function NewsPage({ params }: NewsPageProps) {
@@ -48,7 +43,7 @@ export default async function NewsPage({ params }: NewsPageProps) {
     notFound()
   }
 
-  const articleSchema = generateNewsArticleSchema(post, BASE_URL)
+  const articleSchema = generateNewsArticleSchema(post)
   const breadcrumbSchema = generateBreadcrumbSchema([
     { label: 'canfly', url: `${BASE_URL}/` },
     { label: 'Новости', url: `${BASE_URL}/news` },
@@ -59,14 +54,7 @@ export default async function NewsPage({ params }: NewsPageProps) {
 
   return (
     <main className="min-h-screen bg-cf-bg text-cf-text-1">
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: serializeJsonLd(articleSchema) }}
-      />
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: serializeJsonLd(breadcrumbSchema) }}
-      />
+      <JsonLd schemas={[articleSchema, breadcrumbSchema]} />
 
       <header className="sticky top-0 z-50 border-b border-cf-text-1/10 bg-cf-bg/92 backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 md:px-8">

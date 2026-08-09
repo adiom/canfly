@@ -2,7 +2,9 @@ import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { fetchSeriesWithReleases } from '@/lib/server/series'
 import { SeriesPage } from '@/components/series-page'
-import { generateBreadcrumbSchema, serializeJsonLd } from '@/lib/seo/schema'
+import { generateBreadcrumbSchema, generateSeriesSchema } from '@/lib/seo/schema'
+import { buildMetadata, notFoundMetadata } from '@/lib/seo/metadata'
+import { JsonLd } from '@/components/seo/json-ld'
 import { CATALOG_PATH } from '@/lib/nav'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
@@ -10,25 +12,17 @@ const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params
   const series = await fetchSeriesWithReleases(slug)
-  if (!series) return { title: 'Серия не найдена | canfly' }
+  if (!series) return notFoundMetadata('Серия не найдена')
 
-  const title = `${series.title} | canfly`
-  const description = series.description ?? `Серия «${series.title}» на canfly`
-  const url = `${BASE_URL}/series/${series.slug}`
-
-  return {
-    title,
-    description,
-    openGraph: {
-      title,
-      description,
-      url,
-      type: 'book',
-      locale: 'ru_RU',
-      siteName: 'canfly',
-    },
-    alternates: { canonical: url },
-  }
+  return buildMetadata({
+    title: `${series.title} | canfly`,
+    description: series.description ?? `Серия «${series.title}» на canfly`,
+    path: `/series/${series.slug}`,
+    // Не 'book': og:type='book' требует book:author/book:isbn, которых у серии нет.
+    ogType: 'website',
+    // og:image — из opengraph-image.tsx рядом.
+    generatedImage: true,
+  })
 }
 
 export default async function SeriesPageRoute({ params }: { params: Promise<{ slug: string }> }) {
@@ -44,10 +38,7 @@ export default async function SeriesPageRoute({ params }: { params: Promise<{ sl
 
   return (
     <>
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: serializeJsonLd(breadcrumbSchema) }}
-      />
+      <JsonLd schemas={[generateSeriesSchema(series, series.releases), breadcrumbSchema]} />
       <SeriesPage series={series} releases={series.releases} />
     </>
   )

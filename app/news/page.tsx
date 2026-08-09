@@ -4,30 +4,48 @@ import { ChevronLeft } from 'lucide-react'
 
 import { fetchNewsPosts } from '@/lib/server/news'
 import { ThemeToggle } from '@/components/theme-toggle'
+import { JsonLd } from '@/components/seo/json-ld'
+import { generateCollectionSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
+import { buildMetadata, stripHtml, truncate } from '@/lib/seo/metadata'
+import { CATALOG_PATH } from '@/lib/nav'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
 export const dynamic = 'force-dynamic'
 
-export const metadata = {
+const NEWS_DESCRIPTION = 'Новости, заметки и маршруты из вселенной canfly.'
+
+export const metadata = buildMetadata({
   title: 'Новости | canfly',
-  description: 'Новости, заметки и маршруты из вселенной canfly.',
-  openGraph: {
-    title: 'Новости | canfly',
-    description: 'Новости, заметки и маршруты из вселенной canfly.',
-    url: `${BASE_URL}/news`,
-    type: 'website',
-    locale: 'ru_RU',
-    siteName: 'canfly',
-  },
-  alternates: { canonical: `${BASE_URL}/news` },
-}
+  description: NEWS_DESCRIPTION,
+  path: '/news',
+})
 
 export default async function NewsPage() {
   const news = await fetchNewsPosts(100)
 
+  const collectionSchema = generateCollectionSchema({
+    name: 'Новости canfly',
+    description: NEWS_DESCRIPTION,
+    path: '/news',
+    items: news.map(item => ({
+      name: item.title,
+      url: `${BASE_URL}/news/${item.id}`,
+      image: item.cover_image,
+    })),
+  })
+
   return (
     <main className="min-h-screen bg-cf-bg text-cf-text-1">
+      <JsonLd
+        schemas={[
+          collectionSchema,
+          generateBreadcrumbSchema([
+            { label: 'canfly', url: `${BASE_URL}${CATALOG_PATH}` },
+            { label: 'Новости', url: `${BASE_URL}/news` },
+          ]),
+        ]}
+      />
       <header className="sticky top-0 z-50 border-b border-cf-text-1/10 bg-cf-bg/92 backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 md:px-8">
           <Link href="/" className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.12em] text-cf-text-2 hover:text-cf-text-heading">
@@ -87,8 +105,7 @@ export default async function NewsPage() {
                     </Link>
                     {item.content && (
                       <p className="leading-7 text-cf-text-caption line-clamp-3">
-                        {item.content.replace(/<[^>]+>/g, '').slice(0, 300)}
-                        {item.content.length > 300 ? '…' : ''}
+                        {truncate(stripHtml(item.content), 300)}
                       </p>
                     )}
                     <p className="mt-4 text-xs uppercase tracking-[0.14em] text-cf-text-4">

@@ -11,10 +11,9 @@ import {
   loadScrollRelease,
   loadScrollChapters,
 } from '@/lib/server/scroll-reader'
+import { buildMetadata, notFoundMetadata } from '@/lib/seo/metadata'
 
 export const dynamic = 'force-dynamic'
-
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
 export async function generateMetadata({
   params,
@@ -24,22 +23,23 @@ export async function generateMetadata({
   const { slug, chapterIndex } = await params
 
   const edition = await loadScrollEdition(slug)
-  if (!edition || edition.status !== 'published') {
-    return { title: 'Не найдено | canfly', robots: { index: false, follow: false } }
-  }
-  const release = await loadScrollRelease(edition.release_id)
-  if (!release || release.status !== 'published') {
-    return { title: 'Не найдено | canfly', robots: { index: false, follow: false } }
-  }
+  if (!edition || edition.status !== 'published') return notFoundMetadata()
 
-  const url = `${BASE_URL}/scroll/${edition.slug || edition.id}/${chapterIndex}`
-  return {
+  const release = await loadScrollRelease(edition.release_id)
+  if (!release || release.status !== 'published') return notFoundMetadata()
+
+  return buildMetadata({
     title: `Глава ${chapterIndex} — ${release.title} — читать | canfly`,
-description: release.description ?? release.annotation ?? `«${release.title}» на canfly`,
-    // Читалка не дублирует SEO-страницы релиза — индексации нет.
-    robots: { index: false, follow: true },
-    alternates: { canonical: url },
-  }
+    description: release.annotation ?? release.description ?? `«${release.title}» на canfly`,
+    // Self-canonical при noindex: чужой canonical Google трактует как конфликт.
+    path: `/scroll/${edition.slug || edition.id}/${chapterIndex}`,
+    image: release.cover_image,
+    imageAlt: release.title,
+    ogType: 'article',
+    // Читалка не дублирует SEO-страницы релиза и издания — индексации нет,
+    // но ссылки со страницы обходить можно.
+    noindex: true,
+  })
 }
 
 /**

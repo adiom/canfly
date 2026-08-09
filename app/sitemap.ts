@@ -3,16 +3,18 @@ import { fetchReleasesWithEditions } from '@/lib/server/releases'
 import { fetchNewsPosts } from '@/lib/server/news'
 import { fetchCharactersList } from '@/lib/server/characters'
 import { fetchAllSeries } from '@/lib/server/series'
+import { fetchPublishedEditionsForSitemap } from '@/lib/server/editions'
 import { LANDING_PATH } from '@/lib/nav'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const [releases, newsPosts, characters, series] = await Promise.all([
+  const [releases, newsPosts, characters, series, editions] = await Promise.all([
     fetchReleasesWithEditions({ status: 'published' }),
     fetchNewsPosts(100),
     fetchCharactersList(),
     fetchAllSeries(),
+    fetchPublishedEditionsForSitemap(),
   ])
 
   const releaseEntries = releases.map((release) => ({
@@ -43,6 +45,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     lastModified: new Date(s.updated_at),
     changeFrequency: 'monthly' as const,
     priority: 0.7,
+  }))
+
+  // `/vvvvv/[editionSlug]` индексируется (тип schema.org по формату издания),
+  // поэтому издания должны быть в карте. Приоритет ниже релиза: страница релиза
+  // остаётся главной точкой входа.
+  const editionEntries = editions.map((edition) => ({
+    url: `${BASE_URL}/vvvvv/${edition.slug || edition.id}`,
+    lastModified: new Date(edition.updated_at),
+    changeFrequency: 'weekly' as const,
+    priority: 0.8,
   }))
 
   return [
@@ -79,6 +91,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.5,
     },
     ...releaseEntries,
+    ...editionEntries,
     ...newsEntries,
     ...characterEntries,
     ...seriesEntries,

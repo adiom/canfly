@@ -1,6 +1,10 @@
-import type { Metadata } from 'next'
 import { Cormorant_Garamond } from 'next/font/google'
 import ColorsPageClient from './colors-client'
+import { JsonLd } from '@/components/seo/json-ld'
+import { generateCollectionSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
+import { buildMetadata } from '@/lib/seo/metadata'
+import { CANFLY_COLORS } from '@/lib/canfly-colors'
+import { CATALOG_PATH } from '@/lib/nav'
 
 const cormorant = Cormorant_Garamond({
   subsets: ['latin', 'cyrillic'],
@@ -12,30 +16,37 @@ const cormorant = Cormorant_Garamond({
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
-export const metadata: Metadata = {
+const COLORS_DESCRIPTION =
+  'Палитра литературной вселенной canfly — цвета с именами, историями и происхождением.'
+
+export const metadata = buildMetadata({
   title: 'Canfly Colors | canfly',
-  description:
-    'Палитра литературной вселенной canfly — цвета с именами, историями и происхождением.',
-  openGraph: {
-    title: 'Canfly Colors | canfly',
-    description:
-      'Палитра литературной вселенной canfly — цвета с именами, историями и происхождением.',
-    url: `${BASE_URL}/colors`,
-    siteName: 'canfly',
-    locale: 'ru_RU',
-    type: 'website',
-  },
-  twitter: {
-    card: 'summary_large_image',
-  },
-  alternates: {
-    canonical: `${BASE_URL}/colors`,
-  },
-}
+  description: COLORS_DESCRIPTION,
+  path: '/colors',
+})
 
 export default function ColorsPage() {
+  const collectionSchema = generateCollectionSchema({
+    name: 'Canfly Colors',
+    description: COLORS_DESCRIPTION,
+    path: '/colors',
+    items: CANFLY_COLORS.map(color => ({
+      name: `${color.name} — ${color.fullName}`,
+      url: `${BASE_URL}/colors#${color.id}`,
+    })),
+  })
+
   return (
     <div className={cormorant.variable}>
+      <JsonLd
+        schemas={[
+          collectionSchema,
+          generateBreadcrumbSchema([
+            { label: 'canfly', url: `${BASE_URL}${CATALOG_PATH}` },
+            { label: 'Colors', url: `${BASE_URL}/colors` },
+          ]),
+        ]}
+      />
       <ColorsPageClient />
     </div>
   )

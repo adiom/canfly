@@ -13,6 +13,16 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next()
   }
 
+  /*
+   * Файловые конвенции метаданных Next (`opengraph-image.tsx` рядом с
+   * `page.tsx`) дают вложенные URL вида `/release/[slug]/opengraph-image`.
+   * Для правила «всё глубже /release/[slug] — на сам релиз» это подмаршрут,
+   * поэтому картинка отвечала 301 и unfurl в мессенджерах оставался пустым.
+   */
+  if (/\/(opengraph|twitter)-image(\/|$)/.test(pathname) || pathname.endsWith('/icon')) {
+    return NextResponse.next()
+  }
+
   // --- Защита /profile через next-auth JWT ---
   if (
     pathname === '/user' ||

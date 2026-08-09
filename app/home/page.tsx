@@ -12,33 +12,23 @@ import {
 import { HomepageSlide } from '@/lib/types'
 import { SiteHeader } from '@/components/site-header'
 import { SiteFooter } from '@/components/site-footer'
-import { generateWebSiteSchema, serializeJsonLd } from '@/lib/seo/schema'
+import { generateWebPageSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
+import { JsonLd } from '@/components/seo/json-ld'
+import { buildMetadata } from '@/lib/seo/metadata'
 import { CATALOG_PATH, LANDING_PATH } from '@/lib/nav'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
 export const revalidate = 60
 
-export const metadata = {
+const LANDING_DESCRIPTION =
+  'canfly — литературная вселенная о тревоге, ремесле, памяти, цифровой усталости и людях, которые продолжают функционировать.'
+
+export const metadata = buildMetadata({
   title: 'canfly | культура твоего сознания',
-  description:
-    'canfly — литературная вселенная о тревоге, ремесле, памяти, цифровой усталости и людях, которые продолжают функционировать.',
-  openGraph: {
-    title: 'canfly | культура твоего сознания',
-    description:
-      'canfly — литературная вселенная о тревоге, ремесле, памяти, цифровой усталости и людях, которые продолжают функционировать.',
-    url: `${BASE_URL}${LANDING_PATH}`,
-    siteName: 'canfly',
-    locale: 'ru_RU',
-    type: 'website' as const,
-  },
-  twitter: {
-    card: 'summary_large_image' as const,
-  },
-  alternates: {
-    canonical: `${BASE_URL}${LANDING_PATH}`,
-  },
-}
+  description: LANDING_DESCRIPTION,
+  path: LANDING_PATH,
+})
 
 export default async function Home() {
   let slides: HomepageSlide[] = []
@@ -54,13 +44,24 @@ export default async function Home() {
     isMigrationMissing = true
   }
 
-  const webSiteSchema = generateWebSiteSchema(BASE_URL)
+  // WebSite с SearchAction переехал на корень вместе с главной — здесь остаётся
+  // обычная страница, иначе Google получит два конкурирующих узла сайта.
+  const pageSchema = generateWebPageSchema({
+    name: 'canfly | культура твоего сознания',
+    description: LANDING_DESCRIPTION,
+    path: LANDING_PATH,
+  })
 
   return (
     <main className="min-h-screen bg-cf-bg text-cf-text-1">
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: serializeJsonLd(webSiteSchema) }}
+      <JsonLd
+        schemas={[
+          pageSchema,
+          generateBreadcrumbSchema([
+            { label: 'canfly', url: `${BASE_URL}/` },
+            { label: 'О вселенной', url: `${BASE_URL}${LANDING_PATH}` },
+          ]),
+        ]}
       />
       <SiteHeader activePath={LANDING_PATH} />
 
