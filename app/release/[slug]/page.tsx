@@ -71,6 +71,14 @@ export default async function ReleasePublicPage({ params }: { params: Promise<{ 
       character_type: ch!.character_type,
     }))
 
+  // Карта slug → role. Используется в JSON-LD, чтобы выделить protagonist
+  // (role = 'main') для поля `about`.
+  const characterRoles = new Map<string, string>()
+  for (const rc of releaseChars) {
+    const ch = allCharacters.find(c => c.id === rc.character_id)
+    if (ch) characterRoles.set(ch.slug, rc.role)
+  }
+
   const seriesLink = seriesLinks.length > 0
     ? { series: await fetchSeriesById(seriesLinks[0].series_id), phase_number: seriesLinks[0].phase_number }
     : null
@@ -96,6 +104,7 @@ export default async function ReleasePublicPage({ params }: { params: Promise<{ 
     editions,
     formats,
     characters: schemaCharacters,
+    characterRoles,
     series: validSeriesLink?.series
       ? { slug: validSeriesLink.series.slug, title: validSeriesLink.series.title }
       : null,

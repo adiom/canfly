@@ -10,6 +10,8 @@ import {
 } from '@/lib/server/characters'
 import { listVisibleCharacterPosts } from '@/lib/server/character-posts'
 import { fetchWallPosts } from '@/lib/server/character-wall'
+import { fetchReleasesByCharacter } from '@/lib/server/releases'
+import { fetchSeriesByCharacter } from '@/lib/server/series'
 import { getCurrentUser, getUserRoles } from '@/lib/server/session'
 import { generateCharacterSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
 import { buildMetadata, notFoundMetadata } from '@/lib/seo/metadata'
@@ -72,24 +74,42 @@ export default async function CharacterPage({ params, searchParams }: CharacterP
     redirect(`/characters/${slug}#${LEGACY_TAB_ANCHOR[tab]}`)
   }
 
-  const characterSchema = generateCharacterSchema(data.character)
   const breadcrumbSchema = generateBreadcrumbSchema([
     { label: 'canfly', url: `${BASE_URL}/` },
     { label: 'Персонажи', url: `${BASE_URL}/characters` },
     { label: data.character.name, url: `${BASE_URL}/characters/${data.character.slug}` },
   ])
 
-  const [stats, friends, posts, wall, currentUser] = await Promise.all([
+  const [stats, friends, posts, wall, currentUser, subjectReleases, subjectSeries] = await Promise.all([
     fetchCharacterStats(data.character.id),
     fetchCharacterFriends(data.character.id, 12),
     listVisibleCharacterPosts(data.character.slug),
     fetchWallPosts(data.character.id, { includeHidden: false, limit: 50 }),
     getCurrentUser(),
+    fetchReleasesByCharacter(data.character.id, { onlyPublished: true }),
+    fetchSeriesByCharacter(data.character.id),
   ])
 
   const isAdmin = currentUser
     ? (await getUserRoles(currentUser.id)).includes('admin')
     : false
+
+  // subjectOf — все опубликованные релизы с участием персонажа + серии,
+  // где у него role = 'main'. Дублей по @id не будет: уникальность по slug.
+  const subjectOfRefs = [
+    ...subjectReleases.map(release => ({
+      slug: release.release_slug,
+      name: release.release_title,
+      type: 'CreativeWork' as const,
+    })),
+    ...subjectSeries.map(series => ({
+      slug: series.slug,
+      name: series.title,
+      type: 'CreativeWorkSeries' as const,
+    })),
+  ]
+
+  const characterSchema = generateCharacterSchema(data.character, { subjectOf: subjectOfRefs })
 
   return (
     <main className="relative mx-auto w-full max-w-3xl px-6 pb-32">

@@ -162,18 +162,25 @@ function releaseGenres(formats: EditionFormat[], genre: string | null): string[]
  * Произведение остаётся `CreativeWork` — это абстракция над изданиями.
  * Конкретные типы (`Book`, `ComicIssue`, `Audiobook`, …) живут в `workExample`
  * и на собственных страницах изданий.
+ *
+ * Связи с персонажами:
+ * - `character` — ВСЕ привязанные (главные и второстепенные), как массив @id-ссылок;
+ * - `about` — главный герой (`role = 'main'`), как полный @id-ссылка.
+ * Без разделения поисковик не понимает, кто ведёт сюжет, а кто эпизодичен.
  */
 export function generateReleaseSchema(opts: {
   release: Release
   editions: Edition[]
   formats: EditionFormat[]
   characters?: Array<Pick<Character, 'name' | 'slug' | 'avatar' | 'character_type'>>
+  /** Роли каждого персонажа в релизе (`main`/`supporting`/`cameo`). */
+  characterRoles?: Map<string, string>
   series?: { slug: string; title: string } | null
   /** Агрегаты основного издания — страницы, слова, длительность. */
   primaryMeta?: EditionMeta
   primaryEditionId?: string | null
 }) {
-  const { release, editions, formats, characters, series, primaryMeta, primaryEditionId } = opts
+  const { release, editions, formats, characters, characterRoles, series, primaryMeta, primaryEditionId } = opts
   const url = `${BASE_URL}/release/${release.slug}`
 
   const published = editions.filter(edition => edition.status === 'published')
@@ -184,6 +191,41 @@ export function generateReleaseSchema(opts: {
       primaryEditionId && edition.id === primaryEditionId ? primaryMeta : undefined,
     ),
   )
+
+  // Сборка character/about из единого списка. role хранится в Map, чтобы не
+  // менять сигнатуру characterNode: список — это данные, роль — мета.
+  const characterNodes =
+    characters && characters.length > 0
+      ? characters.map(character => {
+          const isCity = character.character_type === 'city'
+          return {
+            '@type': isCity ? 'Place' : 'Person',
+            '@id': ID.character(character.slug, isCity ? 'city' : 'person'),
+            name: character.name,
+            url: `${BASE_URL}/characters/${character.slug}`,
+            ...imageObject(character.avatar),
+          }
+        })
+      : []
+
+  const protagonist =
+    characters && characterRoles
+      ? characters.find(
+          character => characterRoles.get(character.slug) === 'main',
+        ) ?? null
+      : null
+
+  const protagonistNode = protagonist
+    ? (() => {
+        const isCity = protagonist.character_type === 'city'
+        return {
+          '@type': isCity ? 'Place' : 'Person',
+          '@id': ID.character(protagonist.slug, isCity ? 'city' : 'person'),
+          name: protagonist.name,
+          url: `${BASE_URL}/characters/${protagonist.slug}`,
+        }
+      })()
+    : null
 
   return {
     '@type': 'CreativeWork',
@@ -204,10 +246,8 @@ export function generateReleaseSchema(opts: {
     inLanguage: 'ru-RU',
     isAccessibleForFree: true,
     ...(series && { isPartOf: ref(ID.series(series.slug)) }),
-    ...(characters &&
-      characters.length > 0 && {
-        character: characters.map(character => characterNode(character, { full: false })),
-      }),
+    ...(characterNodes.length > 0 && { character: characterNodes }),
+    ...(protagonistNode && { about: protagonistNode }),
     ...(workExample.length > 0 && { workExample }),
     ...(release.view_count > 0 && {
       interactionStatistic: {
@@ -330,12 +370,32 @@ type CharacterSeed = Pick<Character, 'name' | 'slug' | 'avatar' | 'character_typ
   Partial<Pick<Character, 'bio' | 'full_description'>>
 
 /**
- * Города вселенной — `Place`, люди — `Person`.
+ * Минимальный набор произведений, в которых персонаж участвует, для subjectOf.
  *
- * До этого `Place` не существовало: город со `character_type='city'`
- * размечался как человек.
+ * Это «ссылочные» узлы — только @id, имя и опциональный тип. Полные
+ * описания лежат на странице самого релиза, дублировать их здесь — лишний
+ * шум в графе и риск рассинхронизации.
  */
-export function characterNode(character: CharacterSeed, opts: { full: boolean }) {
+export interface CharacterSubjectRef {
+  /** Slug релиза или серии — для сборки @id. */
+  slug: string
+  /** Название для подписи под @id в JSON-LD. */
+  name: string
+  /** 'CreativeWork' (по умолчанию), 'CreativeWorkSeries', 'Book'. */
+  type?: 'CreativeWork' | 'CreativeWorkSeries' | 'Book'
+}
+
+/**
+ * Узел персонажа в графе.
+ *
+ * `opts.subjectOf` — список ссылок на произведения/серии, где персонаж
+ * значится (subjectOf на странице профиля). `opts.full: true` отдаёт полный
+ * Person с описанием, иначе — краткий ref для вкраплений в `character`/`about`.
+ */
+export function characterNode(
+  character: CharacterSeed,
+  opts: { full: boolean; subjectOf?: CharacterSubjectRef[] },
+) {
   const isCity = character.character_type === 'city'
   const url = `${BASE_URL}/characters/${character.slug}`
 
@@ -350,6 +410,25 @@ export function characterNode(character: CharacterSeed, opts: { full: boolean })
   if (!opts.full) return base
 
   const bio = stripHtml(character.bio ?? character.full_description)
+  const subjectOf = opts.subjectOf
+    ?.filter(s => s?.slug)
+    .map(s => {
+      const node: Record<string, unknown> = {
+        '@type': s.type ?? 'CreativeWork',
+        '@id':
+          s.type === 'CreativeWorkSeries'
+            ? ID.series(s.slug)
+            : ID.work(s.slug),
+        name: s.name,
+      }
+      // url на серию — у произведения он уже есть в @id.
+      if (s.type === 'CreativeWorkSeries') {
+        node.url = `${BASE_URL}/series/${s.slug}`
+      } else {
+        node.url = `${BASE_URL}/release/${s.slug}`
+      }
+      return node
+    })
 
   return {
     ...base,
@@ -360,10 +439,21 @@ export function characterNode(character: CharacterSeed, opts: { full: boolean })
       300,
     ),
     mainEntityOfPage: { '@type': 'WebPage', '@id': url },
+    ...(subjectOf && subjectOf.length > 0 && { subjectOf }),
   }
 }
 
-export function generateCharacterSchema(character: CharacterSeed) {
+/**
+ * JSON-LD профиля персонажа.
+ *
+ * `subjectOf` собирается на стороне вызова (там доступны данные о релизах):
+ * достаточно передать список `{ slug, name, type? }`. Без них узел останется
+ * с минимумом полей и не сломает разметку.
+ */
+export function generateCharacterSchema(
+  character: CharacterSeed,
+  opts: { subjectOf?: CharacterSubjectRef[]; jobTitle?: string; worksFor?: string } = {},
+) {
   const url = `${BASE_URL}/characters/${character.slug}`
 
   return {
@@ -372,7 +462,14 @@ export function generateCharacterSchema(character: CharacterSeed) {
     url,
     inLanguage: 'ru-RU',
     isPartOf: ref(ID.website),
-    mainEntity: characterNode(character, { full: true }),
+    mainEntity: {
+      ...characterNode(character, { full: true, subjectOf: opts.subjectOf }),
+      // Поля Person: jobTitle/worksFor — стандартные для schema.org/Person.
+      // Заголовок и место работы задаются через Bio (character.bio) — структурированных
+      // полей в БД нет, поэтому их пробрасывает вызывающая сторона, если знает.
+      ...(opts.jobTitle && { jobTitle: opts.jobTitle }),
+      ...(opts.worksFor && { worksFor: { '@type': 'Organization', name: opts.worksFor } }),
+    },
   }
 }
 

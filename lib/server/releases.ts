@@ -117,6 +117,46 @@ export async function fetchReleaseCharacters(releaseId: string) {
   )
 }
 
+/**
+ * Все релизы, к которым привязан персонаж, с его ролью.
+ *
+ * Для публичных страниц персонажа (subjectOf) и обратной навигации.
+ * Сюда попадают и draft-релизы — если их не фильтровать, прототипы автора
+ * утекают в JSON-LD.
+ */
+export interface CharacterReleaseLink {
+  release_id: string
+  release_slug: string
+  release_title: string
+  release_status: ReleaseStatus
+  series_slug: string | null
+  role: ReleaseCharacterRole
+}
+
+export async function fetchReleasesByCharacter(
+  characterId: string,
+  opts: { onlyPublished?: boolean } = {},
+): Promise<CharacterReleaseLink[]> {
+  const onlyPublished = opts.onlyPublished ?? true
+  return dbQuery<CharacterReleaseLink>(
+    `SELECT
+       r.id AS release_id,
+       r.slug AS release_slug,
+       r.title AS release_title,
+       r.status AS release_status,
+       s.slug AS series_slug,
+       rc.role
+     FROM release_characters rc
+     JOIN releases r ON r.id = rc.release_id
+     LEFT JOIN release_series rs ON rs.release_id = r.id
+     LEFT JOIN series s ON s.id = rs.series_id
+     WHERE rc.character_id = $1
+       AND ($2::boolean IS FALSE OR r.status = 'published')
+     ORDER BY r.release_date DESC NULLS LAST, r.updated_at DESC`,
+    [characterId, onlyPublished],
+  )
+}
+
 export async function setReleaseCharacters(
   releaseId: string,
   characters: { character_id: string; role: ReleaseCharacterRole }[],

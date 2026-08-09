@@ -70,3 +70,22 @@ export async function updateSeries(id: string, data: Record<string, unknown>) {
 export async function deleteSeries(id: string) {
   await dbQuery('DELETE FROM series WHERE id = $1', [id])
 }
+
+/**
+ * Серии, в которых у персонажа есть `role = 'main'` хотя бы в одном релизе серии.
+ *
+ * Для subjectOf на странице персонажа: идёт как `CreativeWorkSeries`
+ * с агрегацией по серии. Один выпуск серии с главным героем привязывает
+ * серию целиком — иначе получается дубль в графе.
+ */
+export async function fetchSeriesByCharacter(characterId: string): Promise<Series[]> {
+  return dbQuery<Series>(
+    `SELECT DISTINCT ${seriesColumns}
+     FROM series s
+     JOIN release_series rs ON rs.series_id = s.id
+     JOIN release_characters rc ON rc.release_id = rs.release_id
+     WHERE rc.character_id = $1 AND rc.role = 'main'
+     ORDER BY s.title ASC`,
+    [characterId],
+  )
+}

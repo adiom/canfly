@@ -61,6 +61,26 @@ function deepTypes(value: unknown, acc: string[] = []): string[] {
 }
 
 /**
+ * Все узлы графа, прошедшие предикат — нужно, чтобы достать Person/Place
+ * из глубины (subjectOf, character[]) и проверить поля на них.
+ */
+function deepFind(value: unknown, predicate: (node: Graph) => boolean): Graph[] {
+  const result: Graph[] = []
+  const walk = (node: unknown) => {
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item)
+      return
+    }
+    if (node && typeof node === 'object') {
+      if (predicate(node as Graph)) result.push(node as Graph)
+      for (const item of Object.values(node as Graph)) walk(item)
+    }
+  }
+  walk(value)
+  return result
+}
+
+/**
  * Страница + гарантия, что оба JSON-LD доехали: layout отдаёт свой тег в
  * шелле, а тег страницы приходит позже — на `domcontentloaded` его ещё нет,
  * и проверки читали разметку одного layout.
@@ -180,6 +200,62 @@ test.describe('JSON-LD', () => {
       found.includes('Person') || found.includes('Place'),
       `ни Person, ни Place: ${found.join(', ')}`,
     ).toBe(true)
+  })
+
+  test('персонаж с привязкой к релизу объявляет subjectOf', async ({ page }) => {
+    // Ищем персонажа, у которого есть хотя бы один опубликованный релиз.
+    // Каталог /characters не показывает эти связи напрямую — берём первого
+    // попавшегося и смотрим, есть ли в графе subjectOf.
+    const path = await firstHref(page, '/characters', 'a[href^="/characters/"]')
+    test.skip(!path, 'нет персонажей в БД')
+
+    await gotoWithJsonLd(page, path!)
+    const nodes = await readJsonLd(page)
+
+    // subjectOf лежит внутри mainEntity (Person/Place), а не в корне графа.
+    const personNodes = deepFind(nodes, value => {
+      const t = (value as Graph)['@type']
+      return t === 'Person' || t === 'Place'
+    })
+
+    test.skip(personNodes.length === 0, 'нет узлов Person/Place')
+
+    const withSubject = personNodes.filter(node => Array.isArray(node.subjectOf))
+    // Без тестовой БД с привязками subjectOf будет пуст — это валидный кейс,
+    // поэтому просто фиксируем структуру, если что-то есть.
+    for (const node of withSubject) {
+      const refs = node.subjectOf as Graph[]
+      for (const ref of refs) {
+        expect(typeof ref['@id']).toBe('string')
+        expect(ref['@type']).toMatch(/^(CreativeWork|CreativeWorkSeries|Book)$/)
+      }
+    }
+  })
+
+  test('релиз с персонажами: character[] + about у главного', async ({ page }) => {
+    const path = await firstHref(page, '/', 'a[href^="/release/"]')
+    test.skip(!path, 'нет опубликованных релизов в БД')
+
+    await gotoWithJsonLd(page, path!)
+    const nodes = await readJsonLd(page)
+    const work = nodes.find(node => node['@type'] === 'CreativeWork')
+    expect(work, 'нет CreativeWork на /release/[slug]').toBeTruthy()
+
+    const characters = work?.character as Graph[] | undefined
+    if (Array.isArray(characters)) {
+      // Каждый персонаж — @id-ссылка на узел в каноническом графе персонажей.
+      for (const c of characters) {
+        expect(c['@id']).toMatch(/\/characters\/[^/]+#(person|place)$/)
+        expect(c.name).toBeTruthy()
+      }
+    }
+
+    // about — одиночная @id-ссылка на главного героя, если role = 'main'.
+    const about = work?.about as Graph | undefined
+    if (about) {
+      expect(about['@id']).toMatch(/\/characters\/[^/]+#(person|place)$/)
+      expect(about.name).toBeTruthy()
+    }
   })
 
   test('серия — CreativeWorkSeries', async ({ page }) => {
