@@ -67,16 +67,21 @@ export default async function CharacterChatPage({ params }: ChatPageProps) {
       </div>
 
       <div className="cf-rise-late flex flex-1 flex-col pb-6">
-        {character.can_receive_messages !== false && character.reply_mode !== 'disabled' ? (
+        {character.can_receive_messages === false || character.reply_mode === 'disabled' ? (
+          <p className="text-[15px] leading-relaxed text-cf-text-3">
+            {character.name} сейчас молчит. Загляни в профиль — там остались его записи.
+          </p>
+        ) : !character.system_role?.trim() ? (
+          <p className="text-[15px] leading-relaxed text-cf-text-3">
+            {character.name} ещё не заговорил — автор не настроил системную инструкцию.
+            Загляни в профиль — там остались его записи.
+          </p>
+        ) : (
           <CharacterChat
             characterSlug={character.slug}
             characterName={character.name}
             characterAvatar={character.avatar || ''}
           />
-        ) : (
-          <p className="text-[15px] leading-relaxed text-cf-text-3">
-            {character.name} сейчас молчит. Загляни в профиль — там остались его записи.
-          </p>
         )}
       </div>
     </div>

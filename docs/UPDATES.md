@@ -1760,6 +1760,32 @@ ALTER TABLE books
 
 ---
 
+## [9 августа 2026] Системные промпты персонажей из БД
+
+### Что изменено
+
+- `postgres/migrations/002_character_system_role.sql` — новая колонка `characters.system_role TEXT NOT NULL DEFAULT ''`. Существующие 8 героев заполнены старыми промптами идемпотентно (`WHERE system_role = ''`), чтобы поведение в чате после миграции не изменилось.
+- `lib/types.ts` — в `Character` добавлено поле `system_role: string`.
+- `lib/server/characters.ts` — `createCharacter` / `updateCharacter` пишут новый столбец; все `SELECT *` подхватывают его без правок.
+- `lib/actions/studio-characters.ts` — `createCharacterAction` / `updateCharacterAction` парсят `formData.system_role` (trim, до 8000 символов), для городов явно пишут `''`.
+- `components/studio/character-form.tsx` — новое поле «Системная инструкция» (textarea, `font-mono`, подсказка под полем) в секции настроек чата для не-городов.
+- `app/api/characters/chat/route.ts` — захардкоженный `characterPrompts` удалён целиком; `characterPrompt` теперь читается из `character.system_role`. Пустое поле → route отвечает `503 System instruction not configured`.
+- `app/characters/[slug]/chat/page.tsx` — третья ветка рендера: если `can_receive_messages === false` или `reply_mode === 'disabled'` → «сейчас молчит», если `system_role` пустое → «автор не настроил системную инструкцию», иначе → `<CharacterChat>`.
+
+### Зачем
+
+Раньше системные промпты для чат-бота жили в объекте `characterPrompts` прямо в `route.ts` — только 8 имён, новые персонажи без правки кода говорили дефолтной фразой «Вы X, персонаж литературной вселенной canfly». Теперь инструкция хранится в БД, редактируется в Studio как обычное поле, работает для любого персонажа.
+
+Если поле пустое — чат отключён (по запросу: «если нет в БД system_role - то не работает функция»). Это вынуждает автора явно настроить личность перед публикацией чата.
+
+### Как использовать
+
+1. Применить миграцию: `psql $DATABASE_URL -f postgres/migrations/002_character_system_role.sql`. Существующие герои получат старые промпты автоматически.
+2. Studio → редактирование персонажа → секция «Ответы» → поле «Системная инструкция» → заполнить → Сохранить.
+3. Чат на `/characters/[slug]/chat` начнёт работать; в БД строка `system_role` подставляется в system-промпт модели вместе с био, характером и манерой речи.
+
+---
+
 ## 📞 Support
 
 Если что-то не работает:

@@ -29,6 +29,13 @@ export interface Character {
   boundaries: string | null;
   knowledge_scope: string | null;
   spoiler_policy: string | null;
+  /**
+   * Системная инструкция для чат-бота персонажа. Задаётся в Studio
+   * (редактирование персонажа) и подставляется в system-промпт модели
+   * вместо ранее захардкоженного characterPrompts. Пустая строка — чат
+   * отключён (route вернёт 503, страница чата покажет «не настроено»).
+   */
+  system_role: string;
   reply_mode: CharacterReplyMode;
   can_receive_messages: boolean;
   character_type: CharacterType;

@@ -141,13 +141,14 @@ export async function createCharacter(data: Record<string, unknown>) {
         boundaries,
         knowledge_scope,
         spoiler_policy,
+        system_role,
         reply_mode,
         can_receive_messages,
         character_type,
         passport,
         map_image_url
       )
-      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12::character_reply_mode, $13, $14::character_type, $15, $16)
+      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12, $13::character_reply_mode, $14, $15::character_type, $16, $17)
       RETURNING *
     `,
     [
@@ -162,6 +163,7 @@ export async function createCharacter(data: Record<string, unknown>) {
       data.boundaries,
       data.knowledge_scope,
       data.spoiler_policy,
+      data.system_role ?? '',
       data.reply_mode ?? 'ai_auto',
       data.can_receive_messages ?? true,
       data.character_type ?? 'person',
@@ -187,11 +189,12 @@ export async function updateCharacter(id: string, data: Record<string, unknown>)
         boundaries = $10,
         knowledge_scope = $11,
         spoiler_policy = $12,
-        reply_mode = $13::character_reply_mode,
-        can_receive_messages = $14,
-        character_type = $15::character_type,
-        passport = $16,
-        map_image_url = $17
+        system_role = $13,
+        reply_mode = $14::character_reply_mode,
+        can_receive_messages = $15,
+        character_type = $16::character_type,
+        passport = $17,
+        map_image_url = $18
       WHERE id = $1
       RETURNING *
     `,
@@ -208,6 +211,7 @@ export async function updateCharacter(id: string, data: Record<string, unknown>)
       data.boundaries,
       data.knowledge_scope,
       data.spoiler_policy,
+      data.system_role ?? '',
       data.reply_mode ?? 'ai_auto',
       data.can_receive_messages ?? true,
       data.character_type ?? 'person',

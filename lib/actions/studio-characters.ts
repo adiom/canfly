@@ -104,6 +104,7 @@ export async function createCharacterAction(formData: FormData) {
     data.boundaries = strOrNull(formData, 'boundaries')
     data.knowledge_scope = strOrNull(formData, 'knowledge_scope')
     data.spoiler_policy = strOrNull(formData, 'spoiler_policy')
+    data.system_role = str(formData, 'system_role').trim().slice(0, 8000)
     data.reply_mode = normalizeReplyMode(formData.get('reply_mode'))
     data.can_receive_messages = formData.get('can_receive_messages') !== 'false'
   } else {
@@ -113,6 +114,7 @@ export async function createCharacterAction(formData: FormData) {
     data.boundaries = null
     data.knowledge_scope = null
     data.spoiler_policy = null
+    data.system_role = ''
     data.reply_mode = 'disabled'
     data.can_receive_messages = false
   }
@@ -146,6 +148,7 @@ export async function updateCharacterAction(id: string, formData: FormData) {
     data.boundaries = strOrNull(formData, 'boundaries')
     data.knowledge_scope = strOrNull(formData, 'knowledge_scope')
     data.spoiler_policy = strOrNull(formData, 'spoiler_policy')
+    data.system_role = str(formData, 'system_role').trim().slice(0, 8000)
     data.reply_mode = normalizeReplyMode(formData.get('reply_mode'))
     data.can_receive_messages = formData.get('can_receive_messages') !== 'false'
   } else {
@@ -155,6 +158,7 @@ export async function updateCharacterAction(id: string, formData: FormData) {
     data.boundaries = null
     data.knowledge_scope = null
     data.spoiler_policy = null
+    data.system_role = ''
     data.reply_mode = 'disabled'
     data.can_receive_messages = false
   }

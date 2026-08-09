@@ -237,6 +237,25 @@ export function CharacterForm({ character, characterType }: CharacterFormProps) 
             </div>
 
             <div className="space-y-2">
+              <Label htmlFor="system_role" className="text-gray-600">
+                Системная инструкция
+              </Label>
+              <Textarea
+                id="system_role"
+                name="system_role"
+                rows={8}
+                defaultValue={character?.system_role ?? ''}
+                placeholder="Вы {Имя}, ... — что и как говорит модель от лица персонажа в чате."
+                className="bg-white/60 border-white/70 rounded-xl font-mono text-sm"
+              />
+              <p className="text-xs text-gray-400">
+                Инструкция, по которой модель говорит от лица этого персонажа в чате.
+                Подставляется в system-промпт вместе с био, характером и манерой речи.
+                Если поле пустое — чат с персонажем отключён.
+              </p>
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="knowledge_scope" className="text-gray-600">Границы знаний</Label>
               <Textarea
                 id="knowledge_scope"
