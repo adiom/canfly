@@ -7,7 +7,6 @@ import { toast } from 'sonner'
 
 interface HighlightVisibilityToggleProps {
   highlightId: string
-  releaseSlug: string | null
   initialIsPublic: boolean
 }
 
@@ -17,7 +16,6 @@ interface HighlightVisibilityToggleProps {
  */
 export function HighlightVisibilityToggle({
   highlightId,
-  releaseSlug,
   initialIsPublic,
 }: HighlightVisibilityToggleProps) {
   const [isPublic, setIsPublic] = useState(initialIsPublic)
@@ -56,9 +54,9 @@ export function HighlightVisibilityToggle({
         {isPublic ? 'публичная' : 'приватная'}
       </button>
 
-      {isPublic && releaseSlug && (
+      {isPublic && (
         <Link
-          href={`/release/${releaseSlug}/highlight/${highlightId}`}
+          href={`/highlight/${highlightId}`}
           className="text-[10px] font-black uppercase tracking-[0.18em] text-cf-warm hover:underline"
         >
           Поделиться

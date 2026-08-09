@@ -1,18 +1,15 @@
 import type { MetadataRoute } from 'next'
 import { fetchReleasesWithEditions } from '@/lib/server/releases'
-import { fetchPublishedEditionsForSitemap } from '@/lib/server/editions'
 import { fetchNewsPosts } from '@/lib/server/news'
 import { fetchCharactersList } from '@/lib/server/characters'
 import { fetchAllSeries } from '@/lib/server/series'
-import { getEditionTocUrl } from '@/lib/utils/editions'
 import { LANDING_PATH } from '@/lib/nav'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const [releases, editions, newsPosts, characters, series] = await Promise.all([
+  const [releases, newsPosts, characters, series] = await Promise.all([
     fetchReleasesWithEditions({ status: 'published' }),
-    fetchPublishedEditionsForSitemap(),
     fetchNewsPosts(100),
     fetchCharactersList(),
     fetchAllSeries(),
@@ -24,14 +21,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     changeFrequency: 'weekly' as const,
     priority: 0.9,
     images: release.cover_image ? [release.cover_image] : undefined,
-  }))
-
-  // Оглавления изданий — точки входа к главам, до этого главы были сиротами
-  const editionEntries = editions.map((edition) => ({
-    url: `${BASE_URL}${getEditionTocUrl(edition.release_slug, edition)}`,
-    lastModified: new Date(edition.release_updated_at),
-    changeFrequency: 'weekly' as const,
-    priority: edition.quality_tier === 'draft' ? 0.6 : 0.8,
   }))
 
   const newsEntries = newsPosts.map((post) => ({
@@ -90,7 +79,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.5,
     },
     ...releaseEntries,
-    ...editionEntries,
     ...newsEntries,
     ...characterEntries,
     ...seriesEntries,

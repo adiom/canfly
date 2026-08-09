@@ -134,7 +134,7 @@
 ## 5. UI
 
 ### Читалка со скроллом — `components/release-book-reader.tsx` (1076 стр.)
-Маршруты `/release/[slug]/book/[qualityTier]/[chapterIndex]` и `/release/[slug]/[editionSlug]/[chapterIndex]`.
+Маршрут `/scroll/[editionSlug]/[chapterIndex]` (вход `/scroll/[editionSlug]` редиректит на главу из прогресса). При смене главы ридер сам переписывает URL на `/scroll/[editionSlug]/[n]`.
 
 Выделение мышью (≥3 символа) → floating pill → `HighlightArtifact`. Клик по `<mark data-cf-hl>` открывает попап цитаты (автор, дата, заметка, лайк, «Поделиться»), по `<mark data-cf-en>` — попап правки со сменой статуса. Правки грузятся отдельным запросом при смене главы, если роль позволяет.
 
@@ -155,7 +155,7 @@
 - `components/studio/editorial-notes-overlay.tsx` (155 стр.) — вертикальные полоски слева от параграфов с правками, цвет по статусу, бейдж с количеством.
 - Подключены в `components/studio/chapter-editor-page.tsx:288, 300, 316` (HTML- и WYSIWYG-режим), состояние `editorialNotes` — в родителе.
 
-### Шаринг цитаты — `app/release/[slug]/highlight/[id]/page.tsx`
+### Шаринг цитаты — `app/highlight/[id]/page.tsx`
 Открывает полноценную читалку и подскроливает к цитате. `generateMetadata` отдаёт OpenGraph и Twitter-карточку с обложкой релиза и текстом цитаты, `alternates.canonical`. Непубличная цитата или неопубликованный релиз → `notFound()`.
 `components/highlight-scroller.tsx` — после 600 мс делает до трёх попыток с интервалом 400 мс; если mark не найден, использует `paragraph_index`. Outline снимается через 2 секунды.
 

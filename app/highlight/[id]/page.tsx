@@ -1,49 +1,55 @@
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { fetchReleaseBySlug } from '@/lib/server/releases'
+import { fetchReleaseById } from '@/lib/server/releases'
 import { fetchChapterById } from '@/lib/server/chapters'
-import { fetchChapterHighlights, fetchChapterHighlightById } from '@/lib/server/chapter-highlights'
+import {
+  fetchChapterHighlights,
+  fetchChapterHighlightById,
+} from '@/lib/server/chapter-highlights'
 import type { ChapterHighlight } from '@/lib/releases-types'
 import { getCurrentUser, getUserRoles } from '@/lib/server/session'
+import { fetchEditionById, fetchEditionsByRelease } from '@/lib/server/editions'
 import { getPrimaryEdition } from '@/lib/utils/editions'
 import { ReleaseBookReader } from '@/components/release-book-reader'
 import { HighlightScroller } from '@/components/highlight-scroller'
-import { fetchEditionsByRelease } from '@/lib/server/editions'
 import { fetchPublishedChaptersByEdition } from '@/lib/server/chapters'
 import type { UserRole } from '@/lib/types'
+
+export const dynamic = 'force-dynamic'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
 interface PageProps {
-  params: Promise<{ slug: string; id: string }>
+  params: Promise<{ id: string }>
 }
 
-async function loadHighlightContext(slug: string, highlightId: string) {
-  const release = await fetchReleaseBySlug(slug)
-  if (!release || release.status !== 'published') return null
-
+async function loadHighlightContext(highlightId: string) {
   const highlight = await fetchChapterHighlightById(highlightId, null)
   if (!highlight || !highlight.is_public) return null
 
   const chapter = await fetchChapterById(highlight.chapter_id)
   if (!chapter) return null
 
-  const editions = await fetchEditionsByRelease(release.id)
-  if (!editions.some(edition => edition.id === chapter.edition_id)) return null
+  // От главы поднимаемся к изданию и релизу — слага релиза в URL больше нет.
+  const edition = await fetchEditionById(chapter.edition_id)
+  if (!edition || edition.status !== 'published') return null
+
+  const release = await fetchReleaseById(edition.release_id)
+  if (!release || release.status !== 'published') return null
 
   return { release, highlight, chapter }
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
-  const { slug, id } = await params
-  const ctx = await loadHighlightContext(slug, id)
-  if (!ctx) return { title: 'Цитата не найдена | canfly' }
+  const { id } = await params
+  const ctx = await loadHighlightContext(id)
+  if (!ctx) return { title: 'Цитата не найдена | canfly', robots: { index: false } }
 
   const { release, highlight } = ctx
   const title = `«${highlight.text_content.slice(0, 60)}${highlight.text_content.length > 60 ? '…' : ''}» — ${release.title}`
   const description = `Цитата из «${release.title}»${highlight.user_name ? `, автор: ${highlight.user_name}` : ''}`
-  const url = `${BASE_URL}/release/${release.slug}/highlight/${highlight.id}`
+  const url = `${BASE_URL}/highlight/${highlight.id}`
 
   return {
     title,
@@ -68,8 +74,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 }
 
 export default async function HighlightSharePage({ params }: PageProps) {
-  const { slug, id } = await params
-  const ctx = await loadHighlightContext(slug, id)
+  const { id } = await params
+  const ctx = await loadHighlightContext(id)
   if (!ctx) notFound()
 
   const { release, highlight, chapter } = ctx

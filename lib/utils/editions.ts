@@ -29,40 +29,34 @@ export function getPrimaryEdition(editions: Edition[]): Edition | null {
 }
 
 /**
- * Ссылка на главу. У book-издания SEO-вариант с quality_tier, у остальных —
- * editionSlug; /release/[slug]/[editionSlug] всё равно редиректит book на первый вид.
+ * Ссылка на главу издания. У book/magazine — скролл-читалка `/scroll/[editionSlug]/[n]`,
+ * у comic/audio — читалка `/vvvvv/[editionSlug]` (номера главы в пути нет).
  */
 export function getChapterUrl(
   releaseSlug: string,
   edition: { format: EditionFormat; slug: string; quality_tier: string },
   chapterNumber: number,
 ): string {
-  if (edition.format === 'book') {
-    return `/release/${releaseSlug}/book/${edition.quality_tier}/${chapterNumber}`
+  const editionSlug = edition.slug
+  if (edition.format === 'book' || edition.format === 'magazine') {
+    return `/scroll/${editionSlug}/${chapterNumber}`
   }
-  return `/release/${releaseSlug}/${edition.slug}/${chapterNumber}`
+  return `/vvvvv/${editionSlug}`
 }
 
 /**
- * Ссылка на оглавление издания — публичный «титул» с составом глав.
- * У book это /book/[qualityTier], у остальных форматов /[editionSlug].
+ * Ссылка на вход в издании — у book/magazine скролл-читалка `/scroll/[editionSlug]`,
+ * у остальных форматов `/vvvvv/[editionSlug]`.
  */
 export function getEditionTocUrl(
   releaseSlug: string,
   edition: { format: EditionFormat; slug: string; quality_tier: string },
 ): string {
-  if (edition.format === 'book') {
-    return `/release/${releaseSlug}/book/${edition.quality_tier}`
+  const editionSlug = edition.slug
+  if (edition.format === 'book' || edition.format === 'magazine') {
+    return `/scroll/${editionSlug}`
   }
-  return `/release/${releaseSlug}/${edition.slug}`
-}
-
-/** Ссылка на чтение издания целиком, одним файлом. */
-export function getEditionFullUrl(
-  releaseSlug: string,
-  edition: { format: EditionFormat; slug: string; quality_tier: string },
-): string {
-  return `${getEditionTocUrl(releaseSlug, edition)}/full`
+  return `/vvvvv/${editionSlug}`
 }
 
 export const EDITION_FORMAT_LABELS: Record<EditionFormat, string> = {

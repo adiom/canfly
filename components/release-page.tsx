@@ -173,7 +173,9 @@ export function ReleasePagePublic({
                     : getEditionLabel(edition)
                   const href = isDigital && edition.external_url
                     ? edition.external_url
-                    : `/vvvvv/${edition.slug}`
+                    : edition.format === 'book' || edition.format === 'magazine'
+                      ? `/scroll/${edition.slug}`
+                      : `/vvvvv/${edition.slug}`
                   return (
                     <Link
                       key={edition.id}
@@ -325,7 +327,7 @@ export function ReleasePagePublic({
               {visibleQuotes.map(h => (
                 <Link
                   key={h.id}
-                  href={`/release/${release.slug}/highlight/${h.id}`}
+                  href={`/highlight/${h.id}`}
                   className="group block border-l-2 pl-5 transition-opacity hover:opacity-80"
                   style={{ borderColor: accent }}
                 >

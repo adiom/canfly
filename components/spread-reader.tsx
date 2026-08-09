@@ -18,102 +18,10 @@ import {
 } from '@/lib/reader/highlights-dom'
 import { BookmarksPanel } from '@/components/bookmarks-panel'
 import { HighlightArtifact } from '@/components/highlight-artifact'
-import { CANFLY_COLORS } from '@/lib/canfly-colors'
+import { useReaderPreferences, READER_THEMES, READER_FONTS } from '@/lib/reader/reader-preferences'
+import type { ReaderThemeId } from '@/lib/reader/reader-preferences'
 import type { Release, Edition, Chapter, ChapterHighlight, ChapterEditorialNote } from '@/lib/releases-types'
 import type { UserRole } from '@/lib/types'
-
-// ─── Темы ────────────────────────────────────────────────────────────────────
-
-type ThemeId = 'void' | 'manuscript' | 'sepia'
-
-interface ThemeDef {
-  id: ThemeId
-  label: string
-  fullName: string
-  bg: string
-  bg2: string
-  text: string
-  text2: string
-  shadow: string
-  spineLine: string
-  pageInner: string
-  pageOuter: string
-}
-
-const VOID = CANFLY_COLORS.find(c => c.id === 'CF-004')
-const MANUSCRIPT = CANFLY_COLORS.find(c => c.id === 'CF-003')
-
-const THEMES: Record<ThemeId, ThemeDef> = {
-  void: {
-    id: 'void',
-    label: 'Void',
-    fullName: VOID?.fullName ?? 'before the first photon',
-    bg: VOID?.hex ?? '#111210',
-    bg2: '#1b1c19',
-    text: '#f4efe5',
-    text2: '#cec8bb',
-    shadow: 'rgba(0,0,0,0.6)',
-    spineLine: 'rgba(255, 235, 200, 0.08)',
-    pageInner: 'rgba(255, 235, 200, 0.04)',
-    pageOuter: 'rgba(0, 0, 0, 0.55)',
-  },
-  manuscript: {
-    id: 'manuscript',
-    label: 'Manuscript',
-    fullName: MANUSCRIPT?.fullName ?? 'burned papyrus',
-    bg: MANUSCRIPT?.hex ?? '#f4efe5',
-    bg2: '#ebe5d9',
-    text: '#1a1816',
-    text2: '#3d3830',
-    shadow: 'rgba(60, 40, 20, 0.18)',
-    spineLine: 'rgba(60, 40, 20, 0.18)',
-    pageInner: 'rgba(60, 40, 20, 0.05)',
-    pageOuter: 'rgba(60, 40, 20, 0.10)',
-  },
-  sepia: {
-    id: 'sepia',
-    label: 'Sepia',
-    fullName: 'warm parchment',
-    bg: '#2a2318',
-    bg2: '#312a1e',
-    text: '#e8d9bb',
-    text2: '#c8b894',
-    shadow: 'rgba(0, 0, 0, 0.5)',
-    spineLine: 'rgba(232, 217, 187, 0.10)',
-    pageInner: 'rgba(232, 217, 187, 0.05)',
-    pageOuter: 'rgba(0, 0, 0, 0.45)',
-  },
-}
-
-const LEGACY_THEME_MAP: Record<string, ThemeId> = {
-  dark: 'void',
-  light: 'manuscript',
-  sepia: 'sepia',
-}
-
-// ─── Шрифты ──────────────────────────────────────────────────────────────────
-
-type FontId = 'serif' | 'display' | 'sans' | 'mono' | 'dyslexic'
-
-interface FontDef {
-  id: FontId
-  label: string
-  family: string
-  sample: string
-}
-
-const FONTS: FontDef[] = [
-  { id: 'serif',    label: 'Cormorant',    family: 'var(--font-cormorant), Georgia, serif',      sample: 'Литературная классика' },
-  { id: 'display',  label: 'EB Garamond',  family: 'var(--font-ebgaramond), Georgia, serif',      sample: 'Книжная антиква' },
-  { id: 'sans',     label: 'Geist',        family: 'var(--font-geist-sans), system-ui, sans-serif', sample: 'Нейтральный современный' },
-  { id: 'mono',     label: 'Geist Mono',   family: 'var(--font-geist-mono), ui-monospace, monospace', sample: 'Терминал · код' },
-  { id: 'dyslexic', label: 'Libre Franklin',     family: 'var(--font-libre-franklin), system-ui, sans-serif', sample: 'Доступный для всех' },
-]
-
-const FONT_STACK: Record<FontId, string> = FONTS.reduce(
-  (acc, f) => ({ ...acc, [f.id]: f.family }),
-  {} as Record<FontId, string>,
-)
 
 // ─── Типы ─────────────────────────────────────────────────────────────────────
 
@@ -152,63 +60,23 @@ export function SpreadReader({
   const accent = release.design_config?.accent_color ?? '#d52525'
   const isEditor = userRole === 'editor' || userRole === 'admin'
 
-  // Тема, шрифт и размер (сохраняем в localStorage).
-  // Стандартный hydration gate: на сервере и при первом клиентском рендере
-  // отдаём дефолты, после mount подтягиваем реальные значения из localStorage.
-  const [mounted, setMounted] = useState(false)
-  const [theme, setTheme] = useState<ThemeId>('void')
-  const [font, setFont] = useState<FontId>('serif')
-  const [fontSize, setFontSize] = useState(18)
+  const {
+    mounted,
+    theme,
+    font,
+    fontSize,
+    t,
+    fontFamily,
+    applyTheme,
+    applyFont,
+    applyFontSize,
+  } = useReaderPreferences()
 
   // Максимально допустимый translateX трека — чтобы на последней странице
   // не торчал обрезок соседней колонки через overflow:hidden.
   const [maxTranslate, setMaxTranslate] = useState(0)
   // Ширина кликабельной полосы листания по каждому краю viewport.
   const [sideGutter, setSideGutter] = useState(28)
-
-  useEffect(() => {
-    const raw = window.localStorage.getItem('canfly-reader-theme')
-    if (raw && raw in THEMES) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- hydration gate pattern
-      setTheme(raw as ThemeId)
-    } else if (raw && raw in LEGACY_THEME_MAP) {
-      const migrated = LEGACY_THEME_MAP[raw]
-       
-      setTheme(migrated)
-      window.localStorage.setItem('canfly-reader-theme', migrated)
-    }
-    const fRaw = window.localStorage.getItem('canfly-reader-font')
-    if (fRaw && fRaw in FONT_STACK) {
-       
-      setFont(fRaw as FontId)
-    }
-    const fsRaw = window.localStorage.getItem('canfly-reader-fontsize')
-    if (fsRaw) {
-      const n = parseInt(fsRaw, 10)
-      if (n >= 14 && n <= 26) {
-         
-        setFontSize(n)
-      }
-    }
-     
-    setMounted(true)
-  }, [])
-
-  const applyTheme = (next: ThemeId) => {
-    setTheme(next)
-    window.localStorage.setItem('canfly-reader-theme', next)
-  }
-  const applyFont = (next: FontId) => {
-    setFont(next)
-    window.localStorage.setItem('canfly-reader-font', next)
-  }
-  const applyFontSize = (f: number) => {
-    setFontSize(f)
-    window.localStorage.setItem('canfly-reader-fontsize', String(f))
-  }
-
-  const t = THEMES[theme]
-  const fontFamily = FONT_STACK[font]
 
   // Навигация по главам
   const [currentIndex, setCurrentIndex] = useState(initialChapterIndex)
@@ -642,7 +510,7 @@ export function SpreadReader({
     return (
       <div
         className="fixed inset-0"
-        style={{ backgroundColor: THEMES.void.bg }}
+        style={{ backgroundColor: READER_THEMES.void.bg }}
         aria-hidden
       />
     )
@@ -727,7 +595,7 @@ export function SpreadReader({
             <button
               type="button"
               onClick={() => { setShowFonts(b => !b); setShowThemes(false) }}
-              title={`Шрифт и размер: ${FONTS.find(f => f.id === font)?.label ?? 'Cormorant'} · ${fontSize}px`}
+              title={`Шрифт и размер: ${READER_FONTS.find(f => f.id === font)?.label ?? 'Cormorant'} · ${fontSize}px`}
               style={{ color: showFonts ? accent : t.text, padding: 4 }}
             >
               <Type className="h-4 w-4" />
@@ -735,7 +603,7 @@ export function SpreadReader({
             <button
               type="button"
               onClick={() => { setShowThemes(b => !b); setShowFonts(false) }}
-              title={`Тема: ${THEMES[theme].label}`}
+              title={`Тема: ${READER_THEMES[theme].label}`}
               style={{ color: showThemes ? accent : t.text, padding: 4 }}
             >
               {theme === 'void' ? <Moon className="h-4 w-4" /> : theme === 'manuscript' ? <Sun className="h-4 w-4" /> : <Palette className="h-4 w-4" />}
@@ -758,8 +626,8 @@ export function SpreadReader({
                   minWidth: 160,
                 }}
               >
-                {(['void', 'manuscript', 'sepia'] as ThemeId[]).map(th => {
-                  const def = THEMES[th]
+                {(['void', 'manuscript', 'sepia'] as ReaderThemeId[]).map(th => {
+                  const def = READER_THEMES[th]
                   const active = theme === th
                   return (
                     <button
@@ -881,7 +749,7 @@ export function SpreadReader({
                 <div style={{ height: 1, backgroundColor: `${t.text}12` }} />
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {FONTS.map(fn => {
+                  {READER_FONTS.map(fn => {
                     const active = font === fn.id
                     return (
                       <button
@@ -987,21 +855,7 @@ export function SpreadReader({
             >
               {currentChapter?.title}
             </h1>
-            {currentIndex === 0 && release.annotation && (
-              <p
-                style={{
-                  columnSpan: 'all',
-                  fontSize: '0.85em',
-                  lineHeight: 1.7,
-                  margin: '0 0 28px',
-                  opacity: 0.7,
-                  textAlign: 'left',
-                }}
-              >
-                {release.annotation}
-              </p>
-            )}
-
+        
             {currentChapter?.content ? (
               <div
                 ref={contentRef}

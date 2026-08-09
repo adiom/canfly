@@ -2,6 +2,55 @@
 
 ---
 
+## [9 августа 2026] Общий стандарт тем и шрифтов читалок: lib/reader/reader-preferences.ts
+
+### Что изменено
+
+Темы и шрифты разворотной читалки были инлайном в `components/spread-reader.tsx`; теперь это общий модуль-стандарт, которым пользуются обе читалки.
+
+**Новый модуль `lib/reader/reader-preferences.ts`** (клиентский):
+- `READER_THEMES` (void/manuscript/sepia с hex из `CANFLY_COLORS` CF-004/CF-003), `READER_LEGACY_THEME_MAP` (dark→void, light→manuscript, sepia→sepia);
+- `READER_FONTS` (serif/display/sans/mono/dyslexic) и `READER_FONT_STACK`;
+- дефолты и границы: тема `void`, шрифт `serif`, размер 14–26 px (дефолт 18);
+- `READER_STORAGE_KEYS` — те же ключи localStorage (`canfly-reader-theme|font|fontsize`), легаси-значения мигрируются;
+- хук `useReaderPreferences()` — hydration gate + чтение/запись localStorage и `applyTheme`/`applyFont`/`applyFontSize`.
+
+**Обновлён `components/spread-reader.tsx`**: локальные определения тем/шрифтов и состояние с эффектом гидрации удалены, всё берётся из модуля/хука (поведение и localStorage-ключи не менялись).
+
+**Обновлён `components/release-book-reader.tsx`**: переведён на `useReaderPreferences()` — `bg`/`textColor` теперь от активной темы, шрифт и размер применяются к прозе; в шапку добавлены выбор темы (Moon/Sun/Palette) и шрифта+размера (Type) по аналогии со spread-reader.
+
+### Как использовать
+
+Любая читалка подключает `useReaderPreferences()` и берёт палитру из `t = READER_THEMES[theme]` и `fontFamily = READER_FONT_STACK[font]`. Настройки общие: смена темы/шрифта/размера в одной читалке видна в другой.
+
+---
+
+## [9 августа 2026] Читалки издания: скролл-ридер `/scroll`, в `release` остался только `/release/[slug]`
+
+### Что изменено
+
+Под `app/release/[slug]/**` осталась единственная страница релиза; все подмаршруты удалены: `book/[qualityTier]/{TOC, full, chapter}`, `[editionSlug]/{TOC, full, chapter}` и `highlight/[id]`.
+
+**Новый скролл-ридер `/scroll/[editionSlug]/[chapterIndex]`** — `ReleaseBookReader` для book/magazine по образцу `/vvvvv/[slug]`: резолв издания по слагу или UUID (`fetchEditionByIdOrSlug`), `cache()`-врапперы (`lib/server/scroll-reader.ts`) и `Promise.all`. Вход `/scroll/[editionSlug]` без номера главы делает 307 на главу из прогресса чтения. При смене главы ридер сам переписывает URL на `/scroll/[editionSlug]/[n]` (раньше на `/release/...`). comic/audio на `/scroll` уходят 307-редиректом в `/vvvvv`.
+
+**Расшаренная цитата** переехала на корневой `/highlight/[highlightId]` (без слага релиза) — `app/highlight/[id]/page.tsx`.
+
+**Удалены**: маршруты `app/release/[slug]/book/**`, `app/release/[slug]/[editionSlug]/**`, `app/release/[slug]/highlight/**`; компоненты `release-edition-toc.tsx`, `release-full-page.tsx`, `release-reader.tsx` (больше не рендерились); из `lib/seo/schema.ts` — `generateBookEditionSchema` и `generateChapterListSchema`, `workExample` в `generateReleaseSchema` указывает на `/scroll/[slug]/1`.
+
+**URL-хелперы** (`lib/utils/editions.ts`): `getChapterUrl`/`getEditionTocUrl` теперь строят `/scroll/…` для book/magazine и `/vvvvv/…` для остальных; `getEditionFullUrl` удалён.
+
+**proxy.ts**: 301 с `/release/[slug]/highlight/[id]` → `/highlight/[id]`; любой `/release/[slug]/…` глубже слага → `/release/[slug]`.
+
+**Обновлены**: `release-book-reader.tsx` (URL-синк, ссылки «Поделиться», TOC без «Читать одним файлом», кросс-ссылки изданий), `spread-reader.tsx` и `release-page.tsx` (ссылки на цитаты и кнопки изданий — book/magazine в `/scroll`), `home-issues-section.tsx`, `highlight-visibility-toggle.tsx`, `app/profile/page.tsx`, `app/sitemap.ts`.
+
+Читалки индексируются как раньше (`robots: index: false`): SEO-статьями остаются страницы релиза.
+
+### Как использовать
+
+Кнопки изданий на странице релиза ведут: book/magazine → `/scroll/[sлаг издания]`, comic/audio → `/vvvvv/[sлаг]`, digital → внешняя площадка. Читалки не защищены proxy, работают как прежде.
+
+---
+
 ## [9 августа 2026] Каталог временно на корне, прежний лендинг — на /home
 
 ### Что изменено

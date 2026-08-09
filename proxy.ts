@@ -107,6 +107,20 @@ export async function proxy(request: NextRequest) {
     }
   }
 
+  // --- Расшаренные цитаты переехали в /highlight/[id] ---
+  const highlightMatch = pathname.match(/^\/release\/[^/]+\/highlight\/([^/]+)/)
+  if (highlightMatch) {
+    return NextResponse.redirect(new URL(`/highlight/${highlightMatch[1]}`, request.url), 301)
+  }
+
+// --- Подмаршруты релиза удалены: /release/[slug]/book|editionSlug|full|...
+  // Всё, что глубже /release/[slug], ведём на сам релиз — по слагу издания
+  // в middleware не сориентироваться, его нет в URL.
+  if (pathname.startsWith('/release/') && pathname.split('/').length > 3) {
+    const slug = pathname.split('/')[2]
+    return NextResponse.redirect(new URL(`/release/${slug}`, request.url), 301)
+  }
+
   // --- Редиректы со старой системы книг на Release ---
   if (pathname === '/books') {
     return NextResponse.redirect(new URL('/releases/', request.url), 301)

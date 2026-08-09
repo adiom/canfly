@@ -1,10 +1,5 @@
 import type { Release, Edition, EditionFormat, QualityTier } from '@/lib/releases-types'
 
-export type SchemaType =
-  | ReturnType<typeof generateReleaseSchema>
-  | ReturnType<typeof generateOrganizationSchema>
-  | ReturnType<typeof generateBookEditionSchema>
-
 /**
  * Сериализует JSON-LD для безопасной вставки в тег <script>.
  *
@@ -47,58 +42,6 @@ const tierNameSuffixes: Record<QualityTier, string> = {
   premium: ' — иллюстрированное издание',
 }
 
-export function generateBookEditionSchema(
-  release: Release,
-  edition: Edition,
-  baseUrl: string,
-  /**
-   * Канонический URL издания. Оглавление (/book/[tier]) передаёт себя, чтобы
-   * сущность Book указывала на титул издания, а не на первую главу.
-   */
-  editionUrl?: string,
-) {
-  const url = editionUrl ?? baseUrl + '/release/' + release.slug + '/book/' + edition.quality_tier + '/1'
-  const nameSuffix = tierNameSuffixes[edition.quality_tier] ?? ''
-  const workUrl = baseUrl + '/release/' + release.slug
-
-  return {
-    '@context': 'https://schema.org',
-    '@type': 'Book',
-    '@id': url,
-    name: release.title + nameSuffix,
-    bookEdition: edition.quality_tier,
-    description: release.annotation ?? release.description ?? '«' + release.title + '» на canfly',
-    image: release.cover_image
-      ? { '@type': 'ImageObject', url: release.cover_image }
-      : undefined,
-    url,
-    isPartOf: {
-      '@type': 'CreativeWork',
-      '@id': workUrl,
-      name: release.title,
-      url: workUrl,
-    },
-    datePublished: release.release_date ?? new Date(release.created_at).toISOString().split('T')[0],
-    dateModified: new Date(release.updated_at).toISOString().split('T')[0],
-    author: CANFLY_AUTHOR,
-    publisher: {
-      '@type': 'Organization',
-      name: 'canfly',
-      url: baseUrl,
-    },
-    genre: ['Fiction', 'Contemporary Fiction'],
-    inLanguage: 'ru-RU',
-    ...(release.isbn && { isbn: release.isbn }),
-    ...(edition.quality_tier === 'premium' && {
-      creativeWorkStatus: 'Published',
-      bookFormat: 'https://schema.org/EBook',
-    }),
-    ...(edition.quality_tier === 'draft' && {
-      creativeWorkStatus: 'Draft',
-    }),
-  }
-}
-
 export function generateReleaseSchema(
   release: Release,
   formats: EditionFormat[],
@@ -112,10 +55,10 @@ export function generateReleaseSchema(
     .filter(e => e.status === 'published')
     .map(edition => ({
       '@type': 'Book',
-      '@id': baseUrl + '/release/' + release.slug + '/book/' + edition.quality_tier + '/1',
+      '@id': baseUrl + '/scroll/' + (edition.slug || edition.id) + '/1',
       name: release.title + (tierNameSuffixes[edition.quality_tier] ?? ''),
       bookEdition: edition.quality_tier,
-      url: baseUrl + '/release/' + release.slug + '/book/' + edition.quality_tier + '/1',
+      url: baseUrl + '/scroll/' + (edition.slug || edition.id) + '/1',
     }))
 
   return {
@@ -208,30 +151,6 @@ export function generateBreadcrumbSchema(
       position: index + 1,
       name: item.label,
       item: item.url,
-    })),
-  }
-}
-
-/**
- * Оглавление издания: список глав со ссылками. Даёт краулеру структуру
- * произведения — до этого главы глубже первой были доступны только из ридера.
- */
-export function generateChapterListSchema(
-  chapters: Array<{ title: string; url: string }>,
-  editionUrl: string,
-) {
-  return {
-    '@context': 'https://schema.org',
-    '@type': 'ItemList',
-    '@id': editionUrl + '#toc',
-    name: 'Оглавление',
-    numberOfItems: chapters.length,
-    itemListOrder: 'https://schema.org/ItemListOrderAscending',
-    itemListElement: chapters.map((chapter, index) => ({
-      '@type': 'ListItem',
-      position: index + 1,
-      name: chapter.title,
-      url: chapter.url,
     })),
   }
 }

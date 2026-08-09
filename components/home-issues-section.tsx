@@ -22,16 +22,18 @@ function getEventHref(event: {
   chapter_index: number | null
   event_type: string
 }) {
+  const isScrollReader =
+    event.format === 'book' || event.format === 'magazine'
   if (event.event_type === 'new_chapter' && event.chapter_index != null) {
-    if (event.format === 'book' && event.quality_tier) {
-      return `/release/${event.release_slug}/book/${event.quality_tier}/${event.chapter_index}`
+    if (isScrollReader) {
+      return `/scroll/${event.edition_slug}/${event.chapter_index}`
     }
-    return `/release/${event.release_slug}/${event.edition_slug}/${event.chapter_index}`
+    return `/vvvvv/${event.edition_slug}`
   }
-  if (event.format === 'book' && event.quality_tier) {
-    return `/release/${event.release_slug}/book/${event.quality_tier}`
+  if (isScrollReader) {
+    return `/scroll/${event.edition_slug}`
   }
-  return `/release/${event.release_slug}/${event.edition_slug}`
+  return `/vvvvv/${event.edition_slug}`
 }
 
 function getEventLabel(event: {

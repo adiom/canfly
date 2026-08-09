@@ -160,7 +160,6 @@ export default async function ProfilePage() {
                     <div className="mt-3 flex items-center justify-between">
                       <HighlightVisibilityToggle
                         highlightId={highlight.id}
-                        releaseSlug={highlight.release_slug ?? null}
                         initialIsPublic={highlight.is_public}
                       />
                       <div className="flex items-center gap-3">

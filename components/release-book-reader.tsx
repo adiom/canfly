@@ -3,8 +3,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { getEditionFullUrl, getEditionLabel, getEditionTocUrl } from '@/lib/utils/editions'
-import { ChevronLeft, ChevronRight, X, AlignJustify, Heart, Quote, MessageCircle, Check, Bookmark, BookmarkPlus, Trash2, List } from 'lucide-react'
+import { getEditionLabel } from '@/lib/utils/editions'
+import { ChevronLeft, ChevronRight, X, AlignJustify, Heart, MessageCircle, Check, Bookmark, BookmarkPlus, Trash2, List, Type, Sun, Moon, Palette } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Release, Edition, Chapter, ChapterHighlight, ChapterEditorialNote } from '@/lib/releases-types'
 import type { UserRole } from '@/lib/types'
@@ -13,6 +13,8 @@ import { BookmarksPanel } from '@/components/bookmarks-panel'
 import { HighlightArtifact } from '@/components/highlight-artifact'
 import { collectParagraphs, clearHighlightMarks, wrapHighlight, wrapEditorialNote, PARAGRAPH_TAGS } from '@/lib/reader/highlights-dom'
 import { CATALOG_PATH } from '@/lib/nav'
+import { useReaderPreferences, READER_FONTS, READER_THEMES, READER_FONT_SIZE_MIN, READER_FONT_SIZE_MAX } from '@/lib/reader/reader-preferences'
+import type { ReaderThemeId } from '@/lib/reader/reader-preferences'
 
 interface ReleaseBookReaderProps {
   release: Release
@@ -47,13 +49,25 @@ export function ReleaseBookReader({
   otherBookEditions = [],
 }: ReleaseBookReaderProps) {
   const accent = release.design_config?.accent_color ?? '#d52525'
-  const bg = release.design_config?.bg_color ?? 'var(--cf-bg)'
-  const textColor = release.design_config?.text_color ?? 'var(--cf-text-1)'
   const isEditor = userRole === 'editor' || userRole === 'admin'
+
+  const {
+    theme,
+    font,
+    fontSize,
+    t,
+    fontFamily,
+    applyTheme,
+    applyFont,
+    applyFontSize,
+  } = useReaderPreferences()
+  const bg = t.bg
+  const textColor = t.text
 
   const [currentIndex, setCurrentIndex] = useState(initialChapterIndex)
   const [showToc, setShowToc] = useState(false)
-  const [fontSize, setFontSize] = useState(18)
+  const [showThemes, setShowThemes] = useState(false)
+  const [showFonts, setShowFonts] = useState(false)
   const [highlights, setHighlights] = useState<ChapterHighlight[]>(initialHighlights)
   const [selection, setSelection] = useState<SelectionData | null>(null)
   const [activeHighlight, setActiveHighlight] = useState<ChapterHighlight | null>(null)
@@ -189,20 +203,18 @@ export function ReleaseBookReader({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- saves on chapter+progress change, not on full object
   }, [currentUserId, currentChapter?.id, edition.id, progress])
 
-  // Скролл наверх + синхронизация URL при смене главы. setState в effect —
-  // reset selection/artifact при навигации (sync с currentIndex).
+  // Скролл наверх + синхронизация URL при смене главы. Название главы уходит в
+  // адрес скролл-читалки; setState в effect — reset selection/artifact навигацией.
   useEffect(() => {
     contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
     window.scrollTo({ top: 0, behavior: 'smooth' })
-    const chapterUrl = edition.format === 'book'
-      ? `/release/${release.slug}/book/${edition.quality_tier}/${currentIndex + 1}`
-      : `/release/${release.slug}/${edition.slug}/${currentIndex + 1}`
-    window.history.replaceState(null, '', chapterUrl)
+    const editionSlug = edition.slug || edition.id
+    window.history.replaceState(null, '', `/scroll/${editionSlug}/${currentIndex + 1}`)
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reset selection/artifact on chapter navigation
     setSelection(null)
     setArtifactOpen(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- URL sync on chapter index only
-  }, [currentIndex, release.slug, edition.slug])
+  }, [currentIndex, edition.slug])
 
   // Клавиатура
   useEffect(() => {
@@ -429,9 +441,9 @@ export function ReleaseBookReader({
             <span className="hidden sm:inline truncate max-w-[160px]">{release.title}</span>
           </Link>
 
-          <div className="flex items-center gap-1">
+          <div className="relative flex items-center gap-1">
             <button
-              onClick={() => setFontSize(s => Math.max(14, s - 2))}
+              onClick={() => applyFontSize(Math.max(READER_FONT_SIZE_MIN, fontSize - 2))}
               className="px-2 py-1.5 text-xs font-black transition-opacity hover:opacity-60"
               style={{ color: textColor }}
               aria-label="Уменьшить шрифт"
@@ -439,13 +451,99 @@ export function ReleaseBookReader({
               A-
             </button>
             <button
-              onClick={() => setFontSize(s => Math.min(26, s + 2))}
+              onClick={() => applyFontSize(Math.min(READER_FONT_SIZE_MAX, fontSize + 2))}
               className="px-2 py-1.5 text-sm font-black transition-opacity hover:opacity-60"
               style={{ color: textColor }}
               aria-label="Увеличить шрифт"
             >
               A+
             </button>
+            <button
+              onClick={() => { setShowFonts(b => !b); setShowThemes(false) }}
+              className="ml-1 p-2 transition-opacity hover:opacity-60"
+              style={{ color: showFonts ? accent : textColor }}
+              aria-label="Шрифт и размер"
+            >
+              <Type className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => { setShowThemes(b => !b); setShowFonts(false) }}
+              className="ml-1 p-2 transition-opacity hover:opacity-60"
+              style={{ color: showThemes ? accent : textColor }}
+              aria-label="Тема чтения"
+            >
+              {theme === 'void' ? <Moon className="h-4 w-4" /> : theme === 'manuscript' ? <Sun className="h-4 w-4" /> : <Palette className="h-4 w-4" />}
+            </button>
+
+            {showThemes && (
+              <div
+                className="absolute right-0 top-full z-20 mt-2 flex w-44 flex-col gap-1 p-2"
+                style={{ backgroundColor: bg, border: `1px solid ${textColor}2f` }}
+              >
+                {(Object.keys(READER_THEMES) as ReaderThemeId[]).map(th => {
+                  const active = theme === th
+                  return (
+                    <button
+                      key={th}
+                      onClick={() => { applyTheme(th); setShowThemes(false) }}
+                      className="flex items-center gap-2 px-2 py-1.5 text-xs font-black uppercase tracking-[0.14em] transition-colors"
+                      style={{
+                        color: active ? accent : textColor,
+                        border: `1px solid ${active ? accent : 'transparent'}`,
+                      }}
+                    >
+                      <span
+                        className="h-3 w-4 shrink-0"
+                        style={{ backgroundColor: READER_THEMES[th].bg2, border: `1px solid ${textColor}40` }}
+                      />
+                      {READER_THEMES[th].label}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+
+            {showFonts && (
+              <div
+                className="absolute right-0 top-full z-20 mt-2 flex w-60 flex-col gap-1 p-2"
+                style={{ backgroundColor: bg, border: `1px solid ${textColor}2f` }}
+              >
+                <div
+                  className="mb-1 flex items-center justify-between px-1 pb-1.5"
+                  style={{ borderBottom: `1px solid ${textColor}12` }}
+                >
+                  <button
+                    onClick={() => applyFontSize(Math.max(READER_FONT_SIZE_MIN, fontSize - 2))}
+                    className="px-2 py-0.5 text-xs font-black transition-opacity hover:opacity-60"
+                    aria-label="Уменьшить"
+                  >
+                    A−
+                  </button>
+                  <span className="text-xs tabular-nums">{fontSize}px</span>
+                  <button
+                    onClick={() => applyFontSize(Math.min(READER_FONT_SIZE_MAX, fontSize + 2))}
+                    className="px-2 py-0.5 text-sm font-black transition-opacity hover:opacity-60"
+                    aria-label="Увеличить"
+                  >
+                    A+
+                  </button>
+                </div>
+                {READER_FONTS.map(fn => {
+                  const active = font === fn.id
+                  return (
+                    <button
+                      key={fn.id}
+                      onClick={() => { applyFont(fn.id); setShowFonts(false) }}
+                      className="flex w-full items-baseline justify-between gap-2 px-2 py-1.5 text-left transition-colors"
+                      style={{ color: active ? accent : textColor }}
+                    >
+                      <span style={{ fontFamily: fn.family }}>{fn.label}</span>
+                      <span className="text-[10px] opacity-40">{fn.sample}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
             {chapters.length > 1 && (
               <button
                 onClick={() => setShowToc(true)}
@@ -518,6 +616,7 @@ export function ReleaseBookReader({
             onPointerUp={handleSelectionEnd}
             className="prose max-w-none leading-8 prose-p:mb-5"
             style={{
+              fontFamily,
               fontSize: `${fontSize}px`,
               color: textColor,
               ['--tw-prose-body' as string]: textColor,
@@ -719,7 +818,7 @@ export function ReleaseBookReader({
               </button>
 
               <Link
-                href={`/release/${release.slug}/highlight/${activeHighlight.id}`}
+                href={`/highlight/${activeHighlight.id}`}
                 className="text-[10px] uppercase tracking-[0.16em] opacity-50 hover:opacity-100"
                 style={{ color: accent }}
               >
@@ -891,22 +990,13 @@ export function ReleaseBookReader({
                 </button>
               ))}
               <Link
-                href={getEditionTocUrl(release.slug, edition)}
+                href={`/release/${release.slug}`}
                 onClick={() => setShowToc(false)}
                 className="flex w-full items-center gap-3 border-b px-4 py-3 text-left text-sm font-bold uppercase tracking-[0.1em] transition-opacity hover:opacity-80"
                 style={{ color: accent, borderColor: `${textColor}08` }}
               >
                 <List className="h-4 w-4" />
-                Страница издания
-              </Link>
-              <Link
-                href={getEditionFullUrl(release.slug, edition)}
-                onClick={() => setShowToc(false)}
-                className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-bold uppercase tracking-[0.1em] transition-opacity hover:opacity-80"
-                style={{ color: accent }}
-              >
-                <Quote className="h-4 w-4" />
-                Читать одним файлом
+                Страница релиза
               </Link>
             </div>
           </aside>
@@ -946,7 +1036,7 @@ export function ReleaseBookReader({
               {otherBookEditions.map(other => (
                 <Link
                   key={other.id}
-                  href={getEditionTocUrl(release.slug, other)}
+                  href={`/scroll/${other.slug || other.id}`}
                   className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition-colors hover:border-current"
                   style={{
                     borderColor: `${textColor}20`,
