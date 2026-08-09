@@ -6,11 +6,12 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { isRedirectError } from 'next/dist/client/components/redirect-error'
 import { toast } from 'sonner'
-import type { Release, Edition, Series, ReleaseSeries } from '@/lib/releases-types'
+import type { Release, Edition, Series, ReleaseSeries, ReleaseCharacter } from '@/lib/releases-types'
 import { updateReleaseStatusAction, deleteReleaseAction, updateReleaseSeriesAction } from '@/lib/actions/studio'
 import { ReleaseForm } from '@/components/studio/release-form'
 import { EditionCard } from '@/components/studio/edition-card'
 import { ReleaseDesignForm } from '@/components/studio/release-design-form'
+import { ReleaseCharactersSection } from '@/components/studio/release-characters-section'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -50,7 +51,21 @@ function Section({ title, adornment, children }: { title: string; adornment?: Re
   )
 }
 
-export function ReleasePageClient({ release, editions, series, releaseSeries }: { release: Release; editions: Edition[]; series: Series[]; releaseSeries: ReleaseSeries[] }) {
+export function ReleasePageClient({
+  release,
+  editions,
+  series,
+  releaseSeries,
+  characters,
+  releaseCharacters,
+}: {
+  release: Release
+  editions: Edition[]
+  series: Series[]
+  releaseSeries: ReleaseSeries[]
+  characters: { id: string; name: string; slug: string; avatar: string | null }[]
+  releaseCharacters: ReleaseCharacter[]
+}) {
   const router = useRouter()
   const [deleting, setDeleting] = useState(false)
   const [seriesLink, setSeriesLink] = useState<{ series_id: string | null; phase_number: number | null }>({
@@ -188,6 +203,14 @@ export function ReleasePageClient({ release, editions, series, releaseSeries }: 
           <div className="space-y-14 lg:col-span-2">
             <Section title="Основные данные">
               <ReleaseForm release={release} />
+            </Section>
+
+            <Section title="Персонажи">
+              <ReleaseCharactersSection
+                releaseId={release.id}
+                characters={characters}
+                releaseCharacters={releaseCharacters}
+              />
             </Section>
 
             <Section

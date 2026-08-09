@@ -2,6 +2,33 @@
 
 ---
 
+## [9 августа 2026] Персонажи издания: блок переехал с edition-setup на страницу релиза
+
+### Что изменено
+
+Управление персонажами (`release_characters`) было в форме настройки издания `EditionSetupPage`. Это неправильно по модели данных: связь персонажей живёт на уровне **релиза**, а не издания, и один релиз с несколькими изданиями получал несколько параллельных форм, расходящихся по касту. Блок перенесён в `ReleasePageClient` (`/studio/releases/[id]`).
+
+**`components/studio/release-characters-section.tsx`** — новый клиентский компонент: чекбоксы с переключением роли (`main` / `supporting` / `cameo`), кнопка «Сохранить», индикатор количества выбранных. Стилизован в общую систему `cf-*` (фон `cf-bg-2`, рамка `cf-text-1/10`, акцент `cf-accent`).
+
+**`app/studio/releases/[id]/page.tsx`** — к параллельной загрузке добавлены `dbQuery('SELECT id, name, slug, avatar FROM characters')` и `fetchReleaseCharacters(id)`. `ReleasePageClient` принимает два новых пропа — `characters` и `releaseCharacters`. Секция «Персонажи» стоит между «Основные данные» и «Издания».
+
+**`components/studio/edition-setup-page.tsx`** — блок удалён: проп `characters`/`releaseCharacters`, состояние `selectedCharacters`, хелпер `toggleCharacter`, поле `character_ids` в `handleSave`. Тип `SetupData` упрощён до `{ edition, release }`.
+
+**`lib/actions/studio.ts`**:
+- новый `updateReleaseCharactersAction(releaseId, characterIds)` под гвардом `requireReleaseOwnership` — нормализует роль по белому списку `['main','supporting','cameo']`, вызывает `releasesDb.setReleaseCharacters` и `revalidatePath('/studio/releases/[id]')`;
+- `updateEditionSetupAction` — параметр `character_ids` удалён, ветка `setReleaseCharacters` тоже убрана (мертвый код после очистки формы);
+- `getEditionSetupData` — больше не возвращает `characters`/`releaseCharacters`, остались только `edition` и `release`.
+
+### Зачем
+
+Семантическая ошибка: персонаж — свойство релиза, не издания. Параллельно — форма издания стала короче, что соответствует её назначению (slug, платформа, качество).
+
+### Как использовать
+
+Из карточки релиза → секция «Персонажи». Из формы издания эта секция больше недоступна. Гвард владения — тот же, что и у `updateReleaseStatusAction`/`updateReleaseSeriesAction`: `requireReleaseOwnership`.
+
+---
+
 ## [9 августа 2026] Персонажи: воздушный слой вместо красного контраста
 
 ### Что изменено

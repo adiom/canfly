@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import type { Edition, Release, ReleaseCharacter } from '@/lib/releases-types'
+import type { Edition, Release } from '@/lib/releases-types'
 import { updateEditionSetupAction } from '@/lib/actions/studio'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -40,36 +40,18 @@ const formatIcons: Record<string, React.ElementType> = {
 interface SetupData {
   edition: Edition
   release: Release | null
-  characters: { id: string; name: string; slug: string; avatar: string | null }[]
-  releaseCharacters: ReleaseCharacter[]
 }
 
 export function EditionSetupPage({ data }: { data: SetupData }) {
   const router = useRouter()
-  const { edition, release, characters, releaseCharacters } = data
+  const { edition, release } = data
   const Icon = formatIcons[edition.format] ?? BookOpen
 
   const slug = edition.slug
   const [platform, setPlatform] = useState(edition.platform ?? '')
   const [externalUrl, setExternalUrl] = useState(edition.external_url ?? '')
   const [qualityTier, setQualityTier] = useState(edition.quality_tier ?? 'standard')
-  const [selectedCharacters, setSelectedCharacters] = useState<{ character_id: string; role: string }[]>(
-    releaseCharacters.map(rc => ({ character_id: rc.character_id, role: rc.role }))
-  )
   const [saving, setSaving] = useState(false)
-
-  const toggleCharacter = (characterId: string, role: string) => {
-    setSelectedCharacters(prev => {
-      const existing = prev.find(c => c.character_id === characterId)
-      if (existing) {
-        if (existing.role === role) {
-          return prev.filter(c => c.character_id !== characterId)
-        }
-        return prev.map(c => c.character_id === characterId ? { ...c, role } : c)
-      }
-      return [...prev, { character_id: characterId, role }]
-    })
-  }
 
   const handleSave = useCallback(async () => {
     setSaving(true)
@@ -79,7 +61,6 @@ export function EditionSetupPage({ data }: { data: SetupData }) {
         platform: platform || null,
         external_url: externalUrl || null,
         quality_tier: qualityTier,
-        character_ids: selectedCharacters,
       })
       toast.success('Настройки сохранены')
       router.push(`/studio/editions/${edition.id}`)
@@ -89,7 +70,7 @@ export function EditionSetupPage({ data }: { data: SetupData }) {
     } finally {
       setSaving(false)
     }
-  }, [edition.id, slug, platform, externalUrl, qualityTier, selectedCharacters, router])
+  }, [edition.id, slug, platform, externalUrl, qualityTier, router])
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8 md:px-8 md:py-12">
@@ -162,53 +143,6 @@ export function EditionSetupPage({ data }: { data: SetupData }) {
                   />
                 </div>
               </>
-            )}
-          </div>
-        </div>
-
-        <div className="bg-white/60 backdrop-blur-md border border-white/70 rounded-2xl shadow-sm shadow-black/5 p-5 md:p-6 space-y-4">
-          <div className="space-y-3">
-            <Label className="text-gray-600">Персонажи</Label>
-            <p className="text-xs text-gray-400">
-              Выберите персонажей и их роль в произведении
-            </p>
-            {characters.length > 0 ? (
-              <div className="grid max-h-72 gap-2 overflow-y-auto rounded-xl border border-white/70 bg-white/30 p-3 sm:grid-cols-2">
-                {characters.map(character => {
-                  const selected = selectedCharacters.find(c => c.character_id === character.id)
-                  return (
-                    <div key={character.id} className="flex items-start gap-2 rounded-lg px-2 py-2">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(selected)}
-                        onChange={() => toggleCharacter(character.id, selected?.role ?? 'supporting')}
-                        className="mt-1 size-4 rounded accent-violet-600"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <span className="block font-medium text-gray-900">{character.name}</span>
-                        <span className="block truncate text-xs text-gray-400">/{character.slug}</span>
-                      </div>
-                      {selected && (
-                        <Select
-                          value={selected.role}
-                          onValueChange={role => toggleCharacter(character.id, role)}
-                        >
-                          <SelectTrigger className="h-7 w-auto text-xs rounded-lg bg-white/60 border-white/70">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="main">Главный</SelectItem>
-                            <SelectItem value="supporting">Второстепенный</SelectItem>
-                            <SelectItem value="cameo">Камео</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            ) : (
-              <p className="text-sm text-gray-400">Персонажи пока не добавлены</p>
             )}
           </div>
         </div>

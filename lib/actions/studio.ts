@@ -181,6 +181,23 @@ export async function updateReleaseSeriesAction(
   }
 }
 
+export async function updateReleaseCharactersAction(
+  releaseId: string,
+  characterIds: { character_id: string; role: string }[],
+) {
+  await requireReleaseOwnership(releaseId)
+
+  const allowedRoles: ReleaseCharacterRole[] = ['main', 'supporting', 'cameo']
+  const normalized = characterIds
+    .filter((c): c is { character_id: string; role: ReleaseCharacterRole } =>
+      allowedRoles.includes(c.role as ReleaseCharacterRole),
+    )
+    .map(c => ({ character_id: c.character_id, role: c.role }))
+
+  await releasesDb.setReleaseCharacters(releaseId, normalized)
+  revalidatePath(`/studio/releases/${releaseId}`)
+}
+
 export async function deleteReleaseAction(id: string) {
   await requireReleaseOwnership(id)
   await releasesDb.deleteRelease(id)
@@ -556,20 +573,7 @@ export async function getEditionSetupData(editionId: string) {
   if (!edition) return null
 
   const release = await releasesDb.fetchReleaseById(edition.release_id)
-  const characters = await dbQuery<{ id: string; name: string; slug: string; avatar: string | null }>(
-    'SELECT id, name, slug, avatar FROM characters ORDER BY name ASC',
-  )
-
-  const releaseCharacters = release
-    ? await releasesDb.fetchReleaseCharacters(release.id)
-    : []
-
-  return {
-    edition,
-    release,
-    characters,
-    releaseCharacters,
-  }
+  return { edition, release }
 }
 
 export async function updateEditionSetupAction(
@@ -581,7 +585,6 @@ export async function updateEditionSetupAction(
     quality_tier?: string
     cover_image?: string | null
     annotation?: string | null
-    character_ids?: { character_id: string; role: string }[]
   },
 ) {
   await requireEditionOwnership(editionId)
@@ -614,10 +617,6 @@ export async function updateEditionSetupAction(
         status: release.status,
       })
     }
-  }
-
-  if (data.character_ids) {
-    await releasesDb.setReleaseCharacters(edition.release_id, data.character_ids as { character_id: string; role: ReleaseCharacterRole }[])
   }
 
   revalidatePath(`/studio/editions/${editionId}`)
