@@ -4,10 +4,9 @@ import { isRedirectError } from 'next/dist/client/components/redirect-error'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { createEditionAction } from '@/lib/actions/studio'
-import { generateSlug } from '@/lib/slug-utils'
 import { Button } from '@/components/ui/button'
 import {
-  BookOpen, Image, Headphones, Newspaper, Radio,
+  BookOpen, Image, Headphones, Newspaper, Radio, Globe,
   ArrowLeft,
 } from 'lucide-react'
 import Link from 'next/link'
@@ -18,12 +17,13 @@ const formats = [
   { value: 'audiobook', label: 'Аудиокнига', desc: 'Озвученное произведение', icon: Headphones, gradient: 'from-amber-200 to-amber-50' },
   { value: 'audiorelease', label: 'Аудиорелиз', desc: 'Альбом, подкаст, аудио-сингл', icon: Radio, gradient: 'from-sky-200 to-sky-50' },
   { value: 'magazine', label: 'Журнал', desc: 'Статьи и материалы в сборнике', icon: Newspaper, gradient: 'from-orange-200 to-orange-50' },
+  { value: 'digital', label: 'Цифровой релиз', desc: 'Книга на других площадках: Litres, Amazon и т.д.', icon: Globe, gradient: 'from-emerald-200 to-emerald-50' },
 ]
 
 const bookTiers = [
-  { value: 'draft', label: 'Черновик', desc: 'Неотредактированная версия', slug: 'web-draft' },
-  { value: 'standard', label: 'Книга', desc: 'Основная версия', slug: 'web-book' },
-  { value: 'premium', label: 'Иллюстрированная', desc: 'С иллюстрациями и полной обработкой', slug: 'premium' },
+  { value: 'draft', label: 'Черновик', desc: 'Неотредактированная версия' },
+  { value: 'standard', label: 'Книга', desc: 'Основная версия' },
+  { value: 'premium', label: 'Иллюстрированная', desc: 'С иллюстрациями и полной обработкой' },
 ] as const
 
 export function EditionFormatSelector({ releaseId }: { releaseId: string }) {
@@ -37,12 +37,6 @@ export function EditionFormatSelector({ releaseId }: { releaseId: string }) {
       formData.set('release_id', releaseId)
       formData.set('format', format)
       formData.set('quality_tier', qualityTier ?? 'standard')
-      if (format === 'book' && qualityTier) {
-        const tier = bookTiers.find(t => t.value === qualityTier)
-        formData.set('slug', tier?.slug ?? generateSlug(format))
-      } else {
-        formData.set('slug', generateSlug(format))
-      }
       await createEditionAction(formData)
     } catch (error) {
       if (isRedirectError(error)) throw error

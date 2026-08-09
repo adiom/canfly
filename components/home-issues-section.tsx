@@ -11,6 +11,7 @@ const FORMAT_LABEL: Record<EditionFormat, string> = {
   audiorelease: 'аудиорелиз',
   album: 'альбом',
   magazine: 'журнал',
+  digital: 'цифровой релиз',
 }
 
 function getEventHref(event: {

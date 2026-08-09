@@ -13,7 +13,7 @@ import { z } from 'zod'
 
 export const releaseStatusSchema = z.enum(['draft', 'published', 'archived'])
 export const editionStatusSchema = z.enum(['draft', 'published', 'archived'])
-export const editionFormatSchema = z.enum(['book', 'comic', 'audiobook', 'audiorelease', 'album', 'magazine'])
+export const editionFormatSchema = z.enum(['book', 'comic', 'audiobook', 'audiorelease', 'album', 'magazine', 'digital'])
 export const chapterStatusSchema = z.enum(['draft', 'published'])
 export const qualityTierSchema = z.enum(['draft', 'standard', 'premium'])
 
@@ -72,7 +72,7 @@ export const editionFormSchema = z.object({
   format: editionFormatSchema.default('book'),
   platform: optionalString,
   external_url: optionalString,
-  slug: slugSchema,
+  slug: slugSchema.optional(),
   is_primary: z
   .union([z.literal('true'), z.literal('false'), z.literal(''), z.null(), z.undefined()])
   .transform((v) => v === 'true')

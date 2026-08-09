@@ -80,60 +80,97 @@ export function ReleaseDesignForm({ release }: { release: Release }) {
 
   return (
     <div className="space-y-6">
-      <div className="bg-white/60 backdrop-blur-md border border-white/70 rounded-2xl shadow-sm shadow-black/5 p-5 md:p-6">
-        <h2 className="text-lg font-bold text-gray-900 mb-4">Предустановки</h2>
-        <div className="flex gap-2">
+      <div className="bg-cf-bg-2 border border-cf-text-1/10 rounded-xl p-5 md:p-6">
+        <h2 className="text-sm font-bold text-cf-text-heading mb-4 uppercase tracking-wide">Предустановки</h2>
+        <div className="flex flex-wrap gap-2">
           {presets.map(p => (
-            <Button key={p.label} variant="outline" size="sm" onClick={() => applyPreset(p.config)} className="rounded-xl border-white/70 bg-white/60 text-gray-600 hover:bg-violet-50 hover:text-violet-700 hover:border-violet-200">
+            <Button
+              key={p.label}
+              variant="outline"
+              size="sm"
+              onClick={() => applyPreset(p.config)}
+              className="rounded-xl border-cf-text-1/18 bg-cf-text-1/6 text-cf-text-2 hover:bg-cf-text-1/12 hover:text-cf-text-heading hover:border-cf-text-1/30"
+            >
               {p.label}
             </Button>
           ))}
         </div>
       </div>
 
-      <div className="bg-white/60 backdrop-blur-md border border-white/70 rounded-2xl shadow-sm shadow-black/5 p-5 md:p-6">
-        <h2 className="text-lg font-bold text-gray-900 mb-4">Цветовая тема</h2>
+      <div className="bg-cf-bg-2 border border-cf-text-1/10 rounded-xl p-5 md:p-6">
+        <h2 className="text-sm font-bold text-cf-text-heading mb-4 uppercase tracking-wide">Цветовая тема</h2>
         <div className="grid gap-4 sm:grid-cols-3">
           <div className="space-y-2">
-            <Label className="text-gray-600">Accent</Label>
+            <Label className="text-cf-text-3 text-xs uppercase tracking-wider">Accent</Label>
             <div className="flex gap-2">
-              <input type="color" value={accent} onChange={e => update('accent_color', e.target.value)} className="h-9 w-12 rounded-xl border border-white/70 cursor-pointer" />
-              <Input value={accent} onChange={e => update('accent_color', e.target.value)} className="flex-1 bg-white/60 border-white/70 rounded-xl" />
+              <input
+                type="color"
+                value={accent}
+                onChange={e => update('accent_color', e.target.value)}
+                className="h-9 w-12 rounded-lg border border-cf-text-1/10 cursor-pointer bg-cf-bg"
+              />
+              <Input
+                value={accent}
+                onChange={e => update('accent_color', e.target.value)}
+                className="flex-1 bg-cf-bg border-cf-text-1/10 rounded-lg text-cf-text-1"
+              />
             </div>
           </div>
           <div className="space-y-2">
-            <Label className="text-gray-600">Фон</Label>
+            <Label className="text-cf-text-3 text-xs uppercase tracking-wider">Фон</Label>
             <div className="flex gap-2">
-              <input type="color" value={bg} onChange={e => update('bg_color', e.target.value)} className="h-9 w-12 rounded-xl border border-white/70 cursor-pointer" />
-              <Input value={bg} onChange={e => update('bg_color', e.target.value)} className="flex-1 bg-white/60 border-white/70 rounded-xl" />
+              <input
+                type="color"
+                value={bg}
+                onChange={e => update('bg_color', e.target.value)}
+                className="h-9 w-12 rounded-lg border border-cf-text-1/10 cursor-pointer bg-cf-bg"
+              />
+              <Input
+                value={bg}
+                onChange={e => update('bg_color', e.target.value)}
+                className="flex-1 bg-cf-bg border-cf-text-1/10 rounded-lg text-cf-text-1"
+              />
             </div>
           </div>
           <div className="space-y-2">
-            <Label className="text-gray-600">Текст</Label>
+            <Label className="text-cf-text-3 text-xs uppercase tracking-wider">Текст</Label>
             <div className="flex gap-2">
-              <input type="color" value={text} onChange={e => update('text_color', e.target.value)} className="h-9 w-12 rounded-xl border border-white/70 cursor-pointer" />
-              <Input value={text} onChange={e => update('text_color', e.target.value)} className="flex-1 bg-white/60 border-white/70 rounded-xl" />
+              <input
+                type="color"
+                value={text}
+                onChange={e => update('text_color', e.target.value)}
+                className="h-9 w-12 rounded-lg border border-cf-text-1/10 cursor-pointer bg-cf-bg"
+              />
+              <Input
+                value={text}
+                onChange={e => update('text_color', e.target.value)}
+                className="flex-1 bg-cf-bg border-cf-text-1/10 rounded-lg text-cf-text-1"
+              />
             </div>
           </div>
         </div>
       </div>
 
-      <div className="bg-white/60 backdrop-blur-md border border-white/70 rounded-2xl shadow-sm shadow-black/5 p-5 md:p-6">
-        <h2 className="text-lg font-bold text-gray-900 mb-4">Hero (обложка)</h2>
+      <div className="bg-cf-bg-2 border border-cf-text-1/10 rounded-xl p-5 md:p-6">
+        <h2 className="text-sm font-bold text-cf-text-heading mb-4 uppercase tracking-wide">Hero (обложка)</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
-            <Label className="text-gray-600">Стиль hero</Label>
+            <Label className="text-cf-text-3 text-xs uppercase tracking-wider">Стиль hero</Label>
             <Select value={config.hero_style ?? 'full'} onValueChange={v => update('hero_style', v as ReleaseDesignConfig['hero_style'])}>
-              <SelectTrigger className="bg-white/60 border-white/70 rounded-xl"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="bg-cf-bg border-cf-text-1/10 rounded-lg text-cf-text-1">
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 {Object.entries(heroLabels).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-2">
-            <Label className="text-gray-600">Overlay</Label>
+            <Label className="text-cf-text-3 text-xs uppercase tracking-wider">Overlay</Label>
             <Select value={config.hero_overlay ?? 'gradient'} onValueChange={v => update('hero_overlay', v as ReleaseDesignConfig['hero_overlay'])}>
-              <SelectTrigger className="bg-white/60 border-white/70 rounded-xl"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="bg-cf-bg border-cf-text-1/10 rounded-lg text-cf-text-1">
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 {Object.entries(overlayLabels).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
               </SelectContent>
@@ -142,40 +179,57 @@ export function ReleaseDesignForm({ release }: { release: Release }) {
         </div>
       </div>
 
-      <div className="bg-white/60 backdrop-blur-md border border-white/70 rounded-2xl shadow-sm shadow-black/5 p-5 md:p-6">
-        <h2 className="text-lg font-bold text-gray-900 mb-4">Макет страницы</h2>
+      <div className="bg-cf-bg-2 border border-cf-text-1/10 rounded-xl p-5 md:p-6">
+        <h2 className="text-sm font-bold text-cf-text-heading mb-4 uppercase tracking-wide">Макет страницы</h2>
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label className="text-gray-600">Layout</Label>
+            <Label className="text-cf-text-3 text-xs uppercase tracking-wider">Layout</Label>
             <Select value={config.layout ?? 'narrow'} onValueChange={v => update('layout', v as ReleaseDesignConfig['layout'])}>
-              <SelectTrigger className="bg-white/60 border-white/70 rounded-xl"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="bg-cf-bg border-cf-text-1/10 rounded-lg text-cf-text-1">
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 {Object.entries(layoutLabels).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
 
-          <div className="flex gap-6">
-            <label className="flex items-center gap-2 text-sm text-gray-600">
-              <input type="checkbox" checked={config.show_toc ?? true} onChange={e => update('show_toc', e.target.checked)} className="size-4 rounded accent-violet-600" />
+          <div className="flex flex-wrap gap-6">
+            <label className="flex items-center gap-2 text-sm text-cf-text-2">
+              <input
+                type="checkbox"
+                checked={config.show_toc ?? true}
+                onChange={e => update('show_toc', e.target.checked)}
+                className="size-4 rounded accent-cf-accent"
+              />
               Оглавление
             </label>
-            <label className="flex items-center gap-2 text-sm text-gray-600">
-              <input type="checkbox" checked={config.show_characters ?? true} onChange={e => update('show_characters', e.target.checked)} className="size-4 rounded accent-violet-600" />
+            <label className="flex items-center gap-2 text-sm text-cf-text-2">
+              <input
+                type="checkbox"
+                checked={config.show_characters ?? true}
+                onChange={e => update('show_characters', e.target.checked)}
+                className="size-4 rounded accent-cf-accent"
+              />
               Персонажи
             </label>
-            <label className="flex items-center gap-2 text-sm text-gray-600">
-              <input type="checkbox" checked={config.show_series ?? true} onChange={e => update('show_series', e.target.checked)} className="size-4 rounded accent-violet-600" />
+            <label className="flex items-center gap-2 text-sm text-cf-text-2">
+              <input
+                type="checkbox"
+                checked={config.show_series ?? true}
+                onChange={e => update('show_series', e.target.checked)}
+                className="size-4 rounded accent-cf-accent"
+              />
               Серия
             </label>
           </div>
         </div>
       </div>
 
-      <div className="bg-white/60 backdrop-blur-md border border-white/70 rounded-2xl shadow-sm shadow-black/5 p-5 md:p-6">
-        <h2 className="text-lg font-bold text-gray-900 mb-4">Превью</h2>
+      <div className="bg-cf-bg-2 border border-cf-text-1/10 rounded-xl p-5 md:p-6">
+        <h2 className="text-sm font-bold text-cf-text-heading mb-4 uppercase tracking-wide">Превью</h2>
         <div
-          className="rounded-xl border p-6 transition-all"
+          className="rounded-xl border border-cf-text-1/10 p-6 transition-all"
           style={{ backgroundColor: bg, color: text }}
         >
           {release.cover_image && (
@@ -207,7 +261,11 @@ export function ReleaseDesignForm({ release }: { release: Release }) {
       </div>
 
       <div className="flex gap-3">
-        <Button onClick={handleSave} disabled={saving} className="rounded-xl bg-gradient-to-r from-violet-600 to-violet-500 text-white shadow-md shadow-violet-500/25 hover:from-violet-700 hover:to-violet-600">
+        <Button
+          onClick={handleSave}
+          disabled={saving}
+          className="rounded-xl bg-cf-accent text-white font-bold uppercase text-sm tracking-wide hover:bg-cf-accent-hover transition-colors"
+        >
           {saving ? 'Сохраняю...' : 'Сохранить дизайн'}
         </Button>
       </div>

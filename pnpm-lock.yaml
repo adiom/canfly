@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@adiom/hash':
+        specifier: ^0.1.1
+        version: 0.1.1
       '@artginzburg/next-ym':
         specifier: ^1.3.7
         version: 1.3.7(next@16.3.0(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@playwright/test@1.62.1)(@types/node@22.20.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react@19.2.7)
@@ -263,6 +266,10 @@ importers:
         version: 8.65.0(eslint@9.39.5(jiti@2.7.0))(typescript@5.7.3)
 
 packages:
+
+  '@adiom/hash@0.1.1':
+    resolution: {integrity: sha512-kVc7iMDjw3GXCKm4QQM5MKtGyJf20ggtezTXeX/1vsQmhdPMH2q20trxIEKS/SjqjFjQVOWTuTZ1I4oS6xp6Eg==}
+    engines: {node: '>=18'}
 
   '@ai-sdk/gateway@3.0.161':
     resolution: {integrity: sha512-aV5j1JFKzwfq4RCuWRDerzOsNkIZ7+Pbz4aaGESW7BLbuQMGlsOJTv24+Uyksi1cg5WTEKNik6ghLfFRsU7TKw==}
@@ -4037,6 +4044,8 @@ packages:
     resolution: {integrity: sha512-WPsqwxITS2tzx1bzhIKsEs19ABD5vmCVa4xBo2tq/SrV4RNZtfws1EnCWQXM6yh8bD08a1idvkB5MZSBiZsjwg==}
 
 snapshots:
+
+  '@adiom/hash@0.1.1': {}
 
   '@ai-sdk/gateway@3.0.161(zod@3.25.76)':
     dependencies:

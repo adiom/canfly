@@ -7,6 +7,7 @@ const FORMAT_PRIORITY: EditionFormat[] = [
   'audiobook',
   'audiorelease',
   'album',
+  'digital',
 ]
 
 export function getPrimaryEdition(editions: Edition[]): Edition | null {
@@ -71,6 +72,7 @@ export const EDITION_FORMAT_LABELS: Record<EditionFormat, string> = {
   audiobook: 'Аудиокнига',
   audiorelease: 'Аудиорелиз',
   album: 'Альбом',
+  digital: 'Цифровой релиз',
 }
 
 export const QUALITY_TIER_LABELS: Record<QualityTier, string> = {
@@ -94,6 +96,10 @@ const AUDIO_FORMATS: EditionFormat[] = ['audiobook', 'audiorelease', 'album']
 
 export function isAudioFormat(format: EditionFormat): boolean {
   return AUDIO_FORMATS.includes(format)
+}
+
+export function isDigitalFormat(format: EditionFormat): boolean {
+  return format === 'digital'
 }
 
 export interface EditionMeta {

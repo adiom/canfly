@@ -16,6 +16,7 @@ const CATEGORY_PILLS: { label: string; value: CategoryValue }[] = [
   { label: 'Аудиокниги', value: 'audiobook' },
   { label: 'Журналы', value: 'magazine' },
   { label: 'Альбомы', value: 'album' },
+  { label: 'Цифровые', value: 'digital' },
 ]
 
 interface ReleasesPageBookmateProps {

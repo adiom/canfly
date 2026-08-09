@@ -1,5 +1,6 @@
 import { dbQuery, dbQueryOne } from '@/lib/db'
 import type { Edition } from '@/lib/releases-types'
+import { generateEditionSlug } from '@/lib/slug-utils'
 
 const editionColumns = `
   id, release_id, format, platform, external_url,
@@ -58,8 +59,11 @@ export async function fetchPublishedEditionsForSitemap() {
 }
 
 export async function createEdition(data: Record<string, unknown>) {
-  const baseSlug = (data.slug as string)?.trim() || 'edition'
-  const uniqueSlug = await makeUniqueEditionSlugGlobal(baseSlug)
+  const uniqueSlug = generateEditionSlug(
+    data.release_id as string,
+    (data.format as string) ?? 'book',
+    (data.quality_tier as string) ?? 'standard'
+  )
 
   return dbQueryOne<Edition>(
     `INSERT INTO editions (release_id, format, platform, external_url, slug, status, is_primary, quality_tier)
@@ -78,40 +82,15 @@ export async function createEdition(data: Record<string, unknown>) {
   )
 }
 
-async function makeUniqueEditionSlugGlobal(baseSlug: string): Promise<string> {
-  const existing = await dbQuery<{ slug: string }>(
-    `SELECT slug FROM editions WHERE slug = $1 OR slug LIKE $2`,
-    [baseSlug, `${baseSlug}-%`],
-  )
-  const used = new Set(existing.map(e => e.slug))
-  if (!used.has(baseSlug)) return baseSlug
-
-  for (let i = 2; i < 100000; i++) {
-    const candidate = `${baseSlug}-${i}`
-    if (!used.has(candidate)) return candidate
-  }
-  return `${baseSlug}-${Date.now()}`
-}
-
 export async function updateEdition(id: string, data: Record<string, unknown>) {
   const current = await fetchEditionById(id)
   if (!current) throw new Error('Edition not found')
 
-  let nextSlug = (data.slug as string)?.trim() || current.slug
-  if (nextSlug !== current.slug) {
-    const clash = await dbQuery<{ slug: string }>(
-      `SELECT slug FROM editions WHERE slug = $1 AND id != $2 LIMIT 1`,
-      [nextSlug, id],
-    )
-    if (clash.length > 0) {
-      nextSlug = await makeUniqueEditionSlugGlobal(nextSlug)
-    }
-  }
-
+  // Slug генерируется один раз при создании и больше не меняется
   return dbQueryOne<Edition>(
     `UPDATE editions SET
       format = $2::edition_format, platform = $3, external_url = $4,
-      slug = $5, status = $6::edition_status, is_primary = $7, quality_tier = $8
+      status = $5::edition_status, is_primary = $6, quality_tier = $7
      WHERE id = $1
      RETURNING ${editionColumns}`,
     [
@@ -119,7 +98,6 @@ export async function updateEdition(id: string, data: Record<string, unknown>) {
       data.format ?? 'book',
       data.platform ?? null,
       data.external_url ?? null,
-      nextSlug,
       data.status ?? 'draft',
       data.is_primary ?? false,
       data.quality_tier ?? 'standard',

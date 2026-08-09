@@ -6,7 +6,6 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import type { Edition, Release, ReleaseCharacter } from '@/lib/releases-types'
 import { updateEditionSetupAction } from '@/lib/actions/studio'
-import { generateSlug } from '@/lib/slug-utils'
 import { CoverImageUploader } from '@/components/studio/cover-image-uploader'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ArrowLeft, Save, BookOpen, Image, Headphones, Radio, Newspaper } from 'lucide-react'
+import { ArrowLeft, Save, BookOpen, Image, Headphones, Radio, Newspaper, Globe } from 'lucide-react'
 
 const formatLabels: Record<string, string> = {
   book: 'Книга',
@@ -27,6 +26,7 @@ const formatLabels: Record<string, string> = {
   audiobook: 'Аудиокнига',
   audiorelease: 'Аудиорелиз',
   magazine: 'Журнал',
+  digital: 'Цифровой релиз',
 }
 
 const formatIcons: Record<string, React.ElementType> = {
@@ -35,6 +35,7 @@ const formatIcons: Record<string, React.ElementType> = {
   audiobook: Headphones,
   audiorelease: Radio,
   magazine: Newspaper,
+  digital: Globe,
 }
 
 interface SetupData {
@@ -49,7 +50,7 @@ export function EditionSetupPage({ data }: { data: SetupData }) {
   const { edition, release, characters, releaseCharacters } = data
   const Icon = formatIcons[edition.format] ?? BookOpen
 
-  const [slug, setSlug] = useState(edition.slug)
+  const slug = edition.slug
   const [platform, setPlatform] = useState(edition.platform ?? '')
   const [externalUrl, setExternalUrl] = useState(edition.external_url ?? '')
   const [qualityTier, setQualityTier] = useState(edition.quality_tier ?? 'standard')
@@ -125,12 +126,10 @@ export function EditionSetupPage({ data }: { data: SetupData }) {
               <Label className="text-gray-600">Slug</Label>
               <Input
                 value={slug}
-                onChange={e => setSlug(e.target.value)}
-                onBlur={() => {
-                  if (!slug.trim()) setSlug(generateSlug(formatLabels[edition.format]))
-                }}
-                className="bg-white/60 border-white/70 rounded-xl"
+                disabled
+                className="bg-white/60 border-white/70 rounded-xl opacity-60 cursor-not-allowed"
               />
+              <p className="text-xs text-gray-400">Slug создаётся автоматически и не меняется</p>
             </div>
             {edition.format === 'book' && (
               <div className="space-y-2">
@@ -147,25 +146,28 @@ export function EditionSetupPage({ data }: { data: SetupData }) {
                 </Select>
               </div>
             )}
-            <div className="space-y-2">
-              <Label className="text-gray-600">Платформа</Label>
-              <Input
-                value={platform}
-                onChange={e => setPlatform(e.target.value)}
-                placeholder="Litres, Bookmate..."
-                className="bg-white/60 border-white/70 rounded-xl"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label className="text-gray-600">Внешняя ссылка</Label>
-            <Input
-              value={externalUrl}
-              onChange={e => setExternalUrl(e.target.value)}
-              placeholder="https://..."
-              className="bg-white/60 border-white/70 rounded-xl"
-            />
+            {edition.format === 'digital' && (
+              <>
+                <div className="space-y-2">
+                  <Label className="text-gray-600">Платформа</Label>
+                  <Input
+                    value={platform}
+                    onChange={e => setPlatform(e.target.value)}
+                    placeholder="Litres, Bookmate, Amazon..."
+                    className="bg-white/60 border-white/70 rounded-xl"
+                  />
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label className="text-gray-600">Ссылка на площадку</Label>
+                  <Input
+                    value={externalUrl}
+                    onChange={e => setExternalUrl(e.target.value)}
+                    placeholder="https://..."
+                    className="bg-white/60 border-white/70 rounded-xl"
+                  />
+                </div>
+              </>
+            )}
           </div>
 
           <div className="space-y-2">

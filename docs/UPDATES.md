@@ -2,6 +2,48 @@
 
 ---
 
+## [9 августа 2026] Редизайн страницы релиза + цифровые издания
+
+### Что изменено
+
+**Страница релиза (`/release/[slug]`):**
+- Типографика: заголовок Cormorant `text-6xl→8xl`, аннотация EB Garamond `text-xl→2xl` всегда видна
+- Новые секции: персонажи (horizontal scroll), серия (card-стиль), цитаты (grid 2 колонки)
+- Кнопки изданий показывают название площадки для digital (например "Litres" вместо "Цифровой релиз")
+- Digital-издания открываются в новой вкладке
+
+**Цифровой релиз (новый формат издания):**
+- Добавлен формат `digital` для книг на внешних площадках (Litres, Amazon, Bookmate)
+- Миграция: `postgres/014_add_digital_format.sql`
+- В Studio: платформа и ссылка скрыты для book, показаны для digital
+- Digital-издания не содержат глав — только ссылка на площадку
+
+**Slug изданий через `@adiom/hash`:**
+- Slug генерируется автоматически при создании издания (12-символьный хеш)
+- Slug immutable — больше не меняется после создания
+- Убрано поле slug из формы настройки издания
+
+**Studio: реработка `release-design-form.tsx`:**
+- Все стили переведены на cf-* токены (был violet/glassmorphism)
+- Превью, чекбоксы, кнопки — в стиле canfly design system
+
+### Файлы
+- `components/release-page.tsx` — полный редизайн
+- `app/release/[slug]/page.tsx` — передача characters + otherSeriesReleases
+- `lib/releases-types.ts` — добавлен `'digital'` в EditionFormat
+- `lib/slug-utils.ts` — `generateEditionSlug()` через @adiom/hash
+- `lib/server/editions.ts` — slug генерируется автоматически, immutable
+- `components/studio/edition-format-selector.tsx` — цифровой релиз
+- `components/studio/edition-page-client.tsx` — digital без глав
+- `components/studio/release-design-form.tsx` — cf-* токены
+
+### Как использовать
+1. Применить миграцию `014_add_digital_format.sql`
+2. Создать digital-издание: ввести площадку (Litres, Amazon) и ссылку
+3. На странице релиза кнопка покажет название площадки и откроет в новой вкладке
+
+---
+
 ## [9 августа 2026] VVVVV: лендинг литературной среды на `/vvvvv`
 
 ### Что изменено

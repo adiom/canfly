@@ -3,7 +3,7 @@ import type { Metadata } from 'next'
 import { fetchReleaseBySlug, fetchReleaseCharacters, fetchReleaseSeries } from '@/lib/server/releases'
 import { fetchEditionsByRelease } from '@/lib/server/editions'
 import { fetchPublishedChapterListByEdition } from '@/lib/server/chapters'
-import { fetchSeriesById } from '@/lib/server/series'
+import { fetchSeriesById, fetchSeriesWithReleases } from '@/lib/server/series'
 import { fetchCharactersList } from '@/lib/server/characters'
 import { fetchPublicHighlightsByRelease } from '@/lib/server/chapter-highlights'
 import { ReleasePagePublic } from '@/components/release-page'
@@ -18,7 +18,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   if (!release) return { title: 'Не найдено | canfly' }
 
   const title = `${release.title} | canfly`
-  const description = release.annotation ?? release.description ?? `«${release.title}» на canfly`
+  const description = release.description ?? release.annotation ?? `«${release.title}» на canfly`
   const url = `${BASE_URL}/release/${release.slug}`
 
   return {
@@ -43,7 +43,6 @@ export default async function ReleasePublicPage({ params }: { params: Promise<{ 
   const editions = await fetchEditionsByRelease(release.id)
   const primaryEdition = getPrimaryEdition(editions)
 
-  // Мета по главному изданию (число глав, объём, время чтения)
   let meta = { chapterCount: 0, wordCount: 0, readingMinutes: 0, durationSeconds: 0 }
   if (primaryEdition) {
     meta = computeEditionMeta(await fetchPublishedChapterListByEdition(primaryEdition.id))
@@ -71,6 +70,12 @@ export default async function ReleasePublicPage({ params }: { params: Promise<{ 
     ? { series: seriesLink.series, phase_number: seriesLink.phase_number }
     : null
 
+  let otherSeriesReleases: Array<{ id: string; title: string; slug: string; annotation: string | null; cover_image: string | null; release_date: string | null; phase_number: number | null }> = []
+  if (validSeriesLink?.series) {
+    const seriesData = await fetchSeriesWithReleases(validSeriesLink.series.slug)
+    otherSeriesReleases = (seriesData?.releases ?? []).filter(r => r.id !== release.id)
+  }
+
   const formats = editions
     .filter(e => e.status === 'published')
     .map(e => e.format)
@@ -94,14 +99,16 @@ export default async function ReleasePublicPage({ params }: { params: Promise<{ 
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: serializeJsonLd(breadcrumbSchema) }}
       />
-       <ReleasePagePublic
-         release={release}
-         editions={editions}
-         primaryEditionSlug={primaryEdition?.slug ?? null}
-         seriesLink={validSeriesLink}
-         highlights={highlights}
-         meta={meta}
-       />
+      <ReleasePagePublic
+        release={release}
+        editions={editions}
+        primaryEditionSlug={primaryEdition?.slug ?? null}
+        seriesLink={validSeriesLink}
+        highlights={highlights}
+        meta={meta}
+        characters={characters}
+        otherSeriesReleases={otherSeriesReleases}
+      />
     </>
   )
 }

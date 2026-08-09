@@ -15,6 +15,7 @@ const VALID_CATEGORIES: (EditionFormat | 'all')[] = [
   'audiobook',
   'magazine',
   'album',
+  'digital',
 ]
 
 const PAGE_SIZE = 24
@@ -57,6 +58,7 @@ export async function generateMetadata({
     audiorelease: ' · аудиорелизы',
     magazine: ' · журналы',
     album: ' · альбомы',
+    digital: ' · цифровые релизы',
   }
   const categoryLabel = CATEGORY_LABELS[category]
 

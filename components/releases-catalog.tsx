@@ -36,6 +36,7 @@ const FILTER_TABS: { label: string; value: EditionFormat | 'all' }[] = [
   { label: 'Книги', value: 'book' },
   { label: 'Аудио', value: 'audiobook' },
   { label: 'Журналы', value: 'magazine' },
+  { label: 'Цифровые', value: 'digital' },
 ]
 
 interface ReleaseCatalogProps {

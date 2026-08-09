@@ -1,3 +1,5 @@
+import { generateHash } from '@adiom/hash'
+
 const CYRILLIC_MAP: Record<string, string> = {
   А: 'A', Б: 'B', В: 'V', Г: 'G', Д: 'D', Е: 'E', Ё: 'Yo',
   Ж: 'Zh', З: 'Z', И: 'I', Й: 'Y', К: 'K', Л: 'L', М: 'M',
@@ -41,4 +43,13 @@ export function generateUniqueSlug(baseSlug: string, existingSlugs: string[]): s
     counter++
   }
   return `${baseSlug}-${counter}`
+}
+
+/**
+ * Генерирует уникальный slug для издания на основе @adiom/hash.
+ * Создаётся один раз при создании издания и больше не меняется.
+ */
+export function generateEditionSlug(releaseId: string, format: string, qualityTier: string): string {
+  const input = `${releaseId}:${format}:${qualityTier}:${Date.now()}`
+  return generateHash(input)
 }

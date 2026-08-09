@@ -27,16 +27,19 @@ import { ArrowLeft, Plus, Trash2, Settings, Globe, Archive } from 'lucide-react'
 const formatLabels: Record<string, string> = {
   book: 'Книга', comic: 'Комикс', audiobook: 'Аудиокнига',
   audiorelease: 'Аудиорелиз', album: 'Альбом', magazine: 'Журнал',
+  digital: 'Цифровой релиз',
 }
 
 const chapterLabels: Record<string, string> = {
   book: 'Главы', comic: 'Главы', audiobook: 'Треки',
   audiorelease: 'Треки', album: 'Треки', magazine: 'Статьи',
+  digital: 'Главы',
 }
 
 const addLabels: Record<string, string> = {
   book: 'Добавить главу', comic: 'Добавить главу', audiobook: 'Добавить трек',
   audiorelease: 'Добавить трек', album: 'Добавить трек', magazine: 'Добавить статью',
+  digital: 'Добавить главу',
 }
 
 const statusLabels: Record<string, string> = {
@@ -110,40 +113,67 @@ export function EditionPageClient({ edition, chapters }: { edition: Edition; cha
         </Badge>
       </div>
 
-      <Tabs defaultValue="chapters" className="space-y-6">
+      <Tabs defaultValue={edition.format === 'digital' ? 'settings' : 'chapters'} className="space-y-6">
         <TabsList className="bg-white/60 backdrop-blur-md border border-white/70 rounded-xl shadow-sm">
-          <TabsTrigger value="chapters" className="rounded-lg data-[state=active]:bg-violet-100/80 data-[state=active]:text-violet-700 data-[state=active]:shadow-sm text-gray-500">
-            {chapterLabel} ({chapters.length})
-          </TabsTrigger>
+          {edition.format !== 'digital' && (
+            <TabsTrigger value="chapters" className="rounded-lg data-[state=active]:bg-violet-100/80 data-[state=active]:text-violet-700 data-[state=active]:shadow-sm text-gray-500">
+              {chapterLabel} ({chapters.length})
+            </TabsTrigger>
+          )}
           <TabsTrigger value="settings" className="rounded-lg data-[state=active]:bg-violet-100/80 data-[state=active]:text-violet-700 data-[state=active]:shadow-sm text-gray-500">
             <Settings className="h-4 w-4 mr-1.5" /> Настройки
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="chapters" className="space-y-6">
-          <div className="bg-white/60 backdrop-blur-md border border-white/70 rounded-2xl shadow-sm shadow-black/5 p-5 md:p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-gray-900">{chapterLabel}</h2>
-              <Button size="sm" onClick={handleAddChapter} disabled={creating} className="rounded-xl bg-gradient-to-r from-violet-600 to-violet-500 text-white shadow-md shadow-violet-500/25 hover:from-violet-700 hover:to-violet-600">
-                <Plus className="mr-2 h-4 w-4" />
-                {creating ? 'Создаю...' : addLabel}
-              </Button>
-            </div>
-            {chapters.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-gray-200/80 bg-white/30 backdrop-blur-sm py-12 text-center">
-                <p className="text-gray-400">Нет {chapterLabel.toLowerCase()}. Нажмите «{addLabel}», чтобы начать.</p>
+        {edition.format !== 'digital' && (
+          <TabsContent value="chapters" className="space-y-6">
+            <div className="bg-white/60 backdrop-blur-md border border-white/70 rounded-2xl shadow-sm shadow-black/5 p-5 md:p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold text-gray-900">{chapterLabel}</h2>
+                <Button size="sm" onClick={handleAddChapter} disabled={creating} className="rounded-xl bg-gradient-to-r from-violet-600 to-violet-500 text-white shadow-md shadow-violet-500/25 hover:from-violet-700 hover:to-violet-600">
+                  <Plus className="mr-2 h-4 w-4" />
+                  {creating ? 'Создаю...' : addLabel}
+                </Button>
               </div>
-            ) : (
-              <ChapterList
-                key={`${edition.id}:${chapters.map(chapter => chapter.id).join(',')}`}
-                chapters={chapters}
-                editionId={edition.id}
-              />
-            )}
-          </div>
-        </TabsContent>
+              {chapters.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-gray-200/80 bg-white/30 backdrop-blur-sm py-12 text-center">
+                  <p className="text-gray-400">Нет {chapterLabel.toLowerCase()}. Нажмите «{addLabel}», чтобы начать.</p>
+                </div>
+              ) : (
+                <ChapterList
+                  key={`${edition.id}:${chapters.map(chapter => chapter.id).join(',')}`}
+                  chapters={chapters}
+                  editionId={edition.id}
+                />
+              )}
+            </div>
+          </TabsContent>
+        )}
 
         <TabsContent value="settings" className="space-y-4">
+          {edition.format === 'digital' && (
+            <div className="bg-white/60 backdrop-blur-md border border-white/70 rounded-2xl shadow-sm shadow-black/5 p-5 md:p-6">
+              <div className="flex items-center gap-3">
+                <Globe className="h-5 w-5 text-violet-500" />
+                <div>
+                  <p className="font-bold text-gray-900">Цифровой релиз</p>
+                  <p className="text-sm text-gray-400">Издание не содержит глав — ссылка ведёт на внешнюю площадку</p>
+                </div>
+              </div>
+              {edition.external_url && (
+                <a
+                  href={edition.external_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-3 inline-flex items-center gap-2 text-sm text-violet-600 hover:text-violet-700"
+                >
+                  {edition.external_url}
+                  <Globe className="h-3.5 w-3.5" />
+                </a>
+              )}
+            </div>
+          )}
+
           <div className="bg-white/60 backdrop-blur-md border border-white/70 rounded-2xl shadow-sm shadow-black/5 p-5 md:p-6 flex items-center justify-between">
             <div>
               <p className="font-bold text-gray-900">Настройки издания</p>
