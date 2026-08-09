@@ -32,7 +32,7 @@ export function truncate(text: string, max = 160): string {
   return `${(lastSpace > max * 0.6 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`
 }
 
-function truncateSeoDescription(text: string, max = 155): string {
+function truncateSeoDescription(text: string | null | undefined, max = 155): string {
   const clean = stripHtml(text).trim()
   if (!clean) return DEFAULT_DESCRIPTION
 
