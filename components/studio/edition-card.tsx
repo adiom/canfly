@@ -1,5 +1,6 @@
-'use client'
+"use client"
 
+import { useCallback, useState, type MouseEvent } from 'react'
 import Link from 'next/link'
 import type { Edition } from '@/lib/releases-types'
 import { Badge } from '@/components/ui/badge'
@@ -45,6 +46,17 @@ const formatGradients: Record<string, string> = {
 }
 
 export function EditionCard({ edition }: { edition: Edition }) {
+  const [copied, setCopied] = useState(false)
+  const handleCopy = useCallback((e: MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (navigator?.clipboard) {
+      navigator.clipboard.writeText(edition.id).then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1500)
+      })
+    }
+  }, [edition.id])
   const Icon = formatIcons[edition.format] ?? BookOpen
   const gradient = formatGradients[edition.format] ?? 'from-violet-100 to-violet-50'
 
@@ -62,7 +74,19 @@ export function EditionCard({ edition }: { edition: Edition }) {
             {edition.platform && (
               <p className="text-sm text-gray-400">{edition.platform}</p>
             )}
+            <div className="flex items-center gap-2">
+              <p className="text-xs text-gray-400 select-all font-mono break-words">{edition.id}</p>
+              <button
+                type="button"
+                onClick={handleCopy}
+                className="text-xs text-gray-500 hover:text-gray-700"
+                aria-label="Copy edition id"
+              >
+                {copied ? 'Copied' : 'Copy'}
+              </button>
+            </div>
           </div>
+          
           <Badge variant="outline" className={`border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] rounded-lg ${statusBadgeStyles[edition.status]}`}>
             {statusLabels[edition.status]}
           </Badge>

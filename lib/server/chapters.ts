@@ -1,4 +1,4 @@
-import { dbQuery, dbQueryOne } from '@/lib/db'
+import { dbQuery, dbQueryOne, withTransaction } from '@/lib/db'
 import { sanitizeChapterHtml } from '@/lib/sanitize'
 import type { Chapter, ChapterVersion } from '@/lib/releases-types'
 
@@ -128,6 +128,34 @@ export async function updateChapter(id: string, data: Record<string, unknown>) {
       data.word_count ?? 0,
     ],
   )
+}
+
+export async function reorderChapters(editionId: string, chapterIds: string[]) {
+  if (chapterIds.length === 0) return
+
+  const rows = await dbQuery<{ id: string }>(
+    `SELECT id FROM chapters WHERE edition_id = $1`,
+    [editionId],
+  )
+
+  const existingIds = new Set(rows.map(row => row.id))
+  const uniqueIds = new Set(chapterIds)
+  if (
+    rows.length !== chapterIds.length ||
+    uniqueIds.size !== chapterIds.length ||
+    chapterIds.some(id => !existingIds.has(id))
+  ) {
+    throw new Error('Неверный порядок глав')
+  }
+
+  await withTransaction(async (client) => {
+    for (let i = 0; i < chapterIds.length; i++) {
+      await client.query(
+        `UPDATE chapters SET chapter_index = $1 WHERE id = $2 AND edition_id = $3`,
+        [i + 1, chapterIds[i], editionId],
+      )
+    }
+  })
 }
 
 export async function publishChapter(id: string) {

@@ -137,17 +137,31 @@ export function ReleaseEditionToc({
                 </Link>
               </div>
             )}
+            {release.annotation && (
+              <p className="mt-6 text-sm text-cf-text-2">{release.annotation}</p>
+            )}
 
             <div className="mt-7 flex flex-wrap items-center gap-3">
               {resume ? (
-                <Link
-                  href={getChapterUrl(release.slug, edition, resume.chapterNumber)}
-                  className="inline-flex h-12 items-center gap-2 bg-cf-accent px-5 text-sm font-black uppercase tracking-[0.1em] text-white transition-colors hover:bg-[#b81e1e]"
-                >
-                  {isAudio ? <Play className="h-4 w-4" /> : <BookOpen className="h-4 w-4" />}
-                  Продолжить — {isAudio ? 'трек' : 'глава'} {resume.chapterNumber}
-                  <span className="opacity-70">· {resume.percent}%</span>
-                </Link>
+                <>
+                  <Link
+                    href={getChapterUrl(release.slug, edition, resume.chapterNumber)}
+                    className="inline-flex h-12 items-center gap-2 bg-cf-accent px-5 text-sm font-black uppercase tracking-[0.1em] text-white transition-colors hover:bg-[#b81e1e]"
+                  >
+                    {isAudio ? <Play className="h-4 w-4" /> : <BookOpen className="h-4 w-4" />}
+                    Читать с прокруткой  — {isAudio ? 'трек' : 'глава'} {resume.chapterNumber}
+                    <span className="opacity-70">· {resume.percent}%</span>
+                  </Link>
+
+                  <Link
+                    href={`/vvvvv/${edition.id}`}
+                    className="inline-flex h-12 items-center gap-2 border border-cf-text-1/18 px-5 text-sm font-bold uppercase text-cf-text-1 transition-colors hover:bg-cf-text-1/8"
+                  >
+                    <BookOpen className="h-4 w-4" />
+                    Читать в книжном формате — {isAudio ? 'трек' : 'глава'} {resume.chapterNumber}
+                    <span className="opacity-70">· {resume.percent}%</span>
+                  </Link>
+                </>
               ) : (
                 <Link
                   href={firstChapterUrl}

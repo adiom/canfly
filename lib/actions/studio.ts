@@ -291,6 +291,17 @@ export async function createChapterAction(formData: FormData) {
   if (chapter) redirect(`/studio/editions/${editionId}/chapters/${chapter.id}`)
 }
 
+export async function reorderChaptersAction(editionId: string, chapterIds: string[]) {
+  await requireEditionOwnership(editionId)
+  if (!Array.isArray(chapterIds) || chapterIds.length === 0) {
+    throw new Error('Неверные данные')
+  }
+
+  await chaptersDb.reorderChapters(editionId, chapterIds)
+  revalidatePath(`/studio/editions/${editionId}`)
+  return true
+}
+
 export async function updateChapterAction(id: string, data: {
   title?: string | null
   content?: string | null

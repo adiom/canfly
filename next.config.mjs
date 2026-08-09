@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  devIndicators: false,
   experimental: {
     serverComponentsHmrCache: true,
     webpackMemoryOptimizations: true,

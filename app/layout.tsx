@@ -76,7 +76,6 @@ export default function RootLayout({
             <SpeedInsights/>
             <CartProvider>
               {children}
-              <FeedbackWidget />
             </CartProvider>
           </ThemeProvider>
         </SessionProvider>

@@ -119,7 +119,7 @@ export function FeedbackWidget() {
   }
 
   return (
-    <div ref={containerRef} className="fixed bottom-8 right-0 z-50 flex items-end">
+    <div ref={containerRef} className="fixed bottom-8 right-0 z-50 flex items-end" id="feedback-widget" data-name="feedback-widget">
       {/* Expandable panel */}
       <div
         className={[

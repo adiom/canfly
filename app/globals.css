@@ -47,6 +47,84 @@
   --cf-status-ignored: var(--cf-text-3);
 }
 
+/* ── VVVVV ───────────────────────────────────────────────────────────────────
+   Литературная среда — самостоятельный бренд внутри canfly. Собственные токены,
+   намеренно не завязанные на .dark: страница всегда остаётся в темноте void,
+   какую бы тему ни выбрал посетитель. Тьма названа словарём проекта —
+   CF-004 · before the first photon (lib/canfly-colors.ts).                    */
+.vvvvv-scope {
+  --vv-void: #111210;
+  --vv-page: #161714;
+  --vv-ink: #f4efe5;
+  --vv-ink-2: #cec8bb;
+  --vv-ink-3: #8b8478;
+  --vv-ochre: #dcb463;
+  --vv-rule: rgba(244, 239, 229, 0.1);
+}
+
+/* Выделение текста греет страницу охрой — тем же жестом, что и в ридере. */
+.vvvvv-scope ::selection {
+  background-color: rgba(220, 180, 99, 0.26);
+  color: var(--vv-ink);
+}
+
+@keyframes vv-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.vv-rise {
+  animation: vv-rise 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: var(--vv-delay, 0ms);
+}
+
+/* Лист разворота едет плавно; трек двигает translateX из компонента. */
+.vv-spread-track {
+  transition: transform 520ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.vv-page-button {
+  display: inline-flex;
+  height: 36px;
+  width: 36px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--vv-rule);
+  color: var(--vv-ink-2);
+  transition: color 200ms, border-color 200ms;
+}
+
+.vv-page-button:hover:not(:disabled) {
+  border-color: var(--vv-ochre);
+  color: var(--vv-ochre);
+}
+
+.vv-page-button:focus-visible {
+  outline: 1px solid var(--vv-ochre);
+  outline-offset: 2px;
+}
+
+.vv-page-button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vv-rise {
+    animation: none;
+  }
+
+  .vv-spread-track {
+    transition: none;
+  }
+}
+
 @theme inline {
   --font-sans: var(--font-geist-sans), 'Geist Fallback', ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), 'Geist Mono Fallback', ui-monospace, monospace;

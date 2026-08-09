@@ -134,7 +134,11 @@ export function EditionPageClient({ edition, chapters }: { edition: Edition; cha
                 <p className="text-gray-400">Нет {chapterLabel.toLowerCase()}. Нажмите «{addLabel}», чтобы начать.</p>
               </div>
             ) : (
-              <ChapterList chapters={chapters} editionId={edition.id} />
+              <ChapterList
+                key={`${edition.id}:${chapters.map(chapter => chapter.id).join(',')}`}
+                chapters={chapters}
+                editionId={edition.id}
+              />
             )}
           </div>
         </TabsContent>

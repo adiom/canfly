@@ -14,7 +14,6 @@ import {
   generateChapterListSchema,
   serializeJsonLd,
 } from '@/lib/seo/schema'
-import { formatChapterCount } from '@/lib/utils/format'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
@@ -41,14 +40,9 @@ export async function generateMetadata({
 
   const edition = await fetchEditionByReleaseFormatTier(release.id, 'book', qualityTier)
   if (!edition || edition.status !== 'published') return { title: 'Не найдено | canfly' }
-
-  const chapters = await fetchPublishedChapterListByEdition(edition.id)
   const suffix = tierSuffixes[qualityTier] ?? ''
-  const title = `${release.title}${suffix} — оглавление | canfly`
-  const base = release.annotation ?? release.description ?? `«${release.title}» на canfly`
-  const description = chapters.length > 0
-    ? `${formatChapterCount(chapters.length, false)}. ${base}`
-    : base
+  const title = `${release.title}${suffix} | canfly`
+  const description = release.description ?? undefined
   const url = `${BASE_URL}/release/${release.slug}/book/${qualityTier}`
 
   return {
