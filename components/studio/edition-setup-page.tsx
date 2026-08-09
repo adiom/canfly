@@ -6,7 +6,6 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import type { Edition, Release, ReleaseCharacter } from '@/lib/releases-types'
 import { updateEditionSetupAction } from '@/lib/actions/studio'
-import { CoverImageUploader } from '@/components/studio/cover-image-uploader'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -54,8 +53,6 @@ export function EditionSetupPage({ data }: { data: SetupData }) {
   const [platform, setPlatform] = useState(edition.platform ?? '')
   const [externalUrl, setExternalUrl] = useState(edition.external_url ?? '')
   const [qualityTier, setQualityTier] = useState(edition.quality_tier ?? 'standard')
-  const [coverImage, setCoverImage] = useState(release?.cover_image ?? '')
-  const [annotation, setAnnotation] = useState(release?.annotation ?? '')
   const [selectedCharacters, setSelectedCharacters] = useState<{ character_id: string; role: string }[]>(
     releaseCharacters.map(rc => ({ character_id: rc.character_id, role: rc.role }))
   )
@@ -82,8 +79,6 @@ export function EditionSetupPage({ data }: { data: SetupData }) {
         platform: platform || null,
         external_url: externalUrl || null,
         quality_tier: qualityTier,
-        cover_image: coverImage || null,
-        annotation: annotation || null,
         character_ids: selectedCharacters,
       })
       toast.success('Настройки сохранены')
@@ -94,7 +89,7 @@ export function EditionSetupPage({ data }: { data: SetupData }) {
     } finally {
       setSaving(false)
     }
-  }, [edition.id, slug, platform, externalUrl, qualityTier, coverImage, annotation, selectedCharacters, router])
+  }, [edition.id, slug, platform, externalUrl, qualityTier, selectedCharacters, router])
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8 md:px-8 md:py-12">
@@ -168,22 +163,6 @@ export function EditionSetupPage({ data }: { data: SetupData }) {
                 </div>
               </>
             )}
-          </div>
-
-          <div className="space-y-2">
-            <Label className="text-gray-600">Обложка</Label>
-            <CoverImageUploader value={coverImage || null} onChange={(url) => setCoverImage(url ?? '')} />
-          </div>
-
-          <div className="space-y-2">
-            <Label className="text-gray-600">Аннотация</Label>
-            <textarea
-              value={annotation}
-              onChange={e => setAnnotation(e.target.value)}
-              rows={4}
-              className="w-full rounded-xl border border-white/70 bg-white/60 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30"
-              placeholder="Описание произведения..."
-            />
           </div>
         </div>
 

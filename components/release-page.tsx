@@ -13,7 +13,7 @@ import type {
 import { SiteHeader } from '@/components/site-header'
 import { SiteFooter } from '@/components/site-footer'
 import {
-  formatTotalDuration, getEditionLabel, getEditionTocUrl, isAudioFormat, isDigitalFormat,
+  formatTotalDuration, getEditionLabel, isAudioFormat, isDigitalFormat,
 } from '@/lib/utils/editions'
 import { formatChapterCount, formatReadingTime, formatWordCount, pluralRu } from '@/lib/utils/format'
 
@@ -172,7 +172,7 @@ export function ReleasePagePublic({
                     : getEditionLabel(edition)
                   const href = isDigital && edition.external_url
                     ? edition.external_url
-                    : getEditionTocUrl(release.slug, edition)
+                    : `/vvvvv/${edition.slug}`
                   return (
                     <Link
                       key={edition.id}
