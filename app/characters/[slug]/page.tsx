@@ -3,6 +3,8 @@ import Link from 'next/link'
 
 import { CharacterProfileHero } from '@/components/character-profile-hero'
 import { CharacterProfileSections } from '@/components/character-profile-sections'
+import { CharacterReleasesSection } from '@/components/character-releases-section'
+import { buildConstellationNodes } from '@/lib/character-constellation'
 import {
   fetchCharacterBySlug,
   fetchCharacterFriends,
@@ -118,8 +120,20 @@ export default async function CharacterPage({ params, searchParams }: CharacterP
       <CharacterProfileHero
         character={data.character}
         stats={stats}
-        relationships={data.relationships ?? []}
+        constellation={buildConstellationNodes({
+          releases: subjectReleases,
+          relationships: data.relationships ?? [],
+          posts: posts,
+        })}
       />
+
+      {/* Нити орбитального поля тянутся именно к этим релизам — поэтому
+          список стоит сразу под портретом, а не внизу страницы. */}
+      {subjectReleases.some((rel) => rel.role === 'main') ? (
+        <div className="cf-rise-late mt-12">
+          <CharacterReleasesSection releases={subjectReleases} />
+        </div>
+      ) : null}
 
       <CharacterProfileSections
         slug={data.character.slug}

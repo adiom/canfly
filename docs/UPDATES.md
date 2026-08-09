@@ -2,6 +2,116 @@
 
 ---
 
+## [9 августа 2026] Studio персонажа: одна страница вместо вкладок + связи Character↔Character и Character↔User
+
+### Что изменено
+
+В Studio `/studio/characters/[id]` убраны вкладки (`<Tabs>`). Все секции теперь идут друг под другом в одной колонке: **Описание → Посты → Стена → Паспорт → Связи → Читатели**. Каждая секция имеет `id`, чтобы можно было дать прямую ссылку (`#about`, `#posts`, `#relationships`, `#readers` и т.д.).
+
+**Новое: Character ↔ Character — редактор связей**
+
+Раньше связь можно было посадить только через прямой SQL в демо-данных. Теперь в Studio есть полноценный CRUD:
+
+- Файл [lib/relationships-kinds.ts](lib/relationships-kinds.ts) — словарь из 9 дефолтных типов (`Союзник · Соперник · Наставник · Семья · Романтика · Боевой товарищ · Противник · Подчинённый · Создатель`). У каждого — `label` (RU) и `tone` (`accent`/`on`/`slow`/`quiet`/`warm`).
+- [lib/schemas/character-relationships.ts](lib/schemas/character-relationships.ts) — Zod. Защита от IDOR (`characterId` обязателен при удалении), запрет самосвязи, лимиты `relationshipType` ≤ 60 символов, `description` ≤ 600. Кастомный тип требует явной пометки `custom: true` — защита от опечаток.
+- [lib/server/character-relationships.ts](lib/server/character-relationships.ts) — репозиторий. `fetchCharacterRelationships` возвращает связи с **вычисляемой взаимностью** через `EXISTS` подзапрос в SQL, плюс `inverse_type` для отображения «↔ что-то». `upsertCharacterRelationship` — атомарный через `withTransaction` + `FOR UPDATE`, не делает лишний UPDATE, если данные не изменились.
+- Server actions в [lib/actions/studio-characters.ts](lib/actions/studio-characters.ts): `listStudioCharacterRelationships`, `upsertCharacterRelationshipAction`, `deleteCharacterRelationshipAction`, `searchCharactersForRelationshipAction`. Авторизация — `requireAuthorOrAdmin` (автор/админ).
+- UI — [app/studio/characters/[id]/_components/relationships-editor.tsx](app/studio/characters/[id]/_components/relationships-editor.tsx): поиск персонажа с дебаунсом 250мс (не бьём БД на каждый символ), чипы-типы, поле «свой тип» (включается чекбоксом), опциональное описание, карточки связей с пометкой «взаимно» и обратным типом.
+- Публичная страница — [components/character-profile-sections.tsx](components/character-profile-sections.tsx): секция «Связи» теперь показывает тип через `GlassChip` с правильным тоном, а не сырую строку из БД.
+
+**Новое: Character � User — управление читателями**
+
+Админ/автор теперь видит всех, кто «подружился» с персонажем, и может вручную менять статус или удалять дружбу. Полезно для модерации спама и спорных случаев, когда пользователь сам не может решить.
+
+- [lib/server/users.ts](lib/server/users.ts) — добавлены `listCharacterReaders(characterId)`, `setCharacterReaderStatus(userId, characterId, status)`, `adminDeleteCharacterFriendship(userId, characterId)`. Все три — с защитой от SQL-инъекций и валидацией ENUM на уровне БД.
+- Server actions: `listStudioCharacterReaders`, `setCharacterReaderStatusAction`, `deleteCharacterReaderAction`.
+- UI — [app/studio/characters/[id]/_components/readers-list.tsx](app/studio/characters/[id]/_components/readers-list.tsx): список сгруппирован по статусу (`ждёт / друг / заблокирован`), у каждой карточки три кнопки переключения статуса + «Удалить».
+
+**Стиль: новые glass-примитивы**
+
+В духе orbital-дизайна (`orbital-seven-sigma.vercel.app`):
+- [components/ui/glass-button.tsx](components/ui/glass-button.tsx) — `GlassButton` с вариантами `primary | ghost | subtle | danger`. Primary — тёмные чернила `bg-cf-text-heading text-cf-bg` вместо `bg-violet-600`. Ghost — прозрачное стекло с hairline-кольцом. По умолчанию `type="button"` — обычная ошибка в формах.
+- [components/ui/glass-chip.tsx](components/ui/glass-chip.tsx) — `GlassChip` с пятью тонами. Прозрачная заливка (12-14% непрозрачности), текст через токен чернил (`cf-air-accent-ink`/`cf-live-on`) — гарантирует AA-контраст, как требует `docs/design-system.md`.
+
+Старые блоки Studio (Посты, Стена, Паспорт, Описание) **оставлены** в существующей shadcn-палитре (`bg-violet-50`, `bg-red-50`). Стиль мигрируется **постепенно**, отдельными коммитами — чтобы можно было откатить любой шаг.
+
+### Почему так
+
+- **Одна колонка вместо вкладок** — пользователь не теряет контекст при переключении между секциями, а ссылка `#relationships` или `#readers` ведёт прямо к нужному месту. Это переход от «приложение с экранами» к «страница с якорями».
+- **Вычисляемая взаимность, а не флаг** — одна связь удалена, другая осталась → флаг рассинхронизируется. `EXISTS` в SQL всегда правда.
+- **Кастомные типы через явное подтверждение** — автор может задать «Брат по оружию» или «Бывший наставник», но обязан отметить «свой тип». Это и дружелюбно к сюжету, и защищает от случайных опечаток.
+- **Glass-примитивы отдельно от существующих форм** — новый стиль не ломает привычные страницы. Виден контраст, ты можешь судить о направлении. Когда подтвердишь — переведём остальное.
+
+### Как использовать
+
+Ничего не нужно настраивать. Откройте `/studio/characters/<id>` — секции идут друг под другом. Новые связи добавляются через форму в секции «Связи», статус читателей меняется inline-кнопками в «Читателях».
+
+---
+
+## [9 августа 2026] Орбитальное созвездие персонажа: нити и узлы
+
+### Что изменено
+
+На странице `/characters/[slug]` между hero-портретом и лентой секций появился новый блок **«Вселенная вокруг»** — кликабельное гравитационное поле. Идея заимствована из `orbital/components/profile/gravitational-field.tsx`, но расширена: точки — это не только связи, но и релизы, и рассказы (посты). Каждый узел соединён с центром мягкой нитью, толщина и прозрачность которой зависят от веса связи.
+
+**Новый компонент** — [components/character-constellation.tsx](components/character-constellation.tsx):
+- Клиентский (`'use client'`) — нужен локальный state для активного узла.
+- Чистая логика вынесена в не-клиентский модуль [lib/character-constellation.ts](lib/character-constellation.ts): тип `ConstellationNode` и сборщик `buildConstellationNodes`. `'use client'` в компоненте не должен затягивать чистые функции в client bundle — иначе серверный код не сможет их вызвать (App Router это запрещает).
+- Поле построено в SVG поверх существующих `cf-orbit-drift`/`cf-star-breathe` (`app/globals.css`). Используется тот же золотой угол `GOLDEN_ANGLE = 2.39996323` и те же радиусы колец `[30, 43, 56]`, что и в `OrbitalPortrait` — поле стабильно на SSR.
+- **Три типа узлов** (дискриминированное объединение `ConstellationNode`):
+  - `release` — `main` (зенит, ближе к центру), `supporting` (среднее кольцо), `cameo` (внешнее кольцо);
+  - `relation` — связь с другим персонажем (тон `cf-live-on`);
+  - `post` — короткий рассказ из ленты (тон `cf-live-slow`).
+- **Нити** — `<line>` от центра к каждому узлу, цвет `var(--cf-air-accent)`. На hover узла соответствующая нить подсвечивается (`stroke-opacity 0.22 → 0.85`, `stroke-width` утолщается). Нити тянутся от центра до dot, поэтому близкие узлы имеют короткие яркие нити, дальние — длинные и тонкие.
+- **Карточка узла** — `.cf-glass rounded-2xl` под полем с заголовком типа («главный герой · релиз», «связь», «рассказ»), названием и для постов — обрезанным excerpt.
+- Если узлов нет вообще, рендерится упрощённый `<SimplePortrait>` без поля — пустые вселенные выглядят спокойно, а не ломано.
+- Хелпер `buildConstellationNodes({ releases, relationships, posts })` собирает узлы из уже загруженных данных страницы. Постов берётся максимум 6 — больше = шум.
+
+**Страница** — [app/characters/[slug]/page.tsx](app/characters/%5Bslug%5D/page.tsx):
+- Импортирует `buildConstellationNodes` из не-клиентского модуля.
+- `CharacterProfileHero` теперь принимает `constellation: ConstellationNode[]` вместо `relationships` и рендерит поле напрямую в hero — **один круг на странице**, без дубля. Старый `<OrbitalPortrait>` (показывал только связи) удалён, hero несёт все типы узлов: релизы, связи, рассказы.
+
+### Почему так
+
+- В orbital `gravitational-field` — портрет одного человека, **без нитей** и без кликабельных узлов. Это эстетически красиво, но не показывает связь героя с его историей. Нити здесь — это и есть «покажем через связь»: они превращают поле из декорации в **карту отношений**.
+- Размер узла и толщина нити считаются из `weight`: `main` релиз тянет узел к внутреннему кольцу, `cameo` — к внешнему. Это перекликается с orbital «состояние вместо нумерации» — визуальная плотность = смысловая близость.
+- `cf-glass` (а не `cf-glass-2`) для карточки узла выбран намеренно: чуть более прозрачная поверхность не спорит с полем, карточка читается как «всплывающее облако», а не как новая плашка.
+- Поле интерактивное, но не интерактивно-диаграмное: перетаскивать узлы нельзя, layout не зависит от пользователя — это по-прежнему **портрет вселенной вокруг персонажа**, а не mind-map.
+
+### Как использовать
+
+Ничего настраивать не нужно. Если у персонажа есть опубликованные релизы с `role`, связи с другими персонажами или записи на стене — поле собирается автоматически. Пустой персонаж покажет упрощённый портрет.
+
+---
+
+## [9 августа 2026] Блок «Главный герой» на странице персонажа
+
+### Что изменено
+
+Внизу профиля `/characters/[slug]` появилась секция со ссылками на релизы, где персонаж — **главный герой**. За основу взят приём из `orbital/DESIGN.md`: «состояние вместо нумерации» — блок говорит не «сколько», а «как именно» персонаж связан с релизом, и пустой раздел просто не рендерится.
+
+**Новый компонент** — [components/character-releases-section.tsx](components/character-releases-section.tsx):
+- Заголовок секции — «Главный герой» с тем же `tracking-[0.28em]` и `text-cf-text-3`, что и другие секции профиля (см. [character-profile-sections.tsx](components/character-profile-sections.tsx)).
+- Главные роли (`role = 'main'`) — крупным стеком внутри `.cf-glass-2 rounded-3xl p-5`. Каждая строка: `dot` (cf-air-accent) · название · тип участия (`часть серии` / `отдельный релиз`) · стрелка, реагирующая на hover.
+- Если есть поддержка/камео (`supporting`/`cameo`) — отдельный подзаголовок «Также появляется» с компактными пилюлями в `bg-cf-air-surface backdrop-blur-xl`.
+- Если `main`-ролей нет — компонент возвращает `null`, в DOM ничего не попадает.
+
+**Страница** — [app/characters/[slug]/page.tsx](app/characters/%5Bslug%5D/page.tsx):
+- Между `CharacterProfileSections` и ссылкой «все герои» добавлен `<div className="cf-rise-late mt-24">` с новой секцией. Условие рендера — `subjectReleases.some(rel => rel.role === 'main')`. Сами данные уже грузились параллельно для JSON-LD (`fetchReleasesByCharacter(..., { onlyPublished: true })`), дополнительных запросов не понадобилось.
+- Ссылка ведёт на `/series/<slug>`, если релиз привязан к серии (`series_slug` не `null`), иначе — на `/release/<slug>`.
+
+### Почему так
+
+- В `orbital` обложки узлов — это **данные, которые реально есть** (`DESIGN.md`: «Don't fake data — life signals render only when real data exists»). `fetchReleasesByCharacter` возвращает лёгкий набор без `cover_image`; добавлять отдельный запрос ради постера одной строки — overkill. Если позже понадобится — расширим `CharacterReleaseLink` полем `cover_image`.
+- Glass-карточка `.cf-glass-2` и анимация `.cf-rise-late` уже есть в `app/globals.css` и применяются на других секциях профиля, новых токенов не вводим.
+- Текстовый dot вместо превью-картинки перекликается с тем, как в `orbital` «компактные» ноды рендерятся одним dot+title (см. `card-node` Compact variant).
+
+### Как использовать
+
+Никаких настроек не требуется: блок появляется автоматически у любого опубликованного персонажа, у которого есть хотя бы один релиз с `role = 'main'` в таблице `release_characters`. Если у персонажа только камео/второстепенные — блок скрыт.
+
+---
+
 ## [9 августа 2026] JSON-LD персонажей и релизов: subjectOf / about / character
 
 ### Что изменено
@@ -471,7 +581,7 @@
 
 ### Что изменено
 
-Удалены ранние SQL-скрипты из `scripts/`, которые дублировали актуальную схему из `postgres/` и содержали вымышленные тестовые данные. Схема БД теперь правится строго миграциями в `postgres/` (см. AGENTS.md: «Схема БД правится только миграцией в postgres/»).
+Удалены ранние SQL-скрипты из `scripts/`, которые дублировали актуальную схему из `postgres/` и содержали вымышленные тестовые данные. Схема БД теперь правится строго миграцией в `postgres/` (см. AGENTS.md: «Схема БД правится только миграцией в postgres/»).
 
 Жёстко удалены (без применения в коде):
 - `scripts/001_create_tables.sql` — дубль `postgres/schema.sql` (books, characters, orders, homepage_slides, admins + триггеры/индексы).
@@ -486,7 +596,7 @@
 
 ### Зачем
 
-В репозитории сосуществствовали две ветки схемы: `postgres/` (актуальные миграции, применяемые в прод/CI) и `scripts/00x*.sql` (их ранние клоны + вымышленные данные). Скрипты в `scripts/` ни разу не вызываются из `package.json`, `docs/` или e2e — они просто лежали и вводили в заблуждение: кто-то мог бы применить `002_seed_data.sql`, создав вымышленные «Крылья Судьбы» в `books`, либо, не зная про `007`, не создал `character_wall_posts` при раскатке новой БД.
+В репозитории сосуществствовали две ветки схемы: `postgres/` (актуальные миграции, применяемые в прод/CI) и `scripts/00x*.sql` (их ранние клоны + вымышленные данные). Скрипты в `scripts/` ни разу не вызывались из `package.json`, `docs/` или e2e — они просто лежали и вводили в заблуждение: кто-то мог бы применить `002_seed_data.sql`, создав вымышленные «Крылья Судьбы» в `books`, либо, не зная про `007`, не создал `character_wall_posts` при раскатке новой БД.
 
 ### Как использовать
 
@@ -505,7 +615,7 @@
 ### Что изменено
 Три новых маршрута рядом со старым `/profile` — старые страницы не трогаем.
 - `/user` — приватный дашборд. Полоса-паспорт, разрез чтения на 52 недели (керн), полка «читает» с реальным прогрессом, публичные цитаты, голоса.
-- `/user-settings` — личность, аватар, handle, цветовой паспорт (15 цветов каталога), видимость, доступ (email + OAuth через существующий `AccountSettingsClient`). Живое превью справа показывает то, что увидит публика.
+- `/user-settings` — личность, аватар, handle, цветовой паспорт (15 цветов каталога), видимость, доступ (email + OAuth через существующий `AccountSettingsClient`). Живое превью справа показывает то, что увидит публично.
 - `/user/[handle]` — публичная страница читателя. `notFound()` для неавторизованных зрителей при `profile_is_public = false`. Владелец видит баннер «так тебя видят другие».
 
 ### Концепция
@@ -534,7 +644,7 @@
 ---
 ### Что изменено
 
-**Страница перешла на токены `cf-*`.** До этого `/login` была размечена хардкодом `#111210` / `#1b1c19` / `#f4efe5` и потому оставалась тёмной всегда: читатель со светлой темой на всём сайте попадал на чёрный экран. Теперь фон, текст и акцент берутся из `app/globals.css`, страница следует теме.
+**Страница перешла на токены `cf-*`.** До этого `/login` была размечена хардкодом `#111210` / `#f4efe5` / `#1b1c19` и потому оставалась тёмной всегда: читатель со светлой темой на всём сайте попадал на чёрный экран. Теперь фон, текст и акцент берутся из `app/globals.css`, страница следует теме.
 
 **Вёрстка — сплит 50/50 на `lg+`.** Слева форма прямо на фоне, без карточки и рамки: вордмарк `canfly` сверху, заголовок «Место, на котором вы *остановились*» (Cormorant, курсив в `cf-accent`), поля на нижней линейке вместо `<Input>` shadcn, волосяная сетка OAuth-провайдеров 2×N вместо четырёх полноширинных кнопок, нижняя строка «← на главную · коллекция цветов». Ниже `lg` панель схлопывается в полосу 26vh над формой.
 
@@ -703,7 +813,7 @@ Issue #15 — замены `<img>` → `<Image>` уже были сделаны 
 ### Как использовать
 
 - В Studio (`/studio/releases/[id]`) → вкладка «Серия» → выбрать серию и указать номер тома (фазу).
-- Публичная страница: `/series/<slug-серии>` — список всех опубеликованных релизов в серии.
+- Публичная страница: `/series/<slug-серии>` — список всех опубликованных релизов в серии.
 - Пример: https://canfly.org/release/kroy-po-dushe-tom-1 → ссылка на серию в шапке.
 
 ---
@@ -989,7 +1099,7 @@ Dev-машина: Mac M1, 8 GB RAM. Без лимитов V8 + Turbopack заг�
 - `postgres/010_releases_pagination_indexes.sql` — составные индексы `(status, release_date DESC, created_at DESC)` и `(release_id, format, status)`.
 - `components/ui/pagination.tsx` — новый shadcn-style компонент на `cf-*` токенах: Prev/Next + окно номеров с эллипсисом (`1 … 4 [5] 6 … 20`), всё через `<Link>` (progressive enhancement, нет клиентского JS), `aria-current`, touch ≥40px.
 - `components/releases-page-bookmate.tsx` — переделан в **Server Component** (убран `'use client'` + `useState`): состояние фильтра/страницы — в URL (`searchParams`). Eyebrow + H1, category pills (активная `bg-cf-accent`), shelf-сетка `items-end` с нижней линией-полкой и градиент-тенью под обложками. Счётчик `N–M из total`.
-- `components/release-card-bookmate.tsx` — миграция на `cf-*` токена (был хардкод `#f4f2ef`/`#3456f3`/`#302119`), hover-lift `-translate-y-1` + `ring-cf-warm/45`, chip формата `text-cf-warm`, `sizes` для LCP, `priority` на первых 4.
+- `components/release-card-bookmate.tsx` — миграция на `cf-*` токены (был хардкод `#f4f2ef`/`#3456f3`/`#302119`), hover-lift `-translate-y-1` + `ring-cf-warm/45`, chip формата `text-cf-warm`, `sizes` для LCP, `priority` на первых 4.
 - `app/releases/page.tsx` — async `searchParams` (Next 16) + валидация category/page (clamp, unknown→all), `generateMetadata` с динамическим canonical `?category=&page=`.
 
 ### Зачем
@@ -1140,6 +1250,7 @@ Dev-машина: Mac M1, 8 GB RAM. Без лимитов V8 + Turbopack заг�
 - `components/release-page.tsx` — `<img>` → `<Image>` (next/image)
 - `components/books-client.tsx` — `alt=""` → `alt={book.title}`, `alt={ch.name}`
 - `components/comic-reader.tsx`, `components/release-comic-reader.tsx` — `alt=""` → `alt={Страница N}`
+- `lib/server/search.ts` — гранулярный ранг (точное совпадение → префикс → вхождение → другие поля); вторичная сортировка по `view_count DESC` для релизов
 
 **Редизайн /releases:**
 - `components/releases-page-bookmate.tsx` — убраны `ShelfSection`, «Новинки», «Популярное»; сетка книг сразу на странице
@@ -1296,6 +1407,10 @@ Dev-машина: Mac M1, 8 GB RAM. Без лимитов V8 + Turbopack заг�
 
 **2. Навигация аудиоплеер → страница релиза**
 - `components/release-audio-player.tsx` — pill-кнопка `← О релизе` в header, accent border, ведёт на `/release/${release.slug}`
+- `components/studio/edition-setup-page.tsx` — серия убрана из страницы издания (больше не назначается на уровне издания).
+- `lib/actions/studio.ts` (`updateEditionSetupAction`, `getEditionSetupData`) — параметр `series_links` удалён.
+- `app/sitemap.ts` — серии добавлены в sitemap.
+- `components/release-page.tsx` — для админов на странице релиза появилась кнопка «Studio» (ссылка на `/studio/releases/[id]`).
 
 **3. Format-aware hero CTA на странице релиза**
 - `components/release-page.tsx` — CTA зависит от primary edition:
@@ -1354,7 +1469,7 @@ React Compiler-правило `react-hooks/set-state-in-effect` стало `erro
 **1. IDOR-фикс — проверка владения в Studio (P0)**
 - Добавлены `requireReleaseOwnership`, `requireEditionOwnership`, `requireChapterOwnership` в `lib/server/studio-auth.ts`
 - Все mutate-actions в `lib/actions/studio.ts` теперь проверяют ownership через `release_collaborators` (role='owner') или admin
-- Ранее любой автор мог мутировать чужой релиз/главу по UUID
+- Раньше любой автор мог мутировать чужой релиз/главу по UUID
 
 **2. Устранена утечка AUTH_SECRET в логи**
 - `proxy.ts` больше не выводит первые символы `AUTH_SECRET` при каждом запросе к `/profile`
@@ -1396,7 +1511,7 @@ React Compiler-правило `react-hooks/set-state-in-effect` стало `erro
 **2. Magic Link авторизация**
 - Генерация 8-значного кода: `app/(auth)/actions.ts` → Server Action `createMagicLink`
 - Верификация по ссылке: `GET /api/magic/verify?token=...` → помечает токен использованным → редирект на `/login?magic_email=...` → автовход
-- Верификация по коду (dev): `POST /api/user/verify-code-direct` — вводишь код вручную
+- Верификация по коду (dev): `POST /api/user/verify-code-direct` — ввести код вручную
 - В dev-режиме код выводится в консоль сервера и возвращается в UI
 - Rate limit: 3 активных токена за 15 минут на email
 - Таблица `magic_tokens` в Postgres (миграция: `postgres/migrations/001_magic_tokens.sql`)
@@ -1600,26 +1715,6 @@ Major-обновления (zod 4, sonner 2, recharts 3, lucide-react 1 и др.
 
 ---
 
-
-
-### Что изменено
-
-- Добавлен динамический роутинг для глав: `/books/[slug]/[chapter]`
-- Каждая глава теперь имеет уникальный URL (например, `/books/my-book/3`)
-- Добавлены `id` атрибуты к заголовкам глав (`chapter-1`, `chapter-2`, и т.д.)
-- Создана страница `/books/[slug]/full` для Safari Reader Mode — загружает все главы сразу
-- Навигация по главам обновляет URL без перезагрузки страницы
-- При закрытии и повторном открытии вкладки пользователь остаётся на той же главе
-
-### Как использовать
-
-1. **Постраничный режим**: `/books/my-book/1` — навигация по главам с интерактивными элементами
-2. **Полная версия**: `/books/my-book/full` — все главы на одной странице для Safari Reader Mode
-3. Кнопка "Полная версия" доступна в читалке для быстрого переключения
-4. URL автоматически обновляется при переключении глав через оглавление или кнопки навигации
-
----
-
 ## v5.0 — Роли, профили и дружба с персонажами (28 мая 2026)
 
 ### Что изменено
@@ -1629,11 +1724,11 @@ Major-обновления (zod 4, sonner 2, recharts 3, lucide-react 1 и др.
 - Добавлены reader-профили с временной cookie-идентификацией до подключения полноценной публичной авторизации.
 - Добавлены дружба с персонажами, уровень близости, личные диалоги и сохранение истории сообщений.
 - AI-чат теперь использует сохранённую историю диалога и расширенные настройки персонажа: манера речи, характер, границы знаний, политика спойлеров, режим ответов.
-- На странице персонажа появилась кнопка “Добавить в друзья”, кнопка сообщения и блок книг с ролями персонажа.
+- На странице персонажа появилась кнопка «Добавить в друзья», кнопка сообщения и блок книг с ролями персонажа.
 - Добавлена страница `/profile` со списком персонажей-друзей, ролями и последними диалогами.
 - Админ-форма персонажа расширена настройками AI-персоны и доступности сообщений.
 - Добавлен пользовательский вход `/login` по `login/password`: если логина нет, создается reader-профиль.
-- В админке появилась вкладка “Пользователи”: список пользователей, назначение ролей и смена пароля.
+- В админке появилась вкладка «Пользователи»: список пользователей, назначение ролей и смена пароля.
 
 ### Как использовать
 
@@ -1831,7 +1926,7 @@ ALTER TABLE books
 
 ### Что изменено
 
-- `postgres/migrations/002_character_system_role.sql` — новая колонка `characters.system_role TEXT NOT NULL DEFAULT ''`. Существующие 8 героев заполнены старыми промптами идемпотентно (`WHERE system_role = ''`), чтобы поведение в чате после миграции не изменилось.
+- `postgres/migrations/002_character_system_role.sql` — новая колонка `characters.system_role TEXT NOT NULL DEFAULT ''`. Существующие 8 героев заполнены старыми промпты идемпотентно (`WHERE system_role = ''`), чтобы поведение в чате после миграции не изменилось.
 - `lib/types.ts` — в `Character` добавлено поле `system_role: string`.
 - `lib/server/characters.ts` — `createCharacter` / `updateCharacter` пишут новый столбец; все `SELECT *` подхватывают его без правок.
 - `lib/actions/studio-characters.ts` — `createCharacterAction` / `updateCharacterAction` парсят `formData.system_role` (trim, до 8000 символов), для городов явно пишут `''`.

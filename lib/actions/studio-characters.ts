@@ -4,11 +4,17 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { put } from '@vercel/blob'
 
-import { requireStudioAdminSession, requireAuthorOrAdminSession } from '@/lib/server/studio-auth'
+import { requireAuthorOrAdminSession, requireStudioAdminSession } from '@/lib/server/studio-auth'
 import * as charactersDb from '@/lib/server/characters'
 import * as postsDb from '@/lib/server/character-posts'
 import * as wallDb from '@/lib/server/character-wall'
-import type { CharacterReplyMode, CharacterType } from '@/lib/types'
+import * as relationshipsDb from '@/lib/server/character-relationships'
+import * as usersDb from '@/lib/server/users'
+import type { CharacterFriendshipStatus, CharacterReplyMode, CharacterType } from '@/lib/types'
+import {
+  characterRelationshipSchema,
+  deleteCharacterRelationshipSchema,
+} from '@/lib/schemas/character-relationships'
 import {
   createCharacterPostSchema,
   formatZodError,
@@ -300,4 +306,129 @@ export async function deleteStudioWallPostAction(wallPostId: string) {
   if (!existing) return
   await wallDb.deleteWallPost(wallPostId)
   revalidatePath(`/studio/characters/${existing.character_id}`)
+}
+
+// ── Character ↔ Character relationships ─────────────────────────────────────
+
+/**
+ * Список всех исходящих связей персонажа с пометкой взаимности.
+ * Нужен редактору связей в Studio. Авторизация — author/admin, как и
+ * остальные операции чтения в Studio (см. `getStudioCharacter`).
+ */
+export async function listStudioCharacterRelationships(characterId: string) {
+  await requireAuthorOrAdmin()
+  return relationshipsDb.fetchCharacterRelationships(characterId)
+}
+
+/**
+ * Upsert связи. Автор/админ. Связь всегда принадлежит персонажу,
+ * чей id указан в characterId — мутация чужой строки не пройдёт по
+ * character_id в `upsertCharacterRelationship`.
+ */
+export async function upsertCharacterRelationshipAction(formData: FormData) {
+  await requireAuthorOrAdmin()
+
+  const parsed = characterRelationshipSchema.safeParse({
+    characterId: str(formData, 'characterId'),
+    relatedCharacterId: str(formData, 'relatedCharacterId'),
+    relationshipType: str(formData, 'relationshipType'),
+    description: strOrNull(formData, 'description'),
+    custom: formData.get('custom') === 'on' || formData.get('custom') === 'true',
+  })
+  if (!parsed.success) throw new Error(formatZodError(parsed.error))
+
+  await relationshipsDb.upsertCharacterRelationship({
+    characterId: parsed.data.characterId,
+    relatedCharacterId: parsed.data.relatedCharacterId,
+    relationshipType: parsed.data.relationshipType,
+    description: parsed.data.description ?? null,
+  })
+
+  revalidatePath(`/studio/characters/${parsed.data.characterId}`)
+}
+
+/**
+ * Удаление связи по id. В схеме дополнительно передаётся characterId —
+ * удаляем только если строка принадлежит этому персонажу (защита от
+ * IDOR через подмену relationshipId в форме).
+ */
+export async function deleteCharacterRelationshipAction(formData: FormData) {
+  await requireAuthorOrAdmin()
+
+  const parsed = deleteCharacterRelationshipSchema.safeParse({
+    relationshipId: str(formData, 'relationshipId'),
+    characterId: str(formData, 'characterId'),
+  })
+  if (!parsed.success) throw new Error(formatZodError(parsed.error))
+
+  await relationshipsDb.deleteCharacterRelationship(
+    parsed.data.relationshipId,
+    parsed.data.characterId,
+  )
+
+  revalidatePath(`/studio/characters/${parsed.data.characterId}`)
+}
+
+/**
+ * Поиск персонажей для формы «выберите цель связи». Возвращает результат
+ * через JSON — это позволяет не тащить весь список персонажей на клиент.
+ */
+export async function searchCharactersForRelationshipAction(
+  excludeCharacterId: string,
+  query: string,
+): Promise<Array<{ id: string; name: string; slug: string; avatar: string | null; character_type: 'person' | 'city' }>> {
+  await requireAuthorOrAdmin()
+  return relationshipsDb.searchCharactersForRelationship({
+    excludeCharacterId,
+    query,
+  })
+}
+
+// ── Character ↔ User readers (friendships) ──────────────────────────────────
+
+const VALID_FRIENDSHIP_STATUSES: CharacterFriendshipStatus[] = [
+  'pending',
+  'accepted',
+  'blocked',
+]
+
+function normalizeFriendshipStatus(value: unknown): CharacterFriendshipStatus {
+  return typeof value === 'string' &&
+    VALID_FRIENDSHIP_STATUSES.includes(value as CharacterFriendshipStatus)
+    ? (value as CharacterFriendshipStatus)
+    : 'pending'
+}
+
+export async function listStudioCharacterReaders(characterId: string) {
+  await requireAuthorOrAdmin()
+  return usersDb.listCharacterReaders(characterId)
+}
+
+export async function setCharacterReaderStatusAction(formData: FormData) {
+  await requireAuthorOrAdmin()
+
+  const characterId = str(formData, 'characterId')
+  const userId = str(formData, 'userId')
+  const status = normalizeFriendshipStatus(formData.get('status'))
+
+  if (!characterId || !userId) {
+    throw new Error('Не хватает параметров characterId/userId')
+  }
+
+  await usersDb.setCharacterReaderStatus(userId, characterId, status)
+  revalidatePath(`/studio/characters/${characterId}`)
+}
+
+export async function deleteCharacterReaderAction(formData: FormData) {
+  await requireAuthorOrAdmin()
+
+  const characterId = str(formData, 'characterId')
+  const userId = str(formData, 'userId')
+
+  if (!characterId || !userId) {
+    throw new Error('Не хватает параметров characterId/userId')
+  }
+
+  await usersDb.adminDeleteCharacterFriendship(userId, characterId)
+  revalidatePath(`/studio/characters/${characterId}`)
 }

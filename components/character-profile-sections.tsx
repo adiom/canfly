@@ -3,6 +3,8 @@ import Image from 'next/image'
 
 import { CharacterPostsFeed } from '@/components/character-posts-feed'
 import { CharacterWall } from '@/components/character-wall'
+import { GlassChip } from '@/components/ui/glass-chip'
+import { relationshipLabel, relationshipTone } from '@/lib/relationships-kinds'
 import type {
   Character,
   CharacterFriendSummary,
@@ -177,44 +179,48 @@ function Relations({
 }) {
   return (
     <div className="grid gap-4 sm:grid-cols-2">
-      {relationships.map((rel) => (
-        <Link
-          key={rel.id}
-          href={`/characters/${rel.related_slug}`}
-          className="group rounded-[24px] bg-cf-air-surface px-5 py-4 shadow-[var(--cf-air-shadow)] backdrop-blur-xl transition-all duration-500 hover:-translate-y-1 hover:bg-cf-air-surface-2"
-        >
-          <div className="flex items-center gap-3.5">
-            <span className="relative h-11 w-11 shrink-0 overflow-hidden rounded-full bg-cf-air-surface-2">
-              {rel.related_avatar ? (
-                <Image
-                  src={rel.related_avatar}
-                  alt={rel.related_name}
-                  width={44}
-                  height={44}
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <span className="flex h-full w-full items-center justify-center text-[13px] text-cf-text-3">
-                  {rel.related_name[0]}
+      {relationships.map((rel) => {
+        const tone = relationshipTone(rel.relationship_type) ?? 'quiet'
+        const label = relationshipLabel(rel.relationship_type)
+        return (
+          <Link
+            key={rel.id}
+            href={`/characters/${rel.related_slug}`}
+            className="group rounded-[24px] bg-cf-air-surface px-5 py-4 shadow-[var(--cf-air-shadow)] backdrop-blur-xl transition-all duration-500 hover:-translate-y-1 hover:bg-cf-air-surface-2"
+          >
+            <div className="flex items-center gap-3.5">
+              <span className="relative h-11 w-11 shrink-0 overflow-hidden rounded-full bg-cf-air-surface-2">
+                {rel.related_avatar ? (
+                  <Image
+                    src={rel.related_avatar}
+                    alt={rel.related_name}
+                    width={44}
+                    height={44}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <span className="flex h-full w-full items-center justify-center text-[13px] text-cf-text-3">
+                    {rel.related_name[0]}
+                  </span>
+                )}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[15px] text-cf-text-heading transition-colors group-hover:text-cf-air-accent-ink">
+                  {rel.related_name}
                 </span>
-              )}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[15px] text-cf-text-heading transition-colors group-hover:text-cf-air-accent-ink">
-                {rel.related_name}
+                <span className="mt-1.5 block">
+                  <GlassChip tone={tone}>{label}</GlassChip>
+                </span>
               </span>
-              <span className="block truncate text-[11px] text-cf-text-3">
-                {rel.relationship_type}
-              </span>
-            </span>
-          </div>
-          {rel.description ? (
-            <p className="mt-3.5 line-clamp-3 text-[13px] leading-6 text-cf-text-caption">
-              {rel.description}
-            </p>
-          ) : null}
-        </Link>
-      ))}
+            </div>
+            {rel.description ? (
+              <p className="mt-3.5 line-clamp-3 text-[13px] leading-6 text-cf-text-caption">
+                {rel.description}
+              </p>
+            ) : null}
+          </Link>
+        )
+      })}
     </div>
   )
 }

@@ -1,12 +1,14 @@
 import { CharacterFriendButton } from '@/components/character-friend-button'
-import { OrbitalPortrait, relationshipDots } from '@/components/character-orbital-portrait'
+import { CharacterConstellation } from '@/components/character-constellation'
+import type { ConstellationNode } from '@/lib/character-constellation'
 import { presenceOf } from '@/components/character-presence'
-import type { Character, CharacterRelationshipWithTarget, CharacterStats } from '@/lib/types'
+import type { Character, CharacterStats } from '@/lib/types'
 
 interface CharacterProfileHeroProps {
   character: Character
   stats: CharacterStats
-  relationships: CharacterRelationshipWithTarget[]
+  /** Узлы орбитального поля — собираются сервером через buildConstellationNodes. */
+  constellation: ConstellationNode[]
 }
 
 const RELATIVE = new Intl.RelativeTimeFormat('ru', { numeric: 'auto' })
@@ -49,7 +51,7 @@ const TONE_DOT: Record<'on' | 'slow' | 'quiet', string> = {
 export function CharacterProfileHero({
   character,
   stats,
-  relationships,
+  constellation,
 }: CharacterProfileHeroProps) {
   const canChat =
     character.can_receive_messages !== false && character.reply_mode !== 'disabled'
@@ -66,10 +68,10 @@ export function CharacterProfileHero({
 
   return (
     <section className="cf-rise flex flex-col items-center pt-24 md:pt-28">
-      <OrbitalPortrait
+      <CharacterConstellation
         name={character.name}
         avatar={character.avatar}
-        dots={relationshipDots(relationships)}
+        nodes={constellation}
       />
 
       <h1 className="mt-6 text-center text-[34px] font-light leading-tight tracking-tight text-cf-text-heading md:text-[40px]">

@@ -200,6 +200,76 @@ export async function upsertCharacterFriendship(userId: string, characterId: str
   )
 }
 
+/**
+ * Все Character↔User связи для данного персонажа. Используется в Studio
+ * для блока «Читатели»: показывает и принятых, и ждущих, и заблокированных —
+ * админу нужен полный список, чтобы решать спорные случаи.
+ */
+export async function listCharacterReaders(characterId: string): Promise<Array<{
+  id: string
+  user_id: string
+  handle: string
+  display_name: string
+  avatar: string | null
+  status: CharacterFriendship['status']
+  intimacy_level: number
+  created_at: string
+}>> {
+  return dbQuery<{
+    id: string
+    user_id: string
+    handle: string
+    display_name: string
+    avatar: string | null
+    status: CharacterFriendship['status']
+    intimacy_level: number
+    created_at: string
+  }>(
+    `SELECT cf.id, cf.user_id, u.handle, u.display_name, u.avatar,
+            cf.status, cf.intimacy_level, cf.created_at
+     FROM character_friendships cf
+     JOIN users u ON u.id = cf.user_id
+     WHERE cf.character_id = $1
+     ORDER BY
+       CASE cf.status WHEN 'pending' THEN 0 WHEN 'accepted' THEN 1 WHEN 'blocked' THEN 2 ELSE 3 END,
+       cf.intimacy_level DESC,
+       cf.created_at DESC`,
+    [characterId],
+  )
+}
+
+/**
+ * Админская смена статуса Character↔User связи. Отличается от
+ * `upsertCharacterFriendship` тем, что явно задаёт статус и не трогает
+ * `intimacy_level` (только обновляет до переданного значения).
+ * Доп. защита: status ∈ ENUM, иначе 400 на уровне БД.
+ */
+export async function setCharacterReaderStatus(
+  userId: string,
+  characterId: string,
+  status: CharacterFriendship['status'],
+): Promise<CharacterFriendship | null> {
+  return dbQueryOne<CharacterFriendship>(
+    `UPDATE character_friendships
+     SET status = $3::character_friendship_status
+     WHERE user_id = $1 AND character_id = $2
+     RETURNING *`,
+    [userId, characterId, status],
+  )
+}
+
+/** Жёсткое удаление Character↔User связи (для админских «развести»). */
+export async function adminDeleteCharacterFriendship(
+  userId: string,
+  characterId: string,
+): Promise<boolean> {
+  const result = await dbQueryOne<{ user_id: string }>(
+    `DELETE FROM character_friendships WHERE user_id = $1 AND character_id = $2 RETURNING user_id`,
+    [userId, characterId],
+  )
+  return Boolean(result)
+}
+
 export async function getOrCreateCharacterConversation(userId: string, characterId: string) {
   return dbQueryOne<CharacterConversation>(
     `
