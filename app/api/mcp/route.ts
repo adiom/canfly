@@ -6,6 +6,8 @@ import { registerChaptersTools } from '@/lib/mcp/tools/chapters'
 import { registerReleasesTools } from '@/lib/mcp/tools/releases'
 import { registerSearchTools } from '@/lib/mcp/tools/search'
 
+const ALLOWED_IPS = ['164.37.105.34']
+
 const mcpHandler = createMcpHandler(
   (server) => {
     registerCharactersTools(server)
@@ -20,17 +22,22 @@ const mcpHandler = createMcpHandler(
   },
 )
 
-async function authGuard(request: Request): Promise<NextResponse | null> {
-  const authHeader = request.headers.get('authorization')
-  const apiKey = process.env.MCP_API_KEY
+function getClientIp(request: Request): string {
+  const forwarded = request.headers.get('x-forwarded-for')
+  if (forwarded) return forwarded.split(',')[0].trim()
+  return request.headers.get('x-real-ip') ?? '0.0.0.0'
+}
 
-  if (!apiKey || authHeader !== `Bearer ${apiKey}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+async function authGuard(request: Request): Promise<NextResponse | null> {
+  const ip = getClientIp(request)
+
+  if (!ALLOWED_IPS.includes(ip)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
   const rl = await checkRateLimit({
     bucket: 'mcp',
-    subject: 'canfly-mcp-server',
+    subject: ip,
     limit: 300,
     windowSeconds: 3600,
   })
