@@ -1,7 +1,7 @@
 import type { MetadataRoute } from 'next'
 import { fetchReleasesWithEditions } from '@/lib/server/releases'
 import { fetchNewsPosts } from '@/lib/server/news'
-import { fetchCharactersList } from '@/lib/server/characters'
+import { fetchPublicCharactersList } from '@/lib/server/characters'
 import { fetchAllSeries } from '@/lib/server/series'
 import { fetchPublishedEditionsForSitemap } from '@/lib/server/editions'
 import { CATALOG_PATH, LANDING_PATH } from '@/lib/nav'
@@ -12,7 +12,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const [releases, newsPosts, characters, series, editions] = await Promise.all([
     fetchReleasesWithEditions({ status: 'published' }),
     fetchNewsPosts(100),
-    fetchCharactersList(),
+    fetchPublicCharactersList(),
     fetchAllSeries(),
     fetchPublishedEditionsForSitemap(),
   ])

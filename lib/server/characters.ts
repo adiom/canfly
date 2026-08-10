@@ -13,6 +13,15 @@ export async function fetchCharactersList(): Promise<Character[]> {
   )
 }
 
+/** Публичный каталог: люди и города литературной вселенной. */
+export async function fetchPublicCharactersList(): Promise<Character[]> {
+  return dbQuery<Character>(
+    `SELECT * FROM characters
+     WHERE character_type IN ('person', 'city')
+     ORDER BY created_at DESC`,
+  )
+}
+
 export async function fetchCitiesList(): Promise<Character[]> {
   return dbQuery<Character>(
     'SELECT * FROM characters WHERE character_type = \'city\' ORDER BY created_at DESC',

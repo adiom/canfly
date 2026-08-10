@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from 'react'
 import Image from 'next/image'
+import { useRouter } from 'next/navigation'
 
 import { GlassButton } from '@/components/ui/glass-button'
 import { GlassChip, type ChipTone } from '@/components/ui/glass-chip'
@@ -52,21 +53,17 @@ const TONE_TO_CHIP: Record<string, ChipTone> = {
  * ошибочное удаление легко отменить повторным добавлением.
  */
 export function RelationshipsEditor({ characterId, initial }: RelationshipsEditorProps) {
-  const [items, setItems] = useState(initial)
-  // Сбрасываем локальный state при ревалидации сервера.
-  useEffect(() => setItems(initial), [initial])
-
   return (
     <div className="space-y-5">
       <AddRelationshipForm characterId={characterId} />
 
-      {items.length === 0 ? (
+      {initial.length === 0 ? (
         <p className="rounded-2xl bg-cf-air-surface px-4 py-6 text-center text-[13px] text-cf-text-3 backdrop-blur-xl">
           Связей пока нет. Добавьте первую — форма выше.
         </p>
       ) : (
         <ul className="space-y-3">
-          {items.map((rel) => (
+          {initial.map((rel) => (
             <RelationshipCard
               key={rel.id}
               characterId={characterId}
@@ -90,6 +87,7 @@ function AddRelationshipForm({ characterId }: { characterId: string }) {
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
   const [isPending, startSearch] = useTransition()
+  const router = useRouter()
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Дебаунс поиска — 250мс, чтобы не бить БД на каждый символ.
@@ -146,6 +144,7 @@ function AddRelationshipForm({ characterId }: { characterId: string }) {
 
         await upsertCharacterRelationshipAction(fd)
         reset()
+        router.refresh()
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Не удалось сохранить связь')
       }
@@ -360,6 +359,7 @@ function RelationshipCard({
   relationship: CharacterRelationshipWithMutual
 }) {
   const [pending, startTransition] = useTransition()
+  const router = useRouter()
 
   function onDelete() {
     startTransition(async () => {
@@ -368,10 +368,10 @@ function RelationshipCard({
       fd.set('characterId', characterId)
       try {
         await deleteCharacterRelationshipAction(fd)
+        router.refresh()
       } catch (e) {
         // Здесь нет локального state для ошибки — карточка исчезнет после
         // ревалидации, ошибки редки (только IDOR или удалённая запись).
-        // eslint-disable-next-line no-console
         console.error(e)
       }
     })

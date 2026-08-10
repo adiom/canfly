@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useState, useTransition } from 'react'
+import { useTransition } from 'react'
 import Image from 'next/image'
+import { useRouter } from 'next/navigation'
 
 import { GlassButton } from '@/components/ui/glass-button'
 import { GlassChip, type ChipTone } from '@/components/ui/glass-chip'
@@ -44,15 +45,12 @@ const STATUS_TONE: Record<CharacterFriendshipStatus, ChipTone> = {
  * с переключателем статуса и кнопкой удаления. Стиль — orbital glass.
  */
 export function ReadersList({ characterId, initial }: ReadersListProps) {
-  const [items, setItems] = useState(initial)
-  useEffect(() => setItems(initial), [initial])
-
   const groups: Record<CharacterFriendshipStatus, Reader[]> = {
     pending: [],
     accepted: [],
     blocked: [],
   }
-  for (const r of items) groups[r.status].push(r)
+  for (const reader of initial) groups[reader.status].push(reader)
 
   return (
     <div className="space-y-5">
@@ -78,7 +76,7 @@ export function ReadersList({ characterId, initial }: ReadersListProps) {
         )
       })}
 
-      {items.length === 0 && (
+      {initial.length === 0 && (
         <p className="rounded-2xl bg-cf-air-surface px-4 py-6 text-center text-[13px] text-cf-text-3 backdrop-blur-xl">
           Пока никто не подружился с этим героем.
         </p>
@@ -95,6 +93,7 @@ function ReaderCard({
   reader: Reader
 }) {
   const [pending, startTransition] = useTransition()
+  const router = useRouter()
 
   function setStatus(status: CharacterFriendshipStatus) {
     startTransition(async () => {
@@ -104,8 +103,8 @@ function ReaderCard({
       fd.set('status', status)
       try {
         await setCharacterReaderStatusAction(fd)
+        router.refresh()
       } catch (e) {
-        // eslint-disable-next-line no-console
         console.error(e)
       }
     })
@@ -118,8 +117,8 @@ function ReaderCard({
       fd.set('userId', reader.user_id)
       try {
         await deleteCharacterReaderAction(fd)
+        router.refresh()
       } catch (e) {
-        // eslint-disable-next-line no-console
         console.error(e)
       }
     })

@@ -128,6 +128,7 @@ export async function createCharacterAction(formData: FormData) {
   const character = await charactersDb.createCharacter(data)
 
   revalidatePath('/studio/characters')
+  revalidatePath('/characters')
   if (character) redirect(`/studio/characters/${character.id}`)
 }
 
@@ -173,6 +174,7 @@ export async function updateCharacterAction(id: string, formData: FormData) {
 
   revalidatePath('/studio/characters')
   revalidatePath(`/studio/characters/${id}`)
+  revalidatePath('/characters')
   redirect(`/studio/characters/${id}`)
 }
 
@@ -190,6 +192,7 @@ export async function deleteCharacterAction(id: string) {
   await requireAdmin()
   await charactersDb.deleteCharacter(id)
   revalidatePath('/studio/characters')
+  revalidatePath('/characters')
   redirect('/studio/characters')
 }
 
