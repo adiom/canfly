@@ -1,4 +1,5 @@
-import { dbQuery, dbQueryOne } from '@/lib/db'
+import { dbQuery, dbQueryOne, dbUpdatePartial } from '@/lib/db'
+import type { UpdatableColumn } from '@/lib/db'
 import {
   Character,
   CharacterFriendSummary,
@@ -182,52 +183,39 @@ export async function createCharacter(data: Record<string, unknown>) {
   )
 }
 
+const characterUpdatable: Record<string, UpdatableColumn> = {
+  name: { column: 'name' },
+  slug: { column: 'slug' },
+  avatar: { column: 'avatar' },
+  bio: { column: 'bio' },
+  full_description: { column: 'full_description' },
+  abilities: {
+    column: 'abilities',
+    cast: '::jsonb',
+    serialize: (value) => JSON.stringify(value ?? []),
+  },
+  speaking_style: { column: 'speaking_style' },
+  personality: { column: 'personality' },
+  boundaries: { column: 'boundaries' },
+  knowledge_scope: { column: 'knowledge_scope' },
+  spoiler_policy: { column: 'spoiler_policy' },
+  system_role: { column: 'system_role' },
+  reply_mode: { column: 'reply_mode', cast: '::character_reply_mode' },
+  can_receive_messages: { column: 'can_receive_messages' },
+  character_type: { column: 'character_type', cast: '::character_type' },
+  passport: { column: 'passport' },
+  map_image_url: { column: 'map_image_url' },
+}
+
+/** Частичный апдейт: непереданные поля сохраняют текущее значение. */
 export async function updateCharacter(id: string, data: Record<string, unknown>) {
-  return dbQueryOne<Character>(
-    `
-      UPDATE characters
-      SET
-        name = $2,
-        slug = $3,
-        avatar = $4,
-        bio = $5,
-        full_description = $6,
-        abilities = $7::jsonb,
-        speaking_style = $8,
-        personality = $9,
-        boundaries = $10,
-        knowledge_scope = $11,
-        spoiler_policy = $12,
-        system_role = $13,
-        reply_mode = $14::character_reply_mode,
-        can_receive_messages = $15,
-        character_type = $16::character_type,
-        passport = $17,
-        map_image_url = $18
-      WHERE id = $1
-      RETURNING *
-    `,
-    [
-      id,
-      data.name,
-      data.slug,
-      data.avatar,
-      data.bio,
-      data.full_description,
-      JSON.stringify(data.abilities ?? []),
-      data.speaking_style,
-      data.personality,
-      data.boundaries,
-      data.knowledge_scope,
-      data.spoiler_policy,
-      data.system_role ?? '',
-      data.reply_mode ?? 'ai_auto',
-      data.can_receive_messages ?? true,
-      data.character_type ?? 'person',
-      data.passport,
-      data.map_image_url,
-    ],
-  )
+  return dbUpdatePartial<Character>({
+    table: 'characters',
+    id,
+    data,
+    columns: characterUpdatable,
+    returning: '*',
+  })
 }
 
 export async function updatePassport(id: string, passport: string | null) {

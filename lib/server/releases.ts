@@ -1,4 +1,5 @@
-import { dbQuery, dbQueryOne, withTransaction } from '@/lib/db'
+import { dbQuery, dbQueryOne, dbUpdatePartial, withTransaction } from '@/lib/db'
+import type { UpdatableColumn } from '@/lib/db'
 import type {
   Release,
   ReleaseStatus,
@@ -65,29 +66,33 @@ export async function createRelease(data: Record<string, unknown>) {
   )
 }
 
+const releaseUpdatable: Record<string, UpdatableColumn> = {
+  title: { column: 'title' },
+  slug: { column: 'slug' },
+  description: { column: 'description' },
+  cover_image: { column: 'cover_image' },
+  genre: { column: 'genre' },
+  release_date: { column: 'release_date' },
+  isbn: { column: 'isbn' },
+  authors: {
+    column: 'authors',
+    cast: '::jsonb',
+    serialize: (value) => JSON.stringify(value ?? []),
+  },
+  annotation: { column: 'annotation' },
+  editor_notes: { column: 'editor_notes' },
+  status: { column: 'status', cast: '::release_status' },
+}
+
+/** Частичный апдейт: непереданные поля сохраняют текущее значение. */
 export async function updateRelease(id: string, data: Record<string, unknown>) {
-  return dbQueryOne<Release>(
-    `UPDATE releases SET
-      title = $2, slug = $3, description = $4, cover_image = $5, genre = $6,
-      release_date = $7, isbn = $8, authors = $9::jsonb, annotation = $10,
-      editor_notes = $11, status = $12::release_status
-     WHERE id = $1
-     RETURNING ${releaseColumns}`,
-    [
-      id,
-      data.title,
-      data.slug,
-      data.description ?? null,
-      data.cover_image ?? null,
-      data.genre ?? null,
-      data.release_date ?? null,
-      data.isbn ?? null,
-      JSON.stringify(data.authors ?? []),
-      data.annotation ?? null,
-      data.editor_notes ?? null,
-      data.status ?? 'draft',
-    ],
-  )
+  return dbUpdatePartial<Release>({
+    table: 'releases',
+    id,
+    data,
+    columns: releaseUpdatable,
+    returning: releaseColumns,
+  })
 }
 
 export async function updateReleaseStatus(id: string, status: string) {

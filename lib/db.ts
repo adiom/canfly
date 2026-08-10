@@ -72,6 +72,60 @@ export async function dbQueryOne<T extends QueryResultRow>(query: string, params
 }
 
 /**
+ * Описание колонки для частичного UPDATE: ключ в data → колонка и (опционально)
+ * приведение типа/сериализация значения.
+ */
+export interface UpdatableColumn {
+  /** Имя колонки в таблице. */
+  column: string
+  /** Постфикс приведения типа для плейсхолдера, например '::jsonb'. */
+  cast?: string
+  /** Преобразование значения перед отправкой в pg (JSON.stringify и т.п.). */
+  serialize?: (value: unknown) => unknown
+}
+
+/**
+ * Собирает частичный UPDATE: в SET попадают только те колонки, чьи ключи
+ * присутствуют в data со значением не undefined. Отсутствие ключа (или
+ * undefined) означает «не трогать», явный null — «обнулить»; различать это
+ * принципиально, иначе апдейт одного поля затирает остальные (так терялись
+ * аудио-поля глав).
+ *
+ * Значения всегда уходят параметрами — в SQL подставляются только имена
+ * колонок из whitelist, никакого пользовательского ввода.
+ */
+export async function dbUpdatePartial<T extends QueryResultRow>(options: {
+  table: string
+  id: string
+  data: Record<string, unknown>
+  columns: Record<string, UpdatableColumn>
+  returning: string
+}): Promise<T | null> {
+  const { table, id, data, columns, returning } = options
+
+  const assignments: string[] = []
+  const params: unknown[] = [id]
+
+  for (const [key, spec] of Object.entries(columns)) {
+    if (!(key in data)) continue
+    const value = data[key]
+    // undefined (в том числе от zod .optional()) — «не трогать»; обнуляет только явный null.
+    if (value === undefined) continue
+    params.push(spec.serialize ? spec.serialize(value) : value)
+    assignments.push(`${spec.column} = $${params.length}${spec.cast ?? ''}`)
+  }
+
+  if (assignments.length === 0) {
+    return dbQueryOne<T>(`SELECT ${returning} FROM ${table} WHERE id = $1`, [id])
+  }
+
+  return dbQueryOne<T>(
+    `UPDATE ${table} SET ${assignments.join(', ')} WHERE id = $1 RETURNING ${returning}`,
+    params,
+  )
+}
+
+/**
  * Выполняет fn внутри одной транзакции на отдельном клиенте из пула.
  * BEGIN/COMMIT/ROLLBACK управляются автоматически. Использовать для групп
  * запросов, которые должны быть атомарны (например DELETE + INSERT при

@@ -1,5 +1,5 @@
-import { z } from 'zod'
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import * as z from 'zod-v4'
+import type { McpServer } from '@modelcontextprotocol/server'
 import {
   fetchChaptersByEdition,
   fetchChapterById,
@@ -11,183 +11,133 @@ import {
   restoreChapterVersion,
 } from '@/lib/server/chapters'
 import { countWords } from '@/lib/mcp/word-count'
+import { json, notFound, toolError } from '@/lib/mcp/tool-result'
+
+const uuid = z.uuid()
+
+const chapterStatus = z.enum(['draft', 'published'])
 
 export function registerChaptersTools(server: McpServer) {
-  server.tool(
+  server.registerTool(
     'canfly_list_chapters',
-    'Получить список глав издания (без контента) — для оглавления. Возвращает массив с id, title, chapter_index, status, word_count, audio_url.',
     {
-      edition_id: z.string().describe('UUID издания'),
+      title: 'Главы издания',
+      description:
+        'Список глав издания без контента — для оглавления. Возвращает id, title, chapter_index, status, word_count, audio_url.',
+      inputSchema: z.object({ edition_id: uuid.describe('UUID издания') }),
+      annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async ({ edition_id }) => {
-      try {
-        const chapters = await fetchChaptersByEdition(edition_id)
-        return { content: [{ type: 'text', text: JSON.stringify(chapters, null, 2) }] }
-      } catch (e) {
-        return {
-          content: [{ type: 'text', text: `Ошибка: ${e instanceof Error ? e.message : String(e)}` }],
-          isError: true,
-        }
-      }
-    },
+    async ({ edition_id }) => json(await fetchChaptersByEdition(edition_id)),
   )
 
-  server.tool(
+  server.registerTool(
     'canfly_get_chapter',
-    'Получить одну главу со всем текстом (content). Содержимое автоматически санитизируется. Возвращает полный объект Chapter.',
     {
-      id: z.string().describe('UUID главы'),
+      title: 'Глава целиком',
+      description:
+        'Получить одну главу со всем текстом (content). Содержимое автоматически санитизируется.',
+      inputSchema: z.object({ id: uuid.describe('UUID главы') }),
+      annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async ({ id }) => {
-      try {
-        const chapter = await fetchChapterById(id)
-        if (!chapter) {
-          return { content: [{ type: 'text', text: `Глава с id="${id}" не найдена` }], isError: true }
-        }
-        return { content: [{ type: 'text', text: JSON.stringify(chapter, null, 2) }] }
-      } catch (e) {
-        return {
-          content: [{ type: 'text', text: `Ошибка: ${e instanceof Error ? e.message : String(e)}` }],
-          isError: true,
-        }
-      }
+      const chapter = await fetchChapterById(id)
+      return chapter ? json(chapter) : notFound('Глава', id)
     },
   )
 
-  server.tool(
+  server.registerTool(
     'canfly_create_chapter',
-    'Создать новую черновую главу в издании. chapter_index — порядковый номер (1-based). content — HTML. Статус по умолчанию draft. Возвращает созданную главу.',
     {
-      edition_id: z.string().describe('UUID издания'),
-      title: z.string().describe('Название главы'),
-      content: z.string().optional().describe('HTML-контент главы'),
-      chapter_index: z.number().int().min(1).describe('Порядковый номер (1-based)'),
-      status: z.enum(['draft', 'published']).optional().describe('Статус (по умолчанию draft)'),
+      title: 'Создать главу',
+      description:
+        'Создать новую черновую главу в издании. chapter_index — порядковый номер (1-based). content — HTML.',
+      inputSchema: z.object({
+        edition_id: uuid.describe('UUID издания'),
+        title: z.string().describe('Название главы'),
+        content: z.string().optional().describe('HTML-контент главы'),
+        chapter_index: z.number().int().min(1).describe('Порядковый номер (1-based)'),
+        status: chapterStatus.optional().describe('Статус (по умолчанию draft)'),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
-    async (data) => {
-      try {
-        const wordCount = countWords(data.content)
-        const chapter = await createChapter({
-          ...data,
-          word_count: wordCount,
-        })
-        return { content: [{ type: 'text', text: JSON.stringify(chapter, null, 2) }] }
-      } catch (e) {
-        return {
-          content: [{ type: 'text', text: `Ошибка: ${e instanceof Error ? e.message : String(e)}` }],
-          isError: true,
-        }
-      }
-    },
+    async (data) => json(await createChapter({ ...data, word_count: countWords(data.content) })),
   )
 
-  server.tool(
+  server.registerTool(
     'canfly_update_chapter',
-    'Обновить главу. Если контент меняется и там уже был текст — старая версия автоматически сохраняется в chapter_versions. ОБЯЗАТЕЛЬНО сначала прочитать главу через canfly_get_chapter. Возвращает обновлённую главу.',
     {
-      id: z.string().describe('UUID главы'),
-      title: z.string().optional().describe('Название главы'),
-      content: z.string().optional().describe('Новый HTML-контент'),
-      chapter_index: z.number().int().optional().describe('Новый порядковый номер'),
-      status: z.enum(['draft', 'published']).optional().describe('Статус'),
-      audio_url: z.string().optional().describe('URL аудио-файла'),
+      title: 'Обновить главу',
+      description:
+        'Обновить главу. Апдейт частичный: непереданные поля (включая аудио) сохраняют текущее значение. Если контент меняется и там уже был текст, старая версия автоматически уходит в chapter_versions.',
+      inputSchema: z.object({
+        id: uuid.describe('UUID главы'),
+        title: z.string().optional().describe('Название главы'),
+        content: z.string().optional().describe('Новый HTML-контент'),
+        chapter_index: z.number().int().min(1).optional().describe('Новый порядковый номер'),
+        status: chapterStatus.optional().describe('Статус'),
+        audio_url: z.string().nullable().optional().describe('URL аудио-файла (null — отвязать)'),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     },
     async ({ id, ...data }) => {
-      try {
-        const existing = await fetchChapterById(id)
-        if (!existing) {
-          return { content: [{ type: 'text', text: `Глава с id="${id}" не найдена` }], isError: true }
-        }
+      const existing = await fetchChapterById(id)
+      if (!existing) return notFound('Глава', id)
 
-        // Автоматическое версионирование: если контент изменился
-        const newContent = data.content ?? existing.content
-        if (data.content && existing.content && data.content !== existing.content) {
-          await createChapterVersion(id, existing.content)
-        }
-
-        const wordCount = countWords(newContent)
-
-        const updated = await updateChapter(id, {
-          title: data.title ?? existing.title,
-          content: newContent,
-          chapter_index: data.chapter_index ?? existing.chapter_index,
-          status: data.status ?? existing.status,
-          word_count: wordCount,
-        })
-        return { content: [{ type: 'text', text: JSON.stringify(updated, null, 2) }] }
-      } catch (e) {
-        return {
-          content: [{ type: 'text', text: `Ошибка: ${e instanceof Error ? e.message : String(e)}` }],
-          isError: true,
-        }
+      if (data.content && existing.content && data.content !== existing.content) {
+        await createChapterVersion(id, existing.content)
       }
+
+      const updated = await updateChapter(id, {
+        ...data,
+        // word_count пересчитываем только когда пришёл новый текст: иначе
+        // счётчик разъедется с содержимым при апдейте одного заголовка.
+        ...(data.content === undefined ? {} : { word_count: countWords(data.content) }),
+      })
+      return json(updated)
     },
   )
 
-  server.tool(
+  server.registerTool(
     'canfly_publish_chapter',
-    'Опубликовать главу (status → published, published_at = now). Идемпотентно: повторный вызов не ломает.',
     {
-      id: z.string().describe('UUID главы'),
+      title: 'Опубликовать главу',
+      description: 'Опубликовать главу (status → published, published_at = now). Идемпотентно.',
+      inputSchema: z.object({ id: uuid.describe('UUID главы') }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     },
     async ({ id }) => {
-      try {
-        const chapter = await publishChapter(id)
-        if (!chapter) {
-          return { content: [{ type: 'text', text: `Глава с id="${id}" не найдена` }], isError: true }
-        }
-        return { content: [{ type: 'text', text: JSON.stringify(chapter, null, 2) }] }
-      } catch (e) {
-        return {
-          content: [{ type: 'text', text: `Ошибка: ${e instanceof Error ? e.message : String(e)}` }],
-          isError: true,
-        }
-      }
+      const chapter = await publishChapter(id)
+      return chapter ? json(chapter) : notFound('Глава', id)
     },
   )
 
-  server.tool(
+  server.registerTool(
     'canfly_list_chapter_versions',
-    'Получить историю версий контента главы. Каждая версия содержит id, content, version_number, created_at.',
     {
-      chapter_id: z.string().describe('UUID главы'),
+      title: 'История версий главы',
+      description:
+        'История версий контента главы. Каждая версия содержит id, content, version_number, created_at.',
+      inputSchema: z.object({ chapter_id: uuid.describe('UUID главы') }),
+      annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async ({ chapter_id }) => {
-      try {
-        const versions = await fetchChapterVersions(chapter_id)
-        return { content: [{ type: 'text', text: JSON.stringify(versions, null, 2) }] }
-      } catch (e) {
-        return {
-          content: [{ type: 'text', text: `Ошибка: ${e instanceof Error ? e.message : String(e)}` }],
-          isError: true,
-        }
-      }
-    },
+    async ({ chapter_id }) => json(await fetchChapterVersions(chapter_id)),
   )
 
-  server.tool(
+  server.registerTool(
     'canfly_restore_chapter_version',
-    'Откатить главу к сохранённой версии. Текущее содержимое тоже сохраняется как новая версия (откат не теряет данные). Возвращает обновлённую главу.',
     {
-      chapter_id: z.string().describe('UUID главы'),
-      version_id: z.string().describe('UUID версии для восстановления'),
+      title: 'Откатить главу к версии',
+      description:
+        'Откатить главу к сохранённой версии. Текущее содержимое тоже сохраняется как новая версия, поэтому откат не теряет данные.',
+      inputSchema: z.object({
+        chapter_id: uuid.describe('UUID главы'),
+        version_id: uuid.describe('UUID версии для восстановления'),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
     },
     async ({ chapter_id, version_id }) => {
-      try {
-        const restored = await restoreChapterVersion(chapter_id, version_id)
-        if (!restored) {
-          return {
-            content: [{ type: 'text', text: `Версия не найдена или не принадлежит главе` }],
-            isError: true,
-          }
-        }
-        return { content: [{ type: 'text', text: JSON.stringify(restored, null, 2) }] }
-      } catch (e) {
-        return {
-          content: [{ type: 'text', text: `Ошибка: ${e instanceof Error ? e.message : String(e)}` }],
-          isError: true,
-        }
-      }
+      const restored = await restoreChapterVersion(chapter_id, version_id)
+      return restored ? json(restored) : toolError('Версия не найдена или не принадлежит главе')
     },
   )
 }

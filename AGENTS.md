@@ -121,7 +121,19 @@ Server actions лежат в `lib/actions/` (`studio.ts`, `studio-create.ts`, `s
 
 `POST /api/characters/chat` — `streamText` из AI SDK v6, модель `openai/gpt-4o-mini` через Vercel AI Gateway (`OPENAI_API_KEY`). Системные промпты персонажей **захардкожены** в самом route (`characterPrompts`). Требуется авторизация + рейт-лимит. Вокруг персонажей есть соцслой: посты, стена, дружба, диалоги и память (`character_*` таблицы).
 
-### 9. UI
+### 9. MCP-сервер
+
+`POST|GET|DELETE /api/mcp` — MCP-сервер на `@modelcontextprotocol/server` v2 через `mcp-handler` v2 (Streamable HTTP, stateless: инстанс сервера строится заново на каждый запрос). Тулы регистрируются в `lib/mcp/tools/*.ts`, общие помощники ответа — в `lib/mcp/tool-result.ts`.
+
+**Зачем отдельный zod.** SDK v2 требует `zod ^4.2.0`, а проект живёт на zod 3 (`lib/schemas/**`). Поэтому в `package.json` есть алиас `"zod-v4": "npm:zod@^4.2.0"`, и файлы `lib/mcp/**` импортируют `* as z from 'zod-v4'`. Не переводить их на обычный `zod` — `registerTool` не примет схему без `~standard.jsonSchema`. И наоборот: не тащить `zod-v4` в остальной код.
+
+**Правила для тулов.** `registerTool(name, config, cb)`, `inputSchema` — всегда `z.object()`. Обязательны `annotations` (`readOnlyHint` для читающих, `destructiveHint` для перезаписывающих) — по ним хост решает, спрашивать ли подтверждение. Идентификаторы — `z.uuid()`, иначе мусор дойдёт до Postgres. `try/catch` не нужен: SDK сам превращает исключение в `isError: true`. Списки возвращать урезанными (`pick`) и с `limit`/`offset` — полные записи раздувают контекст модели.
+
+**Защита — только `MCP_TOKEN`.** Тулы ходят в БД напрямую и **не проходят гварды `studio-auth`**: ни `requireStudioSession()`, ни проверок владения. Единственный барьер — статический Bearer-токен; без переменной роут отвечает 503. Поэтому расширять доступ к эндпоинту нельзя, не добавив авторизацию уровня `studio-auth` в сами тулы. 401 отдаётся **без** заголовка `WWW-Authenticate`: с ним MCP Inspector и mcp-remote принимают ответ за приглашение к OAuth и уходят в регистрацию клиента по RFC 9728, которой здесь нет. Рейт-лимит (300/час) считается по хешу токена, а не по IP — `x-forwarded-for` приходит от клиента.
+
+Подключение — `.mcp.json` (`type: http` + заголовок с `${MCP_TOKEN}`); `MCP_TOKEN` должен быть в окружении оболочки, а не только в `.env.local`.
+
+### 10. UI
 
 Дизайн-система описана в `docs/design-system.md` — читать перед версткой. Ключевое: цвета только через CSS-переменные `cf-*` (`bg-cf-bg`, `text-cf-text-1`, `bg-cf-accent`, …), определённые в `app/globals.css`; хардкод hex не использовать; **префикс `dark:` не применяется** — темы переключаются подменой значений переменных на `.dark`.
 
@@ -147,7 +159,7 @@ Server actions лежат в `lib/actions/` (`studio.ts`, `studio-create.ts`, `s
 
 ## Переменные окружения
 
-Полный актуальный список — в `.env.example`. Обязательные: `DATABASE_URL`, `AUTH_SECRET`, `NEXT_PUBLIC_BASE_URL`. Дальше по необходимости: `POSTMARK_SERVER_TOKEN` + `POSTMARK_FROM_EMAIL` (magic link), `OPENAI_API_KEY` (AI), `BLOB_READ_WRITE_TOKEN` (загрузки), `CRON_SECRET` (cron), OAuth-пары `AUTH_{YANDEX,GOOGLE,GITHUB}_CLIENT_ID/SECRET` и `AUTH_CANFLY_*` для SSO. Кнопки провайдеров в UI показываются по `NEXT_PUBLIC_AUTH_*_ENABLED` / `NEXT_PUBLIC_CANFLY_SSO_ENABLED` — включать флаг без ключей бессмысленно.
+Полный актуальный список — в `.env.example`. Обязательные: `DATABASE_URL`, `AUTH_SECRET`, `NEXT_PUBLIC_BASE_URL`. Дальше по необходимости: `POSTMARK_SERVER_TOKEN` + `POSTMARK_FROM_EMAIL` (magic link), `OPENAI_API_KEY` (AI), `BLOB_READ_WRITE_TOKEN` (загрузки), `CRON_SECRET` (cron), `MCP_TOKEN` (защита `/api/mcp`, см. раздел 9), OAuth-пары `AUTH_{YANDEX,GOOGLE,GITHUB}_CLIENT_ID/SECRET` и `AUTH_CANFLY_*` для SSO. Кнопки провайдеров в UI показываются по `NEXT_PUBLIC_AUTH_*_ENABLED` / `NEXT_PUBLIC_CANFLY_SSO_ENABLED` — включать флаг без ключей бессмысленно.
 
 ## Документация
 

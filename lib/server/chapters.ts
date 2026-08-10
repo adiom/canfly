@@ -1,4 +1,5 @@
-import { dbQuery, dbQueryOne, withTransaction } from '@/lib/db'
+import { dbQuery, dbQueryOne, dbUpdatePartial, withTransaction } from '@/lib/db'
+import type { UpdatableColumn } from '@/lib/db'
 import { sanitizeChapterHtml } from '@/lib/sanitize'
 import type { Chapter, ChapterVersion } from '@/lib/releases-types'
 
@@ -103,31 +104,42 @@ export async function createChapter(data: Record<string, unknown>) {
   )
 }
 
+/**
+ * Колонки, которые разрешено менять через updateChapter. Ключ отсутствует в
+ * data — колонка не участвует в UPDATE.
+ */
+const chapterUpdatable: Record<string, UpdatableColumn> = {
+  title: { column: 'title' },
+  content: { column: 'content' },
+  audio_url: { column: 'audio_url' },
+  audio_blob_path: { column: 'audio_blob_path' },
+  duration_seconds: { column: 'duration_seconds' },
+  audio_metadata: {
+    column: 'audio_metadata',
+    cast: '::jsonb',
+    serialize: (value) => JSON.stringify(value ?? {}),
+  },
+  audio_content_type: { column: 'audio_content_type' },
+  audio_file_size_bytes: { column: 'audio_file_size_bytes' },
+  audio_uploaded_at: { column: 'audio_uploaded_at' },
+  chapter_index: { column: 'chapter_index' },
+  status: { column: 'status', cast: '::chapter_status' },
+  word_count: { column: 'word_count' },
+}
+
+/**
+ * Частичный апдейт: перезаписываются только переданные поля. Раньше запрос
+ * выставлял все колонки сразу, поэтому вызов с одним title обнулял аудио-поля
+ * главы (audio_url, duration_seconds и остальные пять).
+ */
 export async function updateChapter(id: string, data: Record<string, unknown>) {
-  return dbQueryOne<Chapter>(
-    `UPDATE chapters SET
-      title = $2, content = $3, audio_url = $4, audio_blob_path = $5,
-      duration_seconds = $6, audio_metadata = $7::jsonb, audio_content_type = $8,
-      audio_file_size_bytes = $9, audio_uploaded_at = $10,
-      chapter_index = $11, status = $12::chapter_status, word_count = $13
-     WHERE id = $1
-     RETURNING ${chapterColumns}`,
-    [
-      id,
-      data.title,
-      data.content ?? null,
-      data.audio_url ?? null,
-      data.audio_blob_path ?? null,
-      data.duration_seconds ?? null,
-      JSON.stringify(data.audio_metadata ?? {}),
-      data.audio_content_type ?? null,
-      data.audio_file_size_bytes ?? null,
-      data.audio_uploaded_at ?? null,
-      data.chapter_index,
-      data.status ?? 'draft',
-      data.word_count ?? 0,
-    ],
-  )
+  return dbUpdatePartial<Chapter>({
+    table: 'chapters',
+    id,
+    data,
+    columns: chapterUpdatable,
+    returning: chapterColumns,
+  })
 }
 
 export async function reorderChapters(editionId: string, chapterIds: string[]) {
