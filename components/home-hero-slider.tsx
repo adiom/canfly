@@ -148,9 +148,9 @@ export function HomeHeroSlider({ slides }: HomeHeroSliderProps) {
                       >
                         {slide.eyebrow || theme.label}
                       </p>
-                      <h1 className="max-w-4xl text-4xl font-black uppercase leading-[0.88] tracking-normal text-cf-text-heading text-balance sm:text-5xl md:text-6xl lg:text-8xl">
+                      <h2 className="max-w-4xl text-4xl font-black uppercase leading-[0.88] tracking-normal text-cf-text-heading text-balance sm:text-5xl md:text-6xl lg:text-8xl">
                         {slide.title}
-                      </h1>
+                      </h2>
                       {slide.description ? (
                         <p className="mt-7 max-w-2xl text-base leading-7 text-cf-text-2 md:text-lg lg:text-xl">
                           {slide.description}

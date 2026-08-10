@@ -52,6 +52,7 @@ export default async function Home() {
 
   return (
     <main className="min-h-screen bg-cf-bg text-cf-text-1">
+      <h1 className="sr-only">canfly — культура твоего сознания</h1>
       <JsonLd
         schemas={[
           pageSchema,
@@ -71,9 +72,9 @@ export default async function Home() {
             <p className="mb-4 text-xs font-black uppercase tracking-[0.22em] text-cf-accent">
               hero-слайдер
             </p>
-            <h1 className="max-w-4xl text-5xl font-black uppercase leading-none text-cf-text-heading md:text-7xl">
+            <h2 className="max-w-4xl text-5xl font-black uppercase leading-none text-cf-text-heading md:text-7xl">
               {isMigrationMissing ? 'Создайте таблицу слайдера' : 'Добавьте первый слайд в админке'}
-            </h1>
+            </h2>
             <p className="mt-6 max-w-2xl text-lg leading-8 text-cf-text-caption">
               {isMigrationMissing
                 ? 'Главная страница больше не использует fallback. Выполните SQL из `postgres/schema.sql`, чтобы создать `homepage_slides` в Postgres.'

@@ -192,21 +192,25 @@ export function generateReleaseSchema(opts: {
     ),
   )
 
-  // Сборка character/about из единого списка. role хранится в Map, чтобы не
-  // менять сигнатуру characterNode: список — это данные, роль — мета.
-  const characterNodes =
-    characters && characters.length > 0
-      ? characters.map(character => {
-          const isCity = character.character_type === 'city'
-          return {
-            '@type': isCity ? 'Place' : 'Person',
-            '@id': ID.character(character.slug, isCity ? 'city' : 'person'),
-            name: character.name,
-            url: `${BASE_URL}/characters/${character.slug}`,
-            ...imageObject(character.avatar),
-          }
-        })
-      : []
+  // Сборка character/mentions/about из единого списка. role хранится в Map,
+  // чтобы не менять сигнатуру characterNode.
+  const persons: Array<Record<string, unknown>> = []
+  const cities: Array<Record<string, unknown>> = []
+
+  if (characters && characters.length > 0) {
+    for (const character of characters) {
+      const isCity = character.character_type === 'city'
+      const node: Record<string, unknown> = {
+        '@type': isCity ? 'Place' : 'Person',
+        '@id': ID.character(character.slug, isCity ? 'city' : 'person'),
+        name: character.name,
+        url: `${BASE_URL}/characters/${character.slug}`,
+        image: imageObject(character.avatar),
+      }
+      if (isCity) cities.push(node)
+      else persons.push(node)
+    }
+  }
 
   const protagonist =
     characters && characterRoles
@@ -246,7 +250,8 @@ export function generateReleaseSchema(opts: {
     inLanguage: 'ru-RU',
     isAccessibleForFree: true,
     ...(series && { isPartOf: ref(ID.series(series.slug)) }),
-    ...(characterNodes.length > 0 && { character: characterNodes }),
+    ...(persons.length > 0 && { character: persons }),
+    ...(cities.length > 0 && { mentions: cities }),
     ...(protagonistNode && { about: protagonistNode }),
     ...(workExample.length > 0 && { workExample }),
     ...(release.view_count > 0 && {
@@ -351,7 +356,6 @@ export function generateSeriesSchema(series: Series, releases: SeriesRelease[]) 
     inLanguage: 'ru-RU',
     author: ref(ID.author),
     publisher: ref(ID.organization),
-    numberOfItems: releases.length,
     hasPart: releases.map(release => ({
       '@type': 'CreativeWork',
       '@id': ID.work(release.slug),

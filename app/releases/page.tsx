@@ -77,7 +77,7 @@ export async function generateMetadata({
 
   const title =
     category === 'all' && page === 1
-      ? 'canfly | культура твоего сознания'
+      ? 'Релизы — книги, комиксы, аудио вселенной Canfly'
       : `Релизы${categoryLabel}${page > 1 ? ` — стр. ${page}` : ''} | canfly`
 
   const description =

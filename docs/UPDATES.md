@@ -1967,6 +1967,38 @@ ALTER TABLE books
 
 ---
 
+## [10 августа 2026] SEO: title, H1, CSP, JSON-LD schema
+
+### Что изменено
+
+**Title `/releases`:** страница наследовала title главной (`canfly | культура твоего сознания`). Теперь отдаёт уникальный: `Релизы — книги, комиксы, аудио вселенной Canfly`.
+
+**H1 на главной:** было 4 тега `<h1>` (по одному на слайд карусели). Теперь один `<h1>` — заголовок страницы; заголовки слайдов понижены до `<h2>`.
+
+**CSP для Яндекс.Метрики:** `frame-src` и `connect-src` не были заданы явно и наследовали `default-src 'self'`, из-за чего `mc.yandex.ru` блокировался. Добавлены:
+- `frame-src https://mc.yandex.ru`
+- `connect-src https://mc.yandex.ru https://mc.yandex.com`
+
+**JSON-LD:**
+- Убрано `numberOfItems` из `CreativeWorkSeries` — невалидное свойство (принадлежит `ItemList`, а не `CreativeWorkSeries`).
+- Исправлен `character` в `generateReleaseSchema`: `imageObject()` спредился через `...` на верхний уровень и затирал `@type: 'Person'`/`'Place'` на `ImageObject`. Теперь `image` вложен как свойство.
+- Города (`character_type === 'city'`) вынесены из `character` в `mentions` — schema.org разрешает `Person` для `character`, а `Place` только для `mentions`/`about`.
+
+### Как использовать
+
+- `/releases` — проверить title в `<head>`.
+- Главная — один H1 в DOM, заголовки карусели — H2.
+- DevTools → Network → `mc.yandex.ru` — нет CSP-ошибок.
+- Google Rich Results Test → `/release/[slug]` и `/series/[slug]` — валидная разметка без предупреждений.
+
+### Проверка
+
+- `pnpm exec tsc --noEmit`
+- `pnpm lint`
+- `pnpm build`
+
+---
+
 ## 📞 Support
 
 Если что-то не работает:
