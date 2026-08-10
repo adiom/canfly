@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "canfly": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "http://localhost:3000/api/mcp"]
+    }
+  }
+}
