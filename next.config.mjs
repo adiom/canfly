@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  htmlLimitedBots: /.*/,
   devIndicators: false,
   experimental: {
     serverComponentsHmrCache: true,

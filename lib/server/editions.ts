@@ -57,6 +57,10 @@ export async function fetchEditionByReleaseFormatTier(
 /**
  * Опубликованные издания опубликованных релизов вместе со слагом релиза —
  * для sitemap: без слага релиза URL оглавления не собрать.
+ *
+ * `digital` не попадает: у digital-изданий нет собственной страницы в
+ * `/vvvvv` (там `notFound()` для этого формата) — на странице релиза они
+ * ведут на внешнюю площадку (`external_url`).
  */
 export async function fetchPublishedEditionsForSitemap() {
   return dbQuery<Edition & { release_slug: string; release_updated_at: string }>(
@@ -66,6 +70,7 @@ export async function fetchPublishedEditionsForSitemap() {
      FROM editions e
      JOIN releases r ON r.id = e.release_id
      WHERE e.status = 'published' AND r.status = 'published'
+       AND e.format <> 'digital'
      ORDER BY r.slug ASC, e.created_at ASC`,
   )
 }
