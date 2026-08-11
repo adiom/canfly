@@ -5,6 +5,7 @@ import { fetchPublicCharactersList } from '@/lib/server/characters'
 import { fetchAllSeries } from '@/lib/server/series'
 import { fetchPublishedEditionsForSitemap } from '@/lib/server/editions'
 import { CATALOG_PATH, LANDING_PATH } from '@/lib/nav'
+import { getEditionTocUrl } from '@/lib/utils/editions'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
@@ -47,11 +48,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.7,
   }))
 
-  // `/vvvvv/[editionSlug]` индексируется (тип schema.org по формату издания),
-  // поэтому издания должны быть в карте. Приоритет ниже релиза: страница релиза
-  // остаётся главной точкой входа.
+  // У book/magazine точка входа — скролл-читалка `/scroll/[editionSlug]`,
+  // у comic/audio/digital — `/vvvvv/[editionSlug]`. Та же логика, что
+  // в `getEditionTocUrl` и на странице релиза. Читалка `/scroll` — noindex,
+  // но страницы должны быть в карте как точки входа (sitemap не форсирует
+  // индексацию). Приоритет ниже релиза: страница релиза остаётся главной.
   const editionEntries = editions.map((edition) => ({
-    url: `${BASE_URL}/vvvvv/${edition.slug || edition.id}`,
+    url: `${BASE_URL}${getEditionTocUrl(edition.release_slug, edition)}`,
     lastModified: new Date(edition.updated_at),
     changeFrequency: 'weekly' as const,
     priority: 0.8,
@@ -84,6 +87,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     },
     {
       url: `${BASE_URL}/colors`,
+      lastModified: new Date(),
+      changeFrequency: 'monthly',
+      priority: 0.5,
+    },
+    {
+      url: `${BASE_URL}/vvvvv`,
       lastModified: new Date(),
       changeFrequency: 'monthly',
       priority: 0.5,

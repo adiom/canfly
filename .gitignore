@@ -14,6 +14,7 @@ next.user-config.*
 .env*.local
 .agents/
 skills-*.json
+opencode.json
 
 # Common ignores
 node_modules
