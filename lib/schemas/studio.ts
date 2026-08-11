@@ -72,7 +72,7 @@ export const editionFormSchema = z.object({
   format: editionFormatSchema.default('book'),
   platform: optionalString,
   external_url: optionalString,
-  slug: slugSchema.optional(),
+  slug: slugSchema,
   is_primary: z
   .union([z.literal('true'), z.literal('false'), z.literal(''), z.null(), z.undefined()])
   .transform((v) => v === 'true')

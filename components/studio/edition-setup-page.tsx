@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import type { Edition, Release } from '@/lib/releases-types'
 import { updateEditionSetupAction } from '@/lib/actions/studio'
+import { generateSlug } from '@/lib/slug-utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -47,7 +48,7 @@ export function EditionSetupPage({ data }: { data: SetupData }) {
   const { edition, release } = data
   const Icon = formatIcons[edition.format] ?? BookOpen
 
-  const slug = edition.slug
+  const [slug, setSlug] = useState(edition.slug)
   const [platform, setPlatform] = useState(edition.platform ?? '')
   const [externalUrl, setExternalUrl] = useState(edition.external_url ?? '')
   const [qualityTier, setQualityTier] = useState(edition.quality_tier ?? 'standard')
@@ -102,10 +103,12 @@ export function EditionSetupPage({ data }: { data: SetupData }) {
               <Label className="text-gray-600">Slug</Label>
               <Input
                 value={slug}
-                disabled
-                className="bg-white/60 border-white/70 rounded-xl opacity-60 cursor-not-allowed"
+                onChange={e => setSlug(e.target.value)}
+                onBlur={() => {
+                  if (!slug.trim()) setSlug(generateSlug(formatLabels[edition.format]))
+                }}
+                className="bg-white/60 border-white/70 rounded-xl"
               />
-              <p className="text-xs text-gray-400">Slug создаётся автоматически и не меняется</p>
             </div>
             {edition.format === 'book' && (
               <div className="space-y-2">

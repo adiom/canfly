@@ -4,6 +4,7 @@ import { isRedirectError } from 'next/dist/client/components/redirect-error'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { createEditionAction } from '@/lib/actions/studio'
+import { generateSlug } from '@/lib/slug-utils'
 import { Button } from '@/components/ui/button'
 import {
   BookOpen, Image, Headphones, Newspaper, Radio, Globe,
@@ -21,9 +22,9 @@ const formats = [
 ]
 
 const bookTiers = [
-  { value: 'draft', label: 'Черновик', desc: 'Неотредактированная версия' },
-  { value: 'standard', label: 'Книга', desc: 'Основная версия' },
-  { value: 'premium', label: 'Иллюстрированная', desc: 'С иллюстрациями и полной обработкой' },
+  { value: 'draft', label: 'Черновик', desc: 'Неотредактированная версия', slug: 'web-draft' },
+  { value: 'standard', label: 'Книга', desc: 'Основная версия', slug: 'web-book' },
+  { value: 'premium', label: 'Иллюстрированная', desc: 'С иллюстрациями и полной обработкой', slug: 'premium' },
 ] as const
 
 export function EditionFormatSelector({ releaseId }: { releaseId: string }) {
@@ -37,6 +38,12 @@ export function EditionFormatSelector({ releaseId }: { releaseId: string }) {
       formData.set('release_id', releaseId)
       formData.set('format', format)
       formData.set('quality_tier', qualityTier ?? 'standard')
+      if (format === 'book' && qualityTier) {
+        const tier = bookTiers.find(t => t.value === qualityTier)
+        formData.set('slug', tier?.slug ?? generateSlug(format))
+      } else {
+        formData.set('slug', generateSlug(format))
+      }
       await createEditionAction(formData)
     } catch (error) {
       if (isRedirectError(error)) throw error

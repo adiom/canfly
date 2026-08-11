@@ -2,6 +2,30 @@
 
 ---
 
+## [11 августа 2026] Studio: слаг издания снова задаёт клиент (откат @adiom/hash)
+
+### Что изменено
+
+Откат хеш-слага из коммита `f93da0a` («slug через @adiom/hash»): слаг издания снова формируется клиентом и может редактироваться после создания.
+
+- `components/studio/edition-format-selector.tsx` — при создании издания в FormData кладётся `slug`: у book-тиров фиксированные `web-draft` / `web-book` / `premium`, у остальных форматов (включая `digital`) — `generateSlug(format)`.
+- `components/studio/edition-setup-page.tsx` — поле Slug снова редактируемое (`useState` + `onChange`), на blur при пустом значении подставляется `generateSlug(formatLabels[format])`; хинт «не меняется» убран.
+- `lib/schemas/studio.ts` — в `editionFormSchema` slug снова обязательный (`slugSchema` вместо `.optional()`).
+- `lib/server/editions.ts` — `createEdition()` берёт slug из данных клиента (фолбэк `'edition'`) и дедуплицирует через восстановленный `makeUniqueEditionSlugGlobal()`; `updateEdition()` снова пишет `slug = $5` с проверкой коллизий `WHERE slug = $1 AND id != $2`.
+- `lib/slug-utils.ts` — удалены `generateEditionSlug()` и импорт `@adiom/hash` (функция больше не используется).
+
+### Зачем
+
+Слаг издания живёт в URL читалок `/scroll/[editionSlug]` и `/vvvvv/[editionSlug]`. Хеш из `@adiom/hash` нечитаем и непредсказуем для SEO; нужен человекочитаемый слаг, который автор задаёт сам при создании издания.
+
+### Как использовать
+
+Миграции не нужны. Slug задаётся в селекторе форматов при создании издания и правится на `/studio/editions/[id]/setup`. При коллизии сервер дописывает суффикс `-2`, `-3` и т.д.
+
+Примечание: зависимость `@adiom/hash` осталась в `package.json` неиспользуемой.
+
+---
+
 ## [10 августа 2026] MCP: фикс потери аудио у глав, Bearer-авторизация, миграция на SDK v2
 
 ### Что изменено
