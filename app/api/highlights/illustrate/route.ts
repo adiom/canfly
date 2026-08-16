@@ -1,6 +1,6 @@
 import { generateText } from 'ai'
 import { z } from 'zod'
-import { guardHighlightRequest, buildPrompt, HIGHLIGHT_MODEL, highlightAiError } from '@/lib/ai/highlight-actions'
+import { guardHighlightRequest, buildPrompt, persistHighlightIllustration, HIGHLIGHT_MODEL, highlightAiError } from '@/lib/ai/highlight-actions'
 
 const INSTRUCTION =
   'На основе этого литературного отрывка создай короткий промпт (до 60 слов) для генерации иллюстрации в стиле dark arthouse, book illustration, ink and watercolor. Только промпт, без объяснений.'
@@ -84,7 +84,8 @@ export async function POST(req: Request) {
     }
 
     // imageData может быть base64 или URL
-    const imageUrl = imageData.startsWith('http') ? imageData : `data:image/png;base64,${imageData}`
+    const rawImageUrl = imageData.startsWith('http') ? imageData : `data:image/png;base64,${imageData}`
+    const imageUrl = await persistHighlightIllustration(guard.highlightId, guard.userId, rawImageUrl, artPrompt)
     return Response.json({ imageUrl, prompt: artPrompt })
   } catch (error) {
     if (req.signal.aborted || (error instanceof Error && error.name === 'AbortError')) return highlightAiError('timeout', 504)

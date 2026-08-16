@@ -300,12 +300,21 @@ export function HighlightArtifact({
     }
   }, [dispatch])
 
-  const runExplain = useCallback(() => streamAI('/api/highlights/explain', { text }), [streamAI, text])
-  const runMeaning = useCallback(() => streamAI('/api/highlights/meaning', { text }), [streamAI, text])
+  // highlightId — цитата уже сохранена к моменту, когда открывается 'tools' (см.
+  // saveHighlight ниже): сервер привяжет результат инструмента к ней, чтобы он не
+  // пропадал при закрытии попапа.
+  const runExplain = useCallback(
+    () => streamAI('/api/highlights/explain', { text, highlightId: savedHighlight?.id }),
+    [streamAI, text, savedHighlight?.id],
+  )
+  const runMeaning = useCallback(
+    () => streamAI('/api/highlights/meaning', { text, highlightId: savedHighlight?.id }),
+    [streamAI, text, savedHighlight?.id],
+  )
   const runRewrite = useCallback((mode: RewriteMode) => {
     dispatch({ type: 'SET_REWRITE_MODE', mode })
-    streamAI('/api/highlights/rewrite', { text, mode })
-  }, [streamAI, text])
+    streamAI('/api/highlights/rewrite', { text, mode, highlightId: savedHighlight?.id })
+  }, [streamAI, text, savedHighlight?.id])
 
   useEffect(() => {
     if (view !== 'tools') return
@@ -324,7 +333,7 @@ export function HighlightArtifact({
       const response = await fetch('/api/highlights/illustrate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, highlightId: savedHighlight?.id }),
         signal: controller.signal,
       })
       const data = await response.json() as { imageUrl?: string; error?: string }

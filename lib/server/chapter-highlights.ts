@@ -9,7 +9,7 @@ const highlightColumns = `
   h.client_request_id, h.start_offset, h.end_offset,
   h.source_chapter_updated_at,
   h.note, h.is_public, h.likes_count,
-  h.created_at, h.updated_at,
+  h.created_at, h.updated_at, h.ai_artifacts,
   u.display_name AS user_name,
   u.avatar AS user_avatar
 `
@@ -250,6 +250,31 @@ export async function setHighlightLike(highlightId: string, userId: string, like
 
 export async function toggleHighlightLike(highlightId: string, userId: string) {
   return setHighlightLike(highlightId, userId)
+}
+
+// === AI-артефакты (Объясни / Смысл / Перепиши / Нарисуй) ===
+
+/**
+ * Сохраняет результат AI-инструмента внутри `ai_artifacts` цитаты. `path` —
+ * `['explain']` / `['meaning']` / `['illustrate']` или `['rewrite', mode]`.
+ * Владение проверяется прямо в WHERE: если цитата чужая или уже удалена,
+ * запрос молча ничего не обновит — это не должно ронять ответ пользователю,
+ * который уже получил сгенерированный текст/картинку в стриме.
+ */
+export async function saveHighlightAiArtifact(
+  highlightId: string,
+  userId: string,
+  path: string[],
+  value: Record<string, unknown>,
+): Promise<boolean> {
+  const rows = await dbQuery<{ id: string }>(
+    `UPDATE chapter_highlights
+     SET ai_artifacts = jsonb_set(ai_artifacts, $2::text[], $3::jsonb, true)
+     WHERE id = $1 AND user_id = $4
+     RETURNING id`,
+    [highlightId, path, JSON.stringify(value), userId],
+  )
+  return rows.length > 0
 }
 
 // === Editorial Notes (только Studio) ===

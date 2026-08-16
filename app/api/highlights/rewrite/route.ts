@@ -1,6 +1,6 @@
 import { streamText } from 'ai'
 import { z } from 'zod'
-import { guardHighlightRequest, buildPrompt, HIGHLIGHT_MODEL, HIGHLIGHT_STREAM_TIMEOUT } from '@/lib/ai/highlight-actions'
+import { guardHighlightRequest, buildPrompt, persistHighlightText, HIGHLIGHT_MODEL, HIGHLIGHT_STREAM_TIMEOUT } from '@/lib/ai/highlight-actions'
 
 const MODES = {
   'другой-финал': 'Перепиши сцену так, чтобы она закончилась иначе — неожиданно и интересно',
@@ -34,6 +34,9 @@ export async function POST(req: Request) {
     maxOutputTokens: 400,
     abortSignal: req.signal,
     timeout: HIGHLIGHT_STREAM_TIMEOUT,
+    onFinish: async ({ text }) => {
+      await persistHighlightText(guard.highlightId, guard.userId, ['rewrite', mode.data], text)
+    },
   })
 
   return result.toTextStreamResponse()

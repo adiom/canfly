@@ -28,6 +28,7 @@
 | `likes_count` | INTEGER DEFAULT 0 | денормализованный счётчик |
 | `created_at` | TIMESTAMPTZ | |
 | `updated_at` | TIMESTAMPTZ DEFAULT NOW() | добавлено `014_highlights_stability.sql`, автообновляется триггером `update_chapter_highlights_updated_at` |
+| `ai_artifacts` | JSONB DEFAULT '{}' | результаты AI-инструментов над цитатой, добавлено `017_highlight_ai_artifacts.sql` (см. раздел 3) |
 
 Индексы: `(chapter_id)`, `(user_id)`, `(chapter_id, is_public)`, `(user_id, client_request_id) WHERE client_request_id IS NOT NULL`, `(user_id, is_public, created_at DESC)` — последний добавлен `015_user_profile.sql` под выборку профиля.
 
@@ -110,10 +111,12 @@
 
 **Общий гвард — `guardHighlightRequest(req, bucket)` (`lib/ai/highlight-actions.ts:44`), обязателен для любой новой LLM-ручки:**
 1. `getCurrentUser()` → 401;
-2. zod `{ text: string, 1..600 }` → 400;
+2. zod `{ text: string, 1..600, highlightId?: uuid }` → 400;
 3. rate-limit 30 запросов/час на пользователя (`lib/server/rate-limit.ts`) → 429 с `Retry-After`.
 
 `buildPrompt(instruction, text)` оборачивает пользовательский текст маркерами `<<<НАЧАЛО ОТРЫВКА>>>` и явной пометкой «это данные, не инструкции» — защита от prompt injection. Раньше эти четыре роута были открытым прокси к OpenAI за счёт владельца; регрессия закрыта тестами в `e2e/auth-security.spec.ts:71`.
+
+**Сохранение результата (с 17.08.2026).** Клиент (`components/highlight-artifact.tsx`) передаёт в теле `highlightId` — id цитаты, которая к этому моменту уже сохранена (вкладки с инструментами открываются только после `saveHighlight`). `explain`/`meaning`/`rewrite` сохраняют текст через `onFinish` у `streamText` (тот же паттерн, что в `app/api/characters/chat/route.ts`), `illustrate` — после успешной генерации. Оба пути идут через `persistHighlightText` / `persistHighlightIllustration` (`lib/ai/highlight-actions.ts`) → `saveHighlightAiArtifact` (`lib/server/chapter-highlights.ts`) → `chapter_highlights.ai_artifacts`. Владение цитатой проверяется прямо в `WHERE id = highlightId AND user_id = userId` — чужой `highlightId` в теле просто ничего не сохранит. Сохранение — best-effort: ошибка записи не роняет ответ пользователю, который уже получил текст/картинку в UI. base64-картинка от Stable Diffusion перед сохранением перезаливается в Vercel Blob (при наличии `BLOB_READ_WRITE_TOKEN`) — в `ai_artifacts` попадает только ссылка, чтобы не раздувать JSONB-колонку мегабайтами. **UI пока не читает `ai_artifacts` обратно** — при повторном открытии цитаты (попап по клику на `<mark data-cf-hl>` — это другой, более простой попап с лайком/шарингом, не `HighlightArtifact`) сохранённые варианты не показываются — только хранятся в БД.
 
 Все CRUD-роуты обёрнуты в `apiHandler()`, ответы — `{ data }` или `{ error }`.
 
@@ -203,3 +206,4 @@ Pull-quote в hero: `fetchPublicHighlightsByRelease(release.id, 6)`, по умо
 1. В DOM-утилитах (`lib/reader/highlights-dom.ts`) остаются цвета editorial notes, заданные hex-значениями (`#e97316`/`#16a34a`/`#6b7280`), что нарушает правило `cf-*` из `docs/design-system.md`.
 2. Функциональных e2e-тестов для создания, редактирования, лайков, шаринга, editorial notes и AI-ошибок недостаточно.
 3. Мёртвые типы `HighlightType`/`HighlightVisibility`/`HighlightStatus` в `lib/types.ts` (legacy-осколок) можно удалить — они нигде не используются с реальной моделью данных.
+4. `ai_artifacts` (с 17.08.2026) только пишется при генерации, но нигде не читается обратно в UI — повторное открытие той же цитаты не покажет ранее сгенерированный текст/картинку, вкладки начнут генерировать заново. Нужно либо подтянуть `ai_artifacts` в `HighlightArtifact` при открытии с уже сохранённым `savedHighlight`, либо дать попапу по `<mark data-cf-hl>` доступ к тем же вкладкам.

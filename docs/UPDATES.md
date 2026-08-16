@@ -2,6 +2,28 @@
 
 ---
 
+## [17 августа 2026] HIGHLIGHT: результаты AI-инструментов теперь сохраняются
+
+### Что изменено
+
+Вкладки **Объясни / Смысл / Перепиши / Нарисуй** в `HighlightArtifact` (`components/highlight-artifact.tsx`) только стримили результат в UI — при закрытии попапа он пропадал безвозвратно. Порядок «сначала highlight создаётся, потом открываются AI-вкладки» уже был в коде (`saveHighlight` создаёт цитату до переключения вида на `tools`), а вот сами результаты инструментов нигде не сохранялись.
+
+- **`postgres/017_highlight_ai_artifacts.sql`** — новая колонка `chapter_highlights.ai_artifacts JSONB NOT NULL DEFAULT '{}'`. Одна колонка вместо отдельной таблицы — артефактов на цитату всегда мало и с фиксированной структурой, читаются всегда вместе с родительской записью — тот же профиль, что у `releases.design_config` и `characters.abilities`.
+- **`lib/server/chapter-highlights.ts`** — `saveHighlightAiArtifact(highlightId, userId, path, value)`: атомарный `UPDATE ... SET ai_artifacts = jsonb_set(...) WHERE id = $1 AND user_id = $2`, владение проверяется прямо в `WHERE`.
+- **`lib/ai/highlight-actions.ts`** — `highlightTextSchema` принимает опциональный `highlightId`; `persistHighlightText()` сохраняет текст после стрима; `persistHighlightIllustration()` перезаливает base64-картинку от Stable Diffusion в Vercel Blob (при наличии `BLOB_READ_WRITE_TOKEN`) и в `ai_artifacts` кладёт только ссылку, а не мегабайты base64.
+- **4 роута `/api/highlights/*`** — `explain`/`meaning`/`rewrite` сохраняют через `onFinish` у `streamText` (тот же паттерн, что уже используется в `app/api/characters/chat/route.ts`), `illustrate` — после успешной генерации. Сохранение — best-effort, ошибка записи не роняет ответ, который пользователь уже получил в стриме.
+- **`components/highlight-artifact.tsx`** — все запросы к AI-инструментам теперь передают `highlightId: savedHighlight?.id`.
+
+### Зачем
+
+Цитата с раскрытым смыслом/переписанным вариантом/иллюстрацией — ценный артефакт, а не одноразовый ответ чат-бота. Без сохранения пользователь терял его безвозвратно при закрытии попапа.
+
+### Как использовать
+
+**Миграцию `017_highlight_ai_artifacts.sql` нужно применить вручную** — автоматического применения миграций в проекте нет. После этого любой вызов `/api/highlights/{explain,meaning,rewrite,illustrate}` с `highlightId` в теле будет сохранять результат в `chapter_highlights.ai_artifacts` (структура в `docs/HIGHLIGHT.md`, раздел 1). **UI пока не читает сохранённое обратно** — это следующий шаг (см. `docs/HIGHLIGHT.md`, раздел 8, п. 4).
+
+---
+
 ## [17 августа 2026] HIGHLIGHT.md сверен с кодом заново
 
 ### Что изменено

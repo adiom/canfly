@@ -204,6 +204,23 @@ export interface ReleaseEvent {
 
 // === Chapter Highlights ===
 
+/** Результат одного AI-инструмента над цитатой — хранится в `chapter_highlights.ai_artifacts`. */
+export interface HighlightAiArtifact {
+  content?: string
+  image_url?: string
+  prompt?: string
+  updated_at: string
+}
+
+export type HighlightRewriteMode = 'другой-финал' | 'другая-эпоха' | 'другой-стиль'
+
+export interface HighlightAiArtifacts {
+  explain?: HighlightAiArtifact
+  meaning?: HighlightAiArtifact
+  illustrate?: HighlightAiArtifact
+  rewrite?: Partial<Record<HighlightRewriteMode, HighlightAiArtifact>>
+}
+
 export interface ChapterHighlight {
   id: string
   chapter_id: string
@@ -221,6 +238,7 @@ export interface ChapterHighlight {
   likes_count: number
   created_at: string
   updated_at?: string
+  ai_artifacts?: HighlightAiArtifacts
   // Joins
   user_name?: string | null
   user_avatar?: string | null

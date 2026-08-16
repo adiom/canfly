@@ -1,5 +1,5 @@
 import { streamText } from 'ai'
-import { guardHighlightRequest, buildPrompt, HIGHLIGHT_MODEL, HIGHLIGHT_STREAM_TIMEOUT } from '@/lib/ai/highlight-actions'
+import { guardHighlightRequest, buildPrompt, persistHighlightText, HIGHLIGHT_MODEL, HIGHLIGHT_STREAM_TIMEOUT } from '@/lib/ai/highlight-actions'
 
 const INSTRUCTION =
   'Раскрой глубинный смысл следующего отрывка: что за ним скрывается, какие символы и образы используются, какие литературные приёмы, возможные отсылки к философии или культуре. Пиши живо и интересно, 3–4 предложения.'
@@ -14,6 +14,9 @@ export async function POST(req: Request) {
     maxOutputTokens: 350,
     abortSignal: req.signal,
     timeout: HIGHLIGHT_STREAM_TIMEOUT,
+    onFinish: async ({ text }) => {
+      await persistHighlightText(guard.highlightId, guard.userId, ['meaning'], text)
+    },
   })
 
   return result.toTextStreamResponse()
