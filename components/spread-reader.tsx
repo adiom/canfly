@@ -553,6 +553,11 @@ export function SpreadReader({
         style={{
           display: 'grid',
           gridTemplateRows: '50px 1fr 40px',
+          // minmax(0, 1fr), а не неявная auto-колонка: без явной колонки её
+          // ширину браузер считает по max-content детей (grid blowout) — на
+          // узких экранах нерезолвимый maxWidth: '40%' у .book-title откатывался
+          // к полной ширине заголовка, и вся сетка вылезала за экран.
+          gridTemplateColumns: 'minmax(0, 1fr)',
           // dvh, а не vh: в мобильном Safari 100vh выше видимой области, и
           // футер с низом страницы уезжали под адресную строку.
           height: '100dvh',
@@ -574,13 +579,19 @@ export function SpreadReader({
             color: t.text2,
             fontFamily: 'var(--font-geist-sans)',
             position: 'relative',
+            // Grid-item по умолчанию не сжимается уже своего min-content —
+            // без этого truncate у .book-title не мог схлопнуться до maxWidth.
+            minWidth: 0,
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Link
               href={`/release/${release.slug}`}
               title="К релизу"
-              style={{ color: t.text2, display: 'inline-flex', padding: 4 }}
+              // Паддинг адаптивный, классом: на телефоне тач-зона 24px (padding:4)
+              // слишком мала для пальца, на десктопе — норм для курсора.
+              className="p-2.5 sm:p-1"
+              style={{ color: t.text2, display: 'inline-flex' }}
             >
               <ChevronLeft className="h-4 w-4" />
             </Link>
@@ -603,7 +614,8 @@ export function SpreadReader({
                 type="button"
                 onClick={() => setShowToc(true)}
                 title="Оглавление"
-                style={{ color: t.text, padding: 4 }}
+                className="p-2.5 sm:p-1"
+                style={{ color: t.text }}
               >
                 <AlignJustify className="h-4 w-4" />
               </button>
@@ -613,7 +625,8 @@ export function SpreadReader({
                 type="button"
                 onClick={() => setShowBookmarks(b => !b)}
                 title="Закладки"
-                style={{ color: showBookmarks ? accent : t.text, padding: 4 }}
+                className="p-2.5 sm:p-1"
+                style={{ color: showBookmarks ? accent : t.text }}
               >
                 <Bookmark
                   className="h-4 w-4"
@@ -625,7 +638,8 @@ export function SpreadReader({
               type="button"
               onClick={() => { setShowFonts(b => !b); setShowThemes(false) }}
               title={`Шрифт и размер: ${READER_FONTS.find(f => f.id === font)?.label ?? 'Cormorant'} · ${fontSize}px`}
-              style={{ color: showFonts ? accent : t.text, padding: 4 }}
+              className="p-2.5 sm:p-1"
+              style={{ color: showFonts ? accent : t.text }}
             >
               <Type className="h-4 w-4" />
             </button>
@@ -633,7 +647,8 @@ export function SpreadReader({
               type="button"
               onClick={() => { setShowThemes(b => !b); setShowFonts(false) }}
               title={`Тема: ${READER_THEMES[theme].label}`}
-              style={{ color: showThemes ? accent : t.text, padding: 4 }}
+              className="p-2.5 sm:p-1"
+              style={{ color: showThemes ? accent : t.text }}
             >
               {theme === 'void' ? <Moon className="h-4 w-4" /> : theme === 'manuscript' ? <Sun className="h-4 w-4" /> : <Palette className="h-4 w-4" />}
             </button>
@@ -934,6 +949,7 @@ export function SpreadReader({
             fontSize: 12,
             color: t.text2,
             fontFamily: 'var(--font-geist-sans)',
+            minWidth: 0,
           }}
         >
           <span style={{ opacity: 0.6 }}>
