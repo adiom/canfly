@@ -102,6 +102,7 @@ export function SpreadReader({
   const [pendingLastPage, setPendingLastPage] = useState(false)
 
   // Refs
+  const stageRef = useRef<HTMLElement>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
   const trackRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
@@ -130,7 +131,7 @@ export function SpreadReader({
         img.addEventListener('load', remeasure, { once: true })
       }
     })
-  }, [currentChapter?.id, remeasure])
+  }, [currentChapter?.id, remeasure, mounted])
 
   // Вычисленные
   const pagesPerView = isSpread ? 2 : 1
@@ -143,18 +144,20 @@ export function SpreadReader({
     const id = requestAnimationFrame(() => requestAnimationFrame(() => {
       const track = trackRef.current
       const vp = viewportRef.current
-      if (!track || !vp) return
+      const stage = stageRef.current
+      if (!track || !vp || !stage) return
+      // viewport теперь совпадает со страницей (поля живут на stage), поэтому
+      // clientWidth — чистая ширина страницы.
       const next = Math.max(0, track.scrollWidth - vp.clientWidth)
       setMaxTranslate(prev => (Math.abs(prev - next) > 0.5 ? next : prev))
-      const vpW = vp.clientWidth
-      const sideSpace = Math.max(0, (vpW - 1200) / 2)
-      // padding viewportRef = 40px по горизонтали; на узких экранах — минимум 28px
-      // под палец, иначе поля могут вовсе отсутствовать.
-      const g = Math.max(28, Math.floor(40 + sideSpace))
+      // Полоса листания = поле страницы плюс пустое место от края окна до
+      // stage (окно шире maxWidth). Минимум 28px под палец.
+      const padLeft = parseFloat(getComputedStyle(stage).paddingLeft)
+      const g = Math.max(28, Math.floor(stage.getBoundingClientRect().left + padLeft))
       setSideGutter(prev => (prev !== g ? g : prev))
     }))
     return () => cancelAnimationFrame(id)
-  }, [currentChapter?.id, fontSize, pageCount, pagination.spreadWidth, currentPage])
+  }, [currentChapter?.id, fontSize, pageCount, pagination.spreadWidth, currentPage, mounted])
 
   // Хайлайты текущей главы
   const chapterHighlights = useMemo(
@@ -243,7 +246,7 @@ export function SpreadReader({
       })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- DOM highlight sync, avoids re-render loop
-  }, [currentChapter?.id, chapterHighlights, chapterEditorialNotes, currentIndex, accent, currentUserId, isEditor])
+  }, [currentChapter?.id, chapterHighlights, chapterEditorialNotes, currentIndex, accent, currentUserId, isEditor, mounted])
 
   // ── Клик по <mark> ──
   useEffect(() => {
@@ -262,7 +265,8 @@ export function SpreadReader({
     }
     root.addEventListener('click', onClick)
     return () => root.removeEventListener('click', onClick)
-  }, [chapterHighlights, chapterEditorialNotes, setActiveEditorialNote])
+    // mounted: до гидрации contentRef пуст, без него подписка не встала бы
+  }, [chapterHighlights, chapterEditorialNotes, setActiveEditorialNote, mounted])
 
   // ── Сохранение прогресса ──
   useEffect(() => {
@@ -354,33 +358,56 @@ export function SpreadReader({
     return () => window.removeEventListener('keydown', handler)
   }, [goNext, goPrev])
 
-  // ── Свайп на mobile ──
+  // ── Тап и свайп на mobile ──
+  // Один обработчик на «стол»: тап по боковой четверти листает, свайп листает
+  // с любой точки страницы. Текст остаётся зоной выделения — центральные 44%
+  // на тап не реагируют, а активное выделение и цитаты отменяют жест целиком.
   useEffect(() => {
-    const vp = viewportRef.current
-    if (!vp) return
+    const stage = stageRef.current
+    if (!stage) return
     let startX = 0
-    let startedFromEdge = false
+    let startY = 0
+    let startedAt = 0
     const onTouchStart = (e: TouchEvent) => {
       startX = e.touches[0].clientX
-      // Текст остаётся зоной нативного выделения. Листание жестом доступно
-      // из полей страницы, где оно не конфликтует с long-press и drag.
-      startedFromEdge = startX < 36 || startX > window.innerWidth - 88
+      startY = e.touches[0].clientY
+      startedAt = performance.now()
     }
     const onTouchEnd = (e: TouchEvent) => {
-      if (!startedFromEdge) return
-      const dx = startX - e.changedTouches[0].clientX
-      if (Math.abs(dx) > 50) {
-        if (dx > 0) goNext()
+      // Выделение (или тап по нему) не должно листать: pointerup уже отдал
+      // фрагмент в пилюлю, а страница ушла бы из-под него.
+      const sel = window.getSelection()
+      if (sel && !sel.isCollapsed && sel.toString().trim().length > 0) return
+      // Тап по цитате открывает попап — это делает слушатель на contentRef.
+      if (e.target instanceof HTMLElement && e.target.closest('mark[data-cf-hl], mark[data-cf-en]')) return
+
+      const touch = e.changedTouches[0]
+      const dx = touch.clientX - startX
+      const dy = touch.clientY - startY
+      const elapsed = performance.now() - startedAt
+
+      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) {
+        const rect = stage.getBoundingClientRect()
+        const ratio = (touch.clientX - rect.left) / rect.width
+        if (ratio < 0.28) goPrev()
+        else if (ratio > 0.72) goNext()
+        return
+      }
+
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5 && elapsed < 600) {
+        if (dx < 0) goNext()
         else goPrev()
       }
     }
-    vp.addEventListener('touchstart', onTouchStart, { passive: true })
-    vp.addEventListener('touchend', onTouchEnd, { passive: true })
+    stage.addEventListener('touchstart', onTouchStart, { passive: true })
+    stage.addEventListener('touchend', onTouchEnd, { passive: true })
     return () => {
-      vp.removeEventListener('touchstart', onTouchStart)
-      vp.removeEventListener('touchend', onTouchEnd)
+      stage.removeEventListener('touchstart', onTouchStart)
+      stage.removeEventListener('touchend', onTouchEnd)
     }
-  }, [goNext, goPrev])
+    // mounted в deps: до гидрации разметки со «столом» ещё нет, и без него
+    // подписка не встала бы после появления узла.
+  }, [goNext, goPrev, mounted])
 
   // ── Выделение текста → хайлайт ──
   const handleMouseUp = useCallback(() => {
@@ -526,7 +553,9 @@ export function SpreadReader({
         style={{
           display: 'grid',
           gridTemplateRows: '50px 1fr 40px',
-          height: '100vh',
+          // dvh, а не vh: в мобильном Safari 100vh выше видимой области, и
+          // футер с низом страницы уезжали под адресную строку.
+          height: '100dvh',
           boxSizing: 'border-box',
           backgroundColor: t.bg,
           color: t.text,
@@ -791,108 +820,117 @@ export function SpreadReader({
           </div>
         </header>
 
+        {/* «Стол»: поля книги живут здесь, а не в padding viewport — иначе
+            overflow:hidden режет по padding-box, и в поле проглядывает край
+            соседней страницы. Классы, не inline: inline перебил бы sm:. */}
         <main
-          ref={viewportRef}
-          className="book-viewport relative"
+          ref={stageRef}
+          className="book-stage px-[22px] py-4 sm:px-10 sm:py-5"
           style={{
             width: '100%',
             maxWidth: 1200,
             margin: '0 auto',
-            padding: '20px 40px',
             boxSizing: 'border-box',
             overflow: 'hidden',
+            minHeight: 0,
           }}
         >
-          {isSpread && null}
           <div
-            ref={trackRef}
-            className="book-columns"
-            style={{
-              height: '100%',
-              width: pagination.spreadWidth,
-              columnCount: isSpread ? 2 : 1,
-              columnGap: 60,
-              columnFill: 'auto',
-              fontSize: `${fontSize}px`,
-              lineHeight: 1.7,
-              textAlign: 'justify',
-              textJustify: 'inter-word',
-              hyphens: 'auto',
-              WebkitHyphens: 'auto',
-              MozHyphens: 'auto',
-              msHyphens: 'auto',
-              transform: `translateX(-${currentPage >= maxPage ? Math.min(currentPage * (pagination.pageWidth + pagination.gutter), maxTranslate) : currentPage * (pagination.pageWidth + pagination.gutter)}px)`,
-            }}
+            ref={viewportRef}
+            className="book-viewport relative"
+            style={{ width: '100%', height: '100%', overflow: 'hidden' }}
           >
-            {chapters.length > 1 && (
-              <p
-                style={{
-                  columnSpan: 'all',
-                  fontSize: '11px',
-                  fontFamily: 'var(--font-geist-sans)',
-                  letterSpacing: '0.18em',
-                  textTransform: 'uppercase',
-                  margin: '0 0 8px',
-                  color: accent,
-                  breakAfter: 'avoid',
-                }}
-              >
-                {currentIndex === 0 && release.genre ? release.genre : ''}
-              </p>
-            )}
-            <h1
+            <div
+              ref={trackRef}
+              className="book-columns"
               style={{
-                columnSpan: 'all',
-                fontFamily: 'var(--font-geist-sans)',
-                fontSize: '1.6em',
-                fontWeight: 800,
-                textTransform: 'uppercase',
-                lineHeight: 1.1,
-                margin: '0 0 24px',
-                breakAfter: 'avoid',
-                textAlign: 'left',
+                height: '100%',
+                width: pagination.spreadWidth,
+                columnCount: isSpread ? 2 : 1,
+                // Шаг листания хук считает как pageWidth + gutter, поэтому
+                // зазор между колонками обязан быть тем же gutter.
+                columnGap: gutter,
+                columnFill: 'auto',
+                fontSize: `${fontSize}px`,
+                lineHeight: 1.7,
+                textAlign: 'justify',
+                textJustify: 'inter-word',
+                hyphens: 'auto',
+                WebkitHyphens: 'auto',
+                MozHyphens: 'auto',
+                msHyphens: 'auto',
+                transform: `translateX(-${currentPage >= maxPage ? Math.min(currentPage * (pagination.pageWidth + pagination.gutter), maxTranslate) : currentPage * (pagination.pageWidth + pagination.gutter)}px)`,
               }}
             >
-              {currentChapter?.title}
-            </h1>
-        
-            {currentChapter?.content ? (
-              <div
-                ref={contentRef}
-                onPointerUp={handleSelectionEnd}
-                lang="ru"
-                className="prose max-w-none cf-reader-content"
+              {chapters.length > 1 && (
+                <p
+                  style={{
+                    columnSpan: 'all',
+                    fontSize: '11px',
+                    fontFamily: 'var(--font-geist-sans)',
+                    letterSpacing: '0.18em',
+                    textTransform: 'uppercase',
+                    margin: '0 0 8px',
+                    color: accent,
+                    breakAfter: 'avoid',
+                  }}
+                >
+                  {currentIndex === 0 && release.genre ? release.genre : ''}
+                </p>
+              )}
+              <h1
                 style={{
-                  fontSize: `${fontSize}px`,
-                  lineHeight: 1.7,
-                  color: t.text,
-                  fontFamily,
-                  hyphens: 'auto',
-                  WebkitHyphens: 'auto',
-                  MozHyphens: 'auto',
-                  msHyphens: 'auto',
-                  ['--tw-prose-body' as string]: t.text,
-                  ['--tw-prose-headings' as string]: t.text,
-                  ['--tw-prose-links' as string]: accent,
-                  ['--tw-prose-bold' as string]: t.text,
-                  ['--tw-prose-quotes' as string]: t.text,
-                  ['--tw-prose-hr' as string]: `${t.text}20`,
+                  columnSpan: 'all',
+                  fontFamily: 'var(--font-geist-sans)',
+                  fontSize: '1.6em',
+                  fontWeight: 800,
+                  textTransform: 'uppercase',
+                  lineHeight: 1.1,
+                  margin: '0 0 24px',
+                  breakAfter: 'avoid',
+                  textAlign: 'left',
                 }}
-                dangerouslySetInnerHTML={{ __html: currentChapter.content ?? '' }}
-              />
-            ) : (
-              <p style={{ textAlign: 'center', opacity: 0.4 }}>Содержимое главы ещё не добавлено</p>
-            )}
+              >
+                {currentChapter?.title}
+              </h1>
+
+              {currentChapter?.content ? (
+                <div
+                  ref={contentRef}
+                  onPointerUp={handleSelectionEnd}
+                  lang="ru"
+                  className="prose max-w-none cf-reader-content"
+                  style={{
+                    fontSize: `${fontSize}px`,
+                    lineHeight: 1.7,
+                    color: t.text,
+                    fontFamily,
+                    hyphens: 'auto',
+                    WebkitHyphens: 'auto',
+                    MozHyphens: 'auto',
+                    msHyphens: 'auto',
+                    ['--tw-prose-body' as string]: t.text,
+                    ['--tw-prose-headings' as string]: t.text,
+                    ['--tw-prose-links' as string]: accent,
+                    ['--tw-prose-bold' as string]: t.text,
+                    ['--tw-prose-quotes' as string]: t.text,
+                    ['--tw-prose-hr' as string]: `${t.text}20`,
+                  }}
+                  dangerouslySetInnerHTML={{ __html: currentChapter.content ?? '' }}
+                />
+              ) : (
+                <p style={{ textAlign: 'center', opacity: 0.4 }}>Содержимое главы ещё не добавлено</p>
+              )}
+            </div>
           </div>
         </main>
 
         <footer
-          className="reader-footer"
+          className="reader-footer px-[22px] sm:px-10"
           style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: '0 40px',
             fontSize: 12,
             color: t.text2,
             fontFamily: 'var(--font-geist-sans)',
@@ -903,18 +941,27 @@ export function SpreadReader({
               ? release.authors.map(a => a.name).join(', ')
               : ''}
           </span>
-          <span style={{ opacity: 0.55 }}>
-            {chapters.length > 1
-              ? `Глава ${currentIndex + 1} / ${chapters.length}`
-              : ''}
+          <span style={{ opacity: 0.55, display: 'flex', gap: 12 }}>
+            {chapters.length > 1 && (
+              <span>{`Глава ${currentIndex + 1} / ${chapters.length}`}</span>
+            )}
+            {/* Без номера страницы на телефоне не видно, что тап сработал. */}
+            <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+              {pagesPerView > 1 && Math.min(currentPage + 2, pageCount) > currentPage + 1
+                ? `${currentPage + 1}–${Math.min(currentPage + 2, pageCount)} / ${pageCount}`
+                : `${currentPage + 1} / ${pageCount}`}
+            </span>
           </span>
         </footer>
       </div>
 
+      {/* Полоски листания в полях — для курсора. На телефоне не нужны:
+          там листает тап по боковой четверти страницы и свайп. */}
       <button
         type="button"
         aria-label="Предыдущая страница"
         onClick={goPrev}
+        className="max-sm:hidden"
         style={{
           position: 'absolute',
           top: 70,
@@ -932,6 +979,7 @@ export function SpreadReader({
         type="button"
         aria-label="Следующая страница"
         onClick={goNext}
+        className="max-sm:hidden"
         style={{
           position: 'absolute',
           top: 70,

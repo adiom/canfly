@@ -66,9 +66,15 @@ export function useSpreadPagination(
     const track = trackRef.current
     if (!vp || !track) return
 
-    const vpW = vp.clientWidth
-    const vpH = vp.clientHeight
-    if (vpW === 0 || vpH === 0) return
+    // clientWidth включает padding, а колонки живут в content-box. Без вычета
+    // страница получалась шире области, в которой её видно, и overflow:hidden
+    // срезал правый край строк.
+    const cs = getComputedStyle(vp)
+    const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight)
+    const padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom)
+    const vpW = vp.clientWidth - padX
+    const vpH = vp.clientHeight - padY
+    if (vpW <= 0 || vpH <= 0) return
 
     const isPortrait = window.matchMedia('(orientation: portrait)').matches
     const spread = !isPortrait && vpW >= SPREAD_BREAKPOINT
@@ -144,16 +150,31 @@ export function useSpreadPagination(
   }, [chapterKey, fontSize, measure])
 
   useEffect(() => {
-    const vp = viewportRef.current
-    if (!vp) return
+    let raf = 0
+    let observer: ResizeObserver | null = null
     let timer: ReturnType<typeof setTimeout> | null = null
-    const observer = new ResizeObserver(() => {
-      if (timer) clearTimeout(timer)
-      timer = setTimeout(measure, 80)
-    })
-    observer.observe(vp)
+
+    // До гидрации читалка рендерит заглушку без viewport. Ранний выход по
+    // `vp === null` оставлял наблюдение неподключённым навсегда — deps здесь
+    // стабильны, второго прохода не будет. Поэтому ждём узел через rAF.
+    const attach = () => {
+      const vp = viewportRef.current
+      if (!vp) {
+        raf = requestAnimationFrame(attach)
+        return
+      }
+      observer = new ResizeObserver(() => {
+        if (timer) clearTimeout(timer)
+        timer = setTimeout(measure, 80)
+      })
+      observer.observe(vp)
+      measure()
+    }
+    attach()
+
     return () => {
-      observer.disconnect()
+      cancelAnimationFrame(raf)
+      observer?.disconnect()
       if (timer) clearTimeout(timer)
     }
   }, [viewportRef, measure])
