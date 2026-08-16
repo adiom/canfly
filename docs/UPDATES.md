@@ -2,6 +2,29 @@
 
 ---
 
+## [17 августа 2026] HIGHLIGHT.md сверен с кодом заново
+
+### Что изменено
+
+Перед доработкой HIGHLIGHT документ проверен построчно против кода — нашелся ряд устаревших утверждений:
+
+- **Баг с профилем уже починен.** `fetchUserHighlights` в `lib/server/chapter-highlights.ts` реально передаёт `currentUserId: userId`, так что собственные приватные цитаты попадают в профиль. Доки утверждали обратное.
+- **Модель прав editorial notes описана верно.** Доступ к `/api/chapter-editorial-notes*` даёт не глобальная роль `author`/`editor`, а владение конкретным релизом (`release_collaborators.role = 'owner'`) через `canManageChapterEditorialNotes`, либо admin.
+- **Добавлены rate-limit'ы на CRUD**, которых в доках не было вообще: `highlights:create` 60/ч, `highlights:update` 120/ч (общий для PATCH и DELETE цитаты), `highlights:like` 300/ч, `editorial:create` 60/ч, `editorial:update` 120/ч (общий для PATCH статуса и DELETE правки).
+- В таблицу `chapter_highlights` добавлена колонка `updated_at` (из `014_highlights_stability.sql`), раньше отсутствовавшая в описании.
+- Уточнено, что `context_before/after` реально захватывается клиентом как ±30 символов, а серверная схема допускает до 120 — это потолок валидации, а не фактически отправляемое значение.
+- Обновлён размер файлов и номера строк в ссылках (`highlight-artifact.tsx`, `bookmarks-panel.tsx`, `editorial-notes-panel.tsx`, `lib/server/chapter-highlights.ts`, `chapter-editor-page.tsx` и др.).
+
+### Зачем
+
+Документ описывал модель прав и известный баг неверно — риск сделать неверные допущения о безопасности при дальнейших доработках HIGHLIGHT. Сверено перед началом работы над функцией.
+
+### Как использовать
+
+См. `docs/HIGHLIGHT.md`, разделы 2, 3, 6 — там теперь актуальная модель прав и полный список rate-limit'ов.
+
+---
+
 ## [17 августа 2026] VVVVV: grid blowout и тач-зоны в шапке читалки
 
 ### Что изменено

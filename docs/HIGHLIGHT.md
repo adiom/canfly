@@ -1,6 +1,6 @@
 # HIGHLIGHT.md — выделения, цитаты и редакторские правки
 
-Актуально на 01.08.2026. Документ описывает **фактическое** состояние кода, включая незакрытые ограничения (раздел «Что не доделано»).
+Актуально на 17.08.2026 (сверено построчно с кодом). Документ описывает **фактическое** состояние кода, включая незакрытые ограничения (раздел «Что не доделано»).
 
 > Предыдущая версия этого файла описывала legacy-систему (единая таблица `highlights` с полями `book_id` / `type` / `visibility`, роуты `/api/highlights`, `components/book-reader.tsx`). Той системы больше нет: таблица дропнута в `postgres/highlights-migration.sql:54`. Всё ниже — про Release-систему.
 
@@ -8,7 +8,7 @@
 
 ## 1. Модель данных
 
-Миграции: `postgres/highlights-migration.sql` и `postgres/014_highlights_stability.sql`. Три таблицы, привязка к `chapters(id)`, а не к книге.
+Миграции: `postgres/highlights-migration.sql`, `postgres/014_highlights_stability.sql`, `postgres/015_user_profile.sql`. Три таблицы, привязка к `chapters(id)`, а не к книге.
 
 ### `chapter_highlights` — цитаты читателей
 
@@ -19,80 +19,81 @@
 | `user_id` | UUID → `users` ON DELETE CASCADE | владелец |
 | `text_content` | TEXT NOT NULL | выделенный фрагмент |
 | `paragraph_index` | INTEGER | индекс параграфа в DOM-порядке (для быстрой пере-разметки) |
-| `context_before` / `context_after` | TEXT | ±30 символов вокруг — fallback-якорь, если текст не нашёлся по индексу |
-| `client_request_id` | UUID | ключ идемпотентности создания |
+| `context_before` / `context_after` | TEXT | fallback-якорь, если текст не нашёлся по индексу. Клиент (`spread-reader.tsx`, `release-book-reader.tsx`) реально захватывает ±30 символов вокруг выделения; серверная схема (`lib/schemas/highlights.ts`) допускает до 120 — это потолок валидации, а не то, что фактически отправляется |
+| `client_request_id` | UUID | ключ идемпотентности создания (`UNIQUE (user_id, client_request_id) WHERE client_request_id IS NOT NULL`) |
 | `start_offset` / `end_offset` | INTEGER | точные смещения внутри смыслового блока |
 | `source_chapter_updated_at` | TIMESTAMPTZ | версия содержимого на момент создания |
 | `note` | TEXT | личная заметка, необязательна |
 | `is_public` | BOOLEAN DEFAULT false | **единственный признак видимости** |
 | `likes_count` | INTEGER DEFAULT 0 | денормализованный счётчик |
 | `created_at` | TIMESTAMPTZ | |
+| `updated_at` | TIMESTAMPTZ DEFAULT NOW() | добавлено `014_highlights_stability.sql`, автообновляется триггером `update_chapter_highlights_updated_at` |
 
-Индексы: `(chapter_id)`, `(user_id)`, `(chapter_id, is_public)`.
+Индексы: `(chapter_id)`, `(user_id)`, `(chapter_id, is_public)`, `(user_id, client_request_id) WHERE client_request_id IS NOT NULL`, `(user_id, is_public, created_at DESC)` — последний добавлен `015_user_profile.sql` под выборку профиля.
 
 ### `chapter_highlight_likes`
 `(highlight_id, user_id)` — составной PK, оба FK с CASCADE.
 
 ### `chapter_editorial_notes` — правки, только Studio
 
-Те же поля позиционирования, плюс:
+Те же поля позиционирования (включая `client_request_id`, `start_offset`/`end_offset`, `source_chapter_updated_at`, `updated_at` + триггер), плюс:
 - `author_id` → `users` (без CASCADE);
 - `note` TEXT **NOT NULL** — сама правка;
 - `status` TEXT CHECK ∈ `open` | `resolved` | `ignored`, дефолт `open`;
 - `resolved_at` TIMESTAMPTZ.
 
-Индекс `(chapter_id, status)`.
+Индекс `(chapter_id, status)`, уникальный `(author_id, client_request_id) WHERE client_request_id IS NOT NULL`.
 
 ### Чего в модели нет
 
-Нет полей `type` и `visibility` — цитата и правка разведены по таблицам, публичность булева. Сущности `author_note` не существует. Тип `HighlightType = 'quote' | 'editorial_comment' | 'author_note'` в `lib/types.ts:247` — мёртвый осколок legacy, к БД отношения не имеет.
+Нет полей `type` и `visibility` — цитата и правка разведены по таблицам, публичность булева. Сущности `author_note` не существует. Тип `HighlightType = 'quote' | 'editorial_comment' | 'author_note'` в `lib/types.ts:183` — мёртвый осколок legacy, к БД отношения не имеет; строками 184-185 там же лежат такие же мёртвые `HighlightVisibility`, `HighlightStatus`.
 
 Той же миграцией дропнуты `chapter_ratings` и `book_reviews` — рейтинги глав и отзывы как направление отменены.
 
 ### TypeScript-типы
 
-`lib/releases-types.ts:207` — `ChapterHighlight` (поля таблицы + join-поля `user_name`, `user_avatar`, `is_liked_by_me`, `release_slug`, `chapter_title`), `:227` — `ChapterHighlightInput`, `:239` — `EditorialNoteStatus`, `:241` — `ChapterEditorialNote`.
+`lib/releases-types.ts:207` — `ChapterHighlight` (поля таблицы, включая `updated_at?: string`, + join-поля `user_name`, `user_avatar`, `is_liked_by_me`, `release_slug`, `chapter_title`), `:232` — `ChapterHighlightInput`, `:247` — `EditorialNoteStatus`, `:249` — `ChapterEditorialNote`.
 
 ---
 
 ## 2. Слой данных
 
-Весь SQL — в `lib/server/chapter-highlights.ts` (305 строк). В компонентах и page.tsx запросов нет.
+Весь SQL — в `lib/server/chapter-highlights.ts` (374 строки). В компонентах и page.tsx запросов нет.
 
 **Цитаты:**
 - `fetchChapterHighlights({ chapterId?, userId?, publicOnly?, currentUserId?, limit? })` — фильтр видимости **безусловный**: аноним и `publicOnly` видят только `is_public = true`, авторизованный — публичные + свои. Догружает `is_liked_by_me` вторым запросом по `ANY($2::uuid[])`.
 - `fetchPublicHighlightsByRelease(releaseId, limit = 6)` — топ по `likes_count`, для витрины релиза.
 - `fetchChapterHighlightById(id, currentUserId)` — приватная возвращается только владельцу.
-- `fetchUserHighlights(userId, limit = 100)` — подмешивает `release_slug` и `chapter_title` одним запросом по всем `chapter_id`. Сейчас вызывает общий fetch без `currentUserId`, поэтому фактически возвращает только публичные цитаты (см. «Что не доделано»).
+- `fetchUserHighlights(userId, limit = 100)` — вызывает `fetchChapterHighlights({ userId, currentUserId: userId, limit })`, то есть **передаёт владельца как `currentUserId`** и получает публичные + свои приватные цитаты, плюс подмешивает `release_slug`/`chapter_title` одним запросом по всем `chapter_id`. (В более ранней версии кода `currentUserId` не передавался, и профиль показывал только публичные цитаты — это исправлено, `postgres/015_user_profile.sql` добавил под новое поведение индекс `idx_chapter_highlights_user_public`.)
 - `createChapterHighlight`, `updateChapterHighlight(id, userId, isAdmin, { note?, is_public? })`, `deleteChapterHighlight(id, userId, isAdmin)` — обе мутации сначала читают `user_id` и сверяют владение (или admin).
-- `toggleHighlightLike(highlightId, userId)` — лайкнуть можно только публичную либо свою.
+- `toggleHighlightLike(highlightId, userId)` / `setHighlightLike(highlightId, userId, liked?)` — лайкнуть можно только публичную либо свою; апдейт `likes_count` и вставка/удаление лайка идут в одной транзакции (`withTransaction`, `SELECT ... FOR UPDATE`).
 
-**Правки:** `fetchChapterEditorialNotes(chapterId)`, `createEditorialNote`, `updateEditorialNoteStatus` (проставляет `resolved_at` при `resolved`/`ignored`), `deleteEditorialNote`. Удаление доступно через `DELETE /api/chapter-editorial-notes/[id]` с проверкой автора замечания или admin.
+**Правки:** `fetchChapterEditorialNotes(chapterId)`, `createEditorialNote`, `updateEditorialNoteStatus` (проставляет `resolved_at` при `resolved`/`ignored`, снимает при возврате в `open`), `deleteEditorialNote(id, _userId, _isAdmin)` — сам по себе безусловно удаляет по `id`, авторизация выполняется **до** вызова, на уровне роута (`canManageChapterEditorialNotes`); неиспользуемые параметры оставлены для единообразия сигнатуры с `deleteChapterHighlight`. `canManageChapterEditorialNotes(chapterId, userId, isAdmin)` и `fetchEditorialNoteChapterId(id)` — см. раздел 6, это ключевые функции модели прав.
 
 ---
 
 ## 3. HTTP API
 
 ### Цитаты — `/api/chapter-highlights`
-| метод | путь | доступ |
-|---|---|---|
-| GET | `?chapterId=` или `?userId=` (+`publicOnly`, `limit`) | публично, фильтрация по сессии |
-| POST | — | авторизация; `text_content` ≤ 5000 |
-| GET | `/[id]` | публично, приватная — только владельцу |
-| PATCH | `/[id]` — `note`, `is_public` | владелец или admin |
-| DELETE | `/[id]` | владелец или admin |
-| POST | `/[id]/like` | авторизация, совместимый toggle |
-| PUT | `/[id]/like` — `{ liked: boolean }` | авторизация, идемпотентная установка состояния |
+| метод | путь | доступ | rate-limit (bucket, окно 1 час) |
+|---|---|---|---|
+| GET | `?chapterId=` или `?userId=` (+`publicOnly`, `limit`) | публично, фильтрация по сессии | — |
+| POST | — | авторизация; `text_content` 3..5000, `note` ≤2000, `context_before/after` ≤120 (см. раздел 1) | `highlights:create`, 60 |
+| GET | `/[id]` | публично, приватная — только владельцу | — |
+| PATCH | `/[id]` — `note`, `is_public` | владелец или admin | `highlights:update`, 120 |
+| DELETE | `/[id]` | владелец или admin | `highlights:update`, 120 (общий бакет с PATCH) |
+| POST | `/[id]/like` | авторизация, совместимый toggle | `highlights:like`, 300 |
+| PUT | `/[id]/like` — `{ liked: boolean }` | авторизация, идемпотентная установка состояния | `highlights:like`, 300 |
 
 ### Правки — `/api/chapter-editorial-notes`
-| метод | путь | доступ |
-|---|---|---|
-| GET | `?chapterId=` | роль `admin` \| `editor` \| `author` |
-| POST | — | те же роли |
-| PATCH | `/[id]/status` — `open`/`resolved`/`ignored` | те же роли |
-| DELETE | `/[id]` | автор замечания или admin |
+| метод | путь | доступ | rate-limit |
+|---|---|---|---|
+| GET | `?chapterId=` | owner релиза (см. раздел 6) или admin | — |
+| POST | — | owner релиза или admin; `text_content` 1..5000, `note` 1..2000 | `editorial:create`, 60 |
+| PATCH | `/[id]/status` — `open`/`resolved`/`ignored` | owner релиза или admin | `editorial:update`, 120 |
+| DELETE | `/[id]` | owner релиза или admin | `editorial:update`, 120 (общий бакет с PATCH status) |
 
-Статус может вернуть в `open`; при `resolved` и `ignored` заполняется `resolved_at`.
+Статус может вернуться в `open`; при `resolved` и `ignored` заполняется `resolved_at`, обратно — обнуляется.
 
 ### LLM-действия над выделением — `/api/highlights/*`
 
@@ -107,7 +108,7 @@
 
 Модель — `openai/gpt-4o-mini` через Vercel AI Gateway. Стримы используют `req.signal`, общий timeout 30 секунд и timeout между chunks 8 секунд. `illustrate` требует `STABLE_DIFFUSION_URL`, ограничивает запрос 45 секундами и base64-ответ 8 МБ.
 
-**Общий гвард — `guardHighlightRequest(req, bucket)` (`lib/ai/highlight-actions.ts:31`), обязателен для любой новой LLM-ручки:**
+**Общий гвард — `guardHighlightRequest(req, bucket)` (`lib/ai/highlight-actions.ts:44`), обязателен для любой новой LLM-ручки:**
 1. `getCurrentUser()` → 401;
 2. zod `{ text: string, 1..600 }` → 400;
 3. rate-limit 30 запросов/час на пользователя (`lib/server/rate-limit.ts`) → 429 с `Retry-After`.
@@ -125,7 +126,7 @@
 - `collectParagraphs(root)` — TreeWalker по `p, blockquote, h1..h4, li`.
 - `findTextRange(...)` сначала использует сохранённые `start_offset`/`end_offset`, затем контекст и точный поиск. Range работает через несколько текстовых узлов, включая вложенные `<strong>`, `<em>` и ссылки.
 - `wrapHighlight` → `<mark data-cf-hl="id">`, `data-cf-mine` для своих приватных.
-- `wrapEditorialNote` → `<mark data-cf-en="id">`, цвет по статусу: open `#e97316`, resolved `#16a34a`, ignored `#6b7280`.
+- `wrapEditorialNote` → `<mark data-cf-en="id">`, цвет по статусу — захардкожен hex: open `#e97316`, resolved `#16a34a`, ignored `#6b7280` (нарушение правила `cf-*`, см. раздел 8).
 - `clearHighlightMarks(root)` — разворачивает все `<mark>` обратно и `normalize()`.
 - `pageOfElement(...)` — номер страницы в CSS multi-column, с учётом `translateX` трека (для постраничного ридера).
 
@@ -133,27 +134,30 @@
 
 ## 5. UI
 
-### Читалка со скроллом — `components/release-book-reader.tsx` (1076 стр.)
+### Читалка со скроллом — `components/release-book-reader.tsx` (1056 стр.)
 Маршрут `/scroll/[editionSlug]/[chapterIndex]` (вход `/scroll/[editionSlug]` редиректит на главу из прогресса). При смене главы ридер сам переписывает URL на `/scroll/[editionSlug]/[n]`.
 
-Выделение мышью (≥3 символа) → floating pill → `HighlightArtifact`. Клик по `<mark data-cf-hl>` открывает попап цитаты (автор, дата, заметка, лайк, «Поделиться»), по `<mark data-cf-en>` — попап правки со сменой статуса. Правки грузятся отдельным запросом при смене главы, если роль позволяет.
+Выделение мышью (≥3 символа) → floating pill → `HighlightArtifact`. Клик по `<mark data-cf-hl>` открывает попап цитаты (автор, дата, заметка, лайк, «Поделиться»), по `<mark data-cf-en>` — попап правки со сменой статуса. Правки грузятся через общий хук `useEditorialNotes` (см. ниже) при смене главы, если роль позволяет (`enabled: isEditor`).
 
-### Постраничная читалка — `components/spread-reader.tsx`
-Маршрут `/vvvvv/[editionId]`. Поддерживает цитаты и editorial notes: загрузку через общий `useEditorialNotes`, DOM-разметку, попап, создание, смену статуса и удаление. Навигация к цитате использует `pageOfElement`.
+### Постраничная читалка — `components/spread-reader.tsx` (1337 стр.)
+Маршрут `/vvvvv/[slug]` (издание формата `book`/`magazine`; `comic`/`audio*` уходят в отдельные компоненты). Поддерживает цитаты и editorial notes: загрузку через общий `useEditorialNotes`, DOM-разметку, попап, создание, смену статуса и удаление. Навигация к цитате использует `pageOfElement`.
 
-### Артефакт выделения — `components/highlight-artifact.tsx` (701 стр.)
+### Общий хук правок — `lib/reader/use-editorial-notes.ts`
+`useEditorialNotes({ chapterId, enabled })` — единственное место с логикой загрузки/создания/смены статуса/удаления editorial notes; используется и в `release-book-reader.tsx`, и в `spread-reader.tsx`. Подгружает правки главы один раз (кеш загруженных `chapterId` в `useRef`), не через компонентный `useMemo`/`useEffect` в каждой читалке отдельно.
+
+### Артефакт выделения — `components/highlight-artifact.tsx` (607 стр.)
 Двухфазная карточка, позиционируется по `anchorRect` (на мобильном — bottom sheet).
 
 - Фаза `save`: заметка, тумблер публичности, кнопка «Присвоить артефакт». Редактору дополнительно — блок «Замечание редактора» с отдельной кнопкой. Аноним видит ссылку на `/login?redirect=…`.
 - Фаза `tools` (после сохранения): вкладки **Объясни / Перепиши / Смысл / Нарисуй** — стриминг ответа посимвольно через `ReadableStream`, `AbortController` на смену вкладки, кнопки «Ещё раз» / «Попробовать снова».
 
-### Панель пометок — `components/bookmarks-panel.tsx` (316 стр.)
+### Панель пометок — `components/bookmarks-panel.tsx` (403 стр.)
 Выезжающая справа, только свои цитаты, две секции: «В этой главе» / «В других главах». Показывает текст, заметку, бейдж публичности, лайки. Собственных запросов не делает — работает через колбэки `onDelete` / `onScrollTo`.
 
 ### Studio — правки
-- `components/studio/editorial-notes-panel.tsx` (287 стр.) — список с фильтром по статусу, счётчик открытых, создание правки из выделения, кнопки «Решено» / «Игнорировать».
-- `components/studio/editorial-notes-overlay.tsx` (155 стр.) — вертикальные полоски слева от параграфов с правками, цвет по статусу, бейдж с количеством.
-- Подключены в `components/studio/chapter-editor-page.tsx:288, 300, 316` (HTML- и WYSIWYG-режим), состояние `editorialNotes` — в родителе.
+- `components/studio/editorial-notes-panel.tsx` (323 стр.) — список с фильтром по статусу, счётчик открытых, создание правки из выделения, кнопки «Решено» / «Игнорировать».
+- `components/studio/editorial-notes-overlay.tsx` (154 стр.) — вертикальные полоски слева от параграфов с правками, цвет по статусу, бейдж с количеством.
+- Подключены в `components/studio/chapter-editor-page.tsx` (`EditorialNotesPanel` ~L274 и ~L303, `EditorialNotesOverlay` ~L286; HTML- и WYSIWYG-режим), состояние `editorialNotes` — в родителе.
 
 ### Шаринг цитаты — `app/highlight/[id]/page.tsx`
 Открывает полноценную читалку и подскроливает к цитате. `generateMetadata` отдаёт OpenGraph и Twitter-карточку с обложкой релиза и текстом цитаты, `alternates.canonical`. Непубличная цитата или неопубликованный релиз → `notFound()`.
@@ -163,7 +167,7 @@
 Pull-quote в hero: `fetchPublicHighlightsByRelease(release.id, 6)`, по умолчанию одна цитата, «Ещё N цитат» разворачивает остальные. Каждая ведёт на страницу шаринга.
 
 ### Профиль — `app/profile/page.tsx`
-Секция «Мои цитаты», данные из `fetchReaderProfileSummary` → `fetchUserHighlights(userId, 50)`. Текст, заметка, дата, лайки; публичные цитаты имеют ссылку «Поделиться», приватность переключается через `components/profile/highlight-visibility-toggle.tsx`. Из-за текущего фильтра репозитория собственные приватные цитаты в профиль не попадают.
+Секция «Мои цитаты», данные из `fetchReaderProfileSummary` → `fetchUserHighlights(userId, 50)`. Текст, заметка, дата, лайки; публичные цитаты имеют ссылку «Поделиться», приватность переключается через `components/profile/highlight-visibility-toggle.tsx`. Собственные приватные цитаты в профиль попадают (см. раздел 2 — `currentUserId` передаётся).
 
 ---
 
@@ -172,12 +176,13 @@ Pull-quote в hero: `fetchPublicHighlightsByRelease(release.id, 6)`, по умо
 | роль | цитаты | правки |
 |---|---|---|
 | аноним | видит только публичные, создавать не может | нет доступа |
-| `reader` | свои приватные + все публичные; лайк; удаление/редактирование только своих | нет доступа |
-| `editor` | как reader | создаёт, читает, меняет статус |
-| `author` | как reader | читает, создаёт, меняет статус |
-| `admin` | правит и удаляет любые | полный доступ |
+| `reader` (без владения релизом) | свои приватные + все публичные; лайк; удаление/редактирование только своих | нет доступа |
+| владелец релиза (`release_collaborators.role = 'owner'`) | как reader | полный доступ к правкам **только на главах своего релиза**: читает, создаёт, меняет статус, удаляет |
+| `admin` | правит и удаляет любые цитаты | полный доступ к правкам на любых главах |
 
-Роли берутся из `getUserRoles()`, проверки выполняются в каждом роуте. Для цитат владение проверяется в репозитории по `user_id`; admin может изменять и удалять любые цитаты. Для editorial notes роли `admin`/`editor`/`author` разрешают работу с API, а удаление дополнительно ограничено автором замечания или admin.
+Важно: доступ к editorial notes — **не по глобальной роли** пользователя (`author`/`editor`/`admin` из `user_roles`), а по владению конкретным релизом через `release_collaborators`. Проверка — `canManageChapterEditorialNotes(chapterId, userId, isAdmin)` в `lib/server/chapter-highlights.ts`, вызывается в каждом из четырёх роутов `/api/chapter-editorial-notes*` до чтения/записи. Роль `editor`/`author` сама по себе доступа не даёт, если пользователь не владелец релиза и не admin — в UI это отражено как `isEditor`/`userRole`, но авторитетна только серверная проверка.
+
+Для цитат владение проверяется в репозитории по `user_id`; admin может изменять и удалять любые цитаты.
 
 ---
 
@@ -195,5 +200,6 @@ Pull-quote в hero: `fetchPublicHighlightsByRelease(release.id, 6)`, по умо
 
 Отсортировано по влиянию.
 
-1. В DOM-утилитах и отдельных компонентах остаются цвета, заданные hex-значениями, что нарушает правило `cf-*` из `docs/design-system.md`.
+1. В DOM-утилитах (`lib/reader/highlights-dom.ts`) остаются цвета editorial notes, заданные hex-значениями (`#e97316`/`#16a34a`/`#6b7280`), что нарушает правило `cf-*` из `docs/design-system.md`.
 2. Функциональных e2e-тестов для создания, редактирования, лайков, шаринга, editorial notes и AI-ошибок недостаточно.
+3. Мёртвые типы `HighlightType`/`HighlightVisibility`/`HighlightStatus` в `lib/types.ts` (legacy-осколок) можно удалить — они нигде не используются с реальной моделью данных.
