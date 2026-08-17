@@ -17,6 +17,7 @@ import { fetchPublishedChaptersByEdition } from '@/lib/server/chapters'
 import { generateQuotationSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
 import { buildMetadata, notFoundMetadata } from '@/lib/seo/metadata'
 import { JsonLd } from '@/components/seo/json-ld'
+import { Breadcrumbs } from '@/components/breadcrumbs'
 import { CATALOG_PATH } from '@/lib/nav'
 import type { UserRole } from '@/lib/types'
 
@@ -117,6 +118,13 @@ export default async function HighlightSharePage({ params }: PageProps) {
         </div>
       </div>
       <div className="pt-12">
+        <div className="mx-auto max-w-3xl px-4 pb-2">
+          <Breadcrumbs items={[
+            { label: 'canfly', url: '/' },
+            { label: release.title, url: `/release/${release.slug}` },
+            { label: 'highlight', url: `/highlight/${highlight.id}` },
+          ]} />
+        </div>
         {primaryEdition ? (
           <ReleaseBookReader
             release={release}

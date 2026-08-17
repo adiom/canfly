@@ -5,6 +5,7 @@ import { ChevronLeft } from 'lucide-react'
 import { fetchNewsPosts } from '@/lib/server/news'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { JsonLd } from '@/components/seo/json-ld'
+import { Breadcrumbs } from '@/components/breadcrumbs'
 import { generateCollectionSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
 import { buildMetadata, stripHtml, truncate } from '@/lib/seo/metadata'
 import { CATALOG_PATH } from '@/lib/nav'
@@ -56,6 +57,10 @@ export default async function NewsPage() {
           <ThemeToggle />
         </div>
       </header>
+
+      <div className="mx-auto max-w-7xl px-4 pt-4 md:px-8">
+        <Breadcrumbs items={[{ label: 'canfly', url: '/' }, { label: 'Новости', url: '/news' }]} />
+      </div>
 
       <section className="border-b border-cf-text-1/10 px-4 py-12 md:px-8 md:py-16">
         <div className="mx-auto max-w-4xl">

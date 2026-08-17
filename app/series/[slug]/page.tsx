@@ -39,7 +39,15 @@ export default async function SeriesPageRoute({ params }: { params: Promise<{ sl
   return (
     <>
       <JsonLd schemas={[generateSeriesSchema(series, series.releases), breadcrumbSchema]} />
-      <SeriesPage series={series} releases={series.releases} />
+      <SeriesPage
+        series={series}
+        releases={series.releases}
+        breadcrumbs={[
+          { label: 'canfly', url: '/' },
+          { label: 'Серии', url: '/releases' },
+          { label: series.title, url: `/series/${series.slug}` },
+        ]}
+      />
     </>
   )
 }

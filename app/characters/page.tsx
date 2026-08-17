@@ -3,6 +3,7 @@ import { fetchPublicCharactersList } from '@/lib/server/characters';
 import { CharacterCard } from '@/components/character-card';
 import { Suspense } from 'react';
 import { JsonLd } from '@/components/seo/json-ld';
+import { Breadcrumbs } from '@/components/breadcrumbs';
 import { generateCollectionSchema, generateBreadcrumbSchema } from '@/lib/seo/schema';
 import { buildMetadata } from '@/lib/seo/metadata';
 
@@ -44,6 +45,7 @@ async function CharactersContent() {
           ]),
         ]}
       />
+      <Breadcrumbs items={[{ label: 'canfly', url: '/' }, { label: 'Персонажи', url: '/characters' }]} />
       {characters.length > 0 ? (
         <div className="grid grid-cols-2 gap-x-6 gap-y-12 sm:grid-cols-3 md:grid-cols-4">
           {characters.map((char, i) => (

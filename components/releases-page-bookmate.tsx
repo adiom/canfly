@@ -3,6 +3,7 @@ import type { EditionFormat } from '@/lib/releases-types'
 import { ReleaseCardBookmate } from '@/components/release-card-bookmate'
 import { SiteHeader } from '@/components/site-header'
 import { SiteFooter } from '@/components/site-footer'
+import { Breadcrumbs } from '@/components/breadcrumbs'
 import { Pagination } from '@/components/ui/pagination'
 import type { ReleasesPage } from '@/lib/server/releases'
 import { CATALOG_PATH, catalogHref } from '@/lib/nav'
@@ -24,6 +25,7 @@ interface ReleasesPageBookmateProps {
   data: ReleasesPage
   category: CategoryValue
   page: number
+  breadcrumbs: { label: string; url: string }[]
 }
 
 function categoryHref(value: CategoryValue) {
@@ -36,6 +38,7 @@ export function ReleasesPageBookmate({
   data,
   category,
   page,
+  breadcrumbs,
 }: ReleasesPageBookmateProps) {
   const { items, total, totalPages } = data
   const from = total === 0 ? 0 : (page - 1) * 24 + 1
@@ -44,6 +47,9 @@ export function ReleasesPageBookmate({
   return (
     <main className="min-h-screen bg-cf-bg text-cf-text-1">
       <SiteHeader activePath={CATALOG_PATH} />
+      <div className="mx-auto max-w-7xl px-4 pt-4 md:px-8">
+        <Breadcrumbs items={breadcrumbs} />
+      </div>
 
       <div className="mx-auto max-w-7xl px-4 md:px-8">
         <header className="pt-10 pb-6 md:pt-16 md:pb-8">

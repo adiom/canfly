@@ -129,7 +129,12 @@ export default async function HomeCatalogPage({ searchParams }: ReleasesPageProp
           generateBreadcrumbSchema([{ label: 'canfly', url: `${BASE_URL}/` }]),
         ]}
       />
-      <ReleasesPageBookmate data={data} category={category} page={data.page} />
+      <ReleasesPageBookmate
+        data={data}
+        category={category}
+        page={data.page}
+        breadcrumbs={[{ label: 'canfly', url: '/' }, { label: 'Релизы', url: '/releases' }]}
+      />
     </>
   )
 }

@@ -6,6 +6,7 @@ import { fetchNewsPostById } from '@/lib/server/news'
 import { generateNewsArticleSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
 import { buildMetadata, notFoundMetadata } from '@/lib/seo/metadata'
 import { JsonLd } from '@/components/seo/json-ld'
+import { Breadcrumbs } from '@/components/breadcrumbs'
 import { ThemeToggle } from '@/components/theme-toggle'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
@@ -69,6 +70,14 @@ export default async function NewsPage({ params }: NewsPageProps) {
           <ThemeToggle />
         </div>
       </header>
+
+      <div className="mx-auto max-w-3xl px-4 pt-4 md:px-8">
+        <Breadcrumbs items={[
+          { label: 'canfly', url: '/' },
+          { label: 'Новости', url: '/news' },
+          { label: post.title, url: `/news/${post.id}` },
+        ]} />
+      </div>
 
       <article className="mx-auto max-w-3xl px-4 py-12 md:px-8 md:py-20">
         <p className="mb-4 text-xs font-black uppercase tracking-[0.22em] text-cf-blue">

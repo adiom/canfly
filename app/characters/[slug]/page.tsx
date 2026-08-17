@@ -18,6 +18,7 @@ import { getCurrentUser, getUserRoles } from '@/lib/server/session'
 import { generateCharacterSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
 import { buildMetadata, notFoundMetadata } from '@/lib/seo/metadata'
 import { JsonLd } from '@/components/seo/json-ld'
+import { Breadcrumbs } from '@/components/breadcrumbs'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
@@ -116,6 +117,13 @@ export default async function CharacterPage({ params, searchParams }: CharacterP
   return (
     <main className="relative mx-auto w-full max-w-3xl px-6 pb-32">
       <JsonLd schemas={[characterSchema, breadcrumbSchema]} />
+      <div className="pt-4">
+        <Breadcrumbs items={[
+          { label: 'canfly', url: '/' },
+          { label: 'Персонаж', url: '/characters' },
+          { label: data.character.name, url: `/characters/${data.character.slug}` },
+        ]} />
+      </div>
 
       <CharacterProfileHero
         character={data.character}

@@ -47,7 +47,9 @@ export default function ColorsPage() {
           ]),
         ]}
       />
-      <ColorsPageClient />
+      <ColorsPageClient
+        breadcrumbs={[{ label: 'canfly', url: '/' }, { label: 'Colors', url: '/colors' }]}
+      />
     </div>
   )
 }

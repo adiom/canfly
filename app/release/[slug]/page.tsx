@@ -129,6 +129,11 @@ export default async function ReleasePublicPage({ params }: { params: Promise<{ 
         meta={meta}
         characters={characters}
         otherSeriesReleases={otherSeriesReleases}
+        breadcrumbs={[
+          { label: 'canfly', url: '/' },
+          { label: 'Релиз', url: '/releases' },
+          { label: release.title, url: `/release/${release.slug}` },
+        ]}
       />
     </>
   )

@@ -2,6 +2,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { SiteHeader } from '@/components/site-header'
 import { SiteFooter } from '@/components/site-footer'
+import { Breadcrumbs } from '@/components/breadcrumbs'
 import type { SeriesRelease } from '@/lib/server/series'
 
 interface SeriesPageProps {
@@ -14,6 +15,7 @@ interface SeriesPageProps {
     updated_at: string
   }
   releases: SeriesRelease[]
+  breadcrumbs: { label: string; url: string }[]
 }
 
 function formatDate(date: string | null): string {
@@ -25,7 +27,7 @@ function formatDate(date: string | null): string {
   })
 }
 
-export function SeriesPage({ series, releases }: SeriesPageProps) {
+export function SeriesPage({ series, releases, breadcrumbs }: SeriesPageProps) {
   const firstRelease = releases.find(r => r.phase_number === 1) ?? releases[0]
   const lastRelease = releases[releases.length - 1]
 
@@ -35,6 +37,9 @@ export function SeriesPage({ series, releases }: SeriesPageProps) {
   return (
     <main className="min-h-screen bg-cf-bg text-cf-text-1">
       <SiteHeader activePath={`/series/${series.slug}`} />
+      <div className="mx-auto max-w-7xl px-4 pt-4 md:px-8">
+        <Breadcrumbs items={breadcrumbs} />
+      </div>
 
       <div className="mx-auto max-w-7xl px-4 md:px-8 py-12 space-y-10">
         <header className="space-y-6">

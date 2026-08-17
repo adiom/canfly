@@ -6,14 +6,22 @@ import { CANFLY_COLORS, type CanflyColor } from './data'
 const SERIF = "var(--font-cormorant, 'Cormorant Garamond', Georgia, serif)"
 import { SiteHeader } from '@/components/site-header'
 import { SiteFooter } from '@/components/site-footer'
+import { Breadcrumbs } from '@/components/breadcrumbs'
 import { ColorModal, ColorEntry, PaletteStrip } from './colors-parts'
 
-export default function ColorsPageClient() {
+interface ColorsPageClientProps {
+  breadcrumbs: { label: string; url: string }[]
+}
+
+export default function ColorsPageClient({ breadcrumbs }: ColorsPageClientProps) {
   const [selectedColor, setSelectedColor] = useState<CanflyColor | null>(null)
 
   return (
     <main className="min-h-screen bg-cf-bg text-cf-text-1">
       <SiteHeader activePath="/colors" />
+      <div className="mx-auto max-w-7xl px-4 pt-4 md:px-8">
+        <Breadcrumbs items={breadcrumbs} />
+      </div>
 
       {/* Hero */}
       <section className="relative overflow-hidden border-b border-cf-text-1/10 px-4 pb-16 pt-24 md:px-8 md:pb-20 md:pt-32">

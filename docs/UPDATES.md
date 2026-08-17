@@ -2,6 +2,41 @@
 
 ---
 
+## [17 августа 2026] Хлебные крошки с BreadcrumbList
+
+### Что изменено
+
+- **Новый компонент** `components/breadcrumbs.tsx` — визуальные хлебные крошки
+  (`nav > ol > li`) + JSON-LD `BreadcrumbList` в одном компоненте.
+- **12 публичных страниц** получили крошки:
+  - `/releases` — canfly › Релизы
+  - `/release/[slug]` — canfly › Релиз › {title}
+  - `/characters` — canfly › Персонажи
+  - `/characters/[slug]` — canfly › Персонаж › {name}
+  - `/series/[slug]` — canfly › Серии › {series}
+  - `/colors` — canfly › Colors
+  - `/vvvvv/[slug]` — canfly › {series} › {title} (или canfly › Релиз › {title})
+  - `/highlight/[id]` — canfly › {release} › highlight
+  - `/news` — canfly › Новости
+  - `/news/[id]` — canfly › Новости › {title}
+  - `/user/[slug]` — canfly › @{handle}
+- **Условная логика** на `/vvvvv/[slug]`: если релиз в серии — крошки
+  ведут через серию, иначе через «Релиз».
+- **Клиентские компоненты** (`ReleasePagePublic`, `ReleasesPageBookmate`,
+  `SeriesPage`, `ColorsPageClient`) получили пропс `breadcrumbs`.
+- **Без крошек**: `/`, `/characters/*` (чат), studio, admin, login, profile.
+
+### Как проверить
+
+```bash
+pnpm build
+pnpm lint
+# Ручная проверка: открыть /releases, /release/*, /characters/* и убедиться,
+# что крошки видны над контентом и в JSON-LD есть BreadcrumbList.
+```
+
+---
+
 ## [17 августа 2026] Удаление /scroll: единый canonical на /vvvvv
 
 ### Что изменено

@@ -4,6 +4,7 @@ import { UserRound } from 'lucide-react'
 
 import { SiteHeader } from '@/components/site-header'
 import { SiteFooter } from '@/components/site-footer'
+import { Breadcrumbs } from '@/components/breadcrumbs'
 import { Button } from '@/components/ui/button'
 import { fetchChapterHighlights } from '@/lib/server/chapter-highlights'
 import {
@@ -99,6 +100,12 @@ export default async function PublicProfilePage({ params }: PublicPageProps) {
     <main className="min-h-screen bg-cf-bg text-cf-text-1">
       <JsonLd schemas={[profileSchema, breadcrumbSchema]} />
       <SiteHeader activePath="/characters" />
+      <div className="mx-auto max-w-7xl px-4 pt-4 md:px-8">
+        <Breadcrumbs items={[
+          { label: 'canfly', url: '/' },
+          { label: `@${user.handle}`, url: `/user/${user.handle}` },
+        ]} />
+      </div>
 
       <SignatureBand theme={theme} caption="Карточка читателя" />
 

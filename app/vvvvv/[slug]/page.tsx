@@ -11,6 +11,7 @@ import { SpreadReader } from '@/components/spread-reader'
 import { ReleaseComicReader } from '@/components/release-comic-reader'
 import { ReleaseAudioPlayer } from '@/components/release-audio-player'
 import { JsonLd } from '@/components/seo/json-ld'
+import { Breadcrumbs } from '@/components/breadcrumbs'
 import { generateEditionSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
 import { buildMetadata, notFoundMetadata } from '@/lib/seo/metadata'
 import { computeEditionMeta, EDITION_FORMAT_LABELS, isAudioFormat } from '@/lib/utils/editions'
@@ -89,6 +90,19 @@ export default async function VvvvvReaderPage({
   const series = seriesLinks.length > 0 ? await fetchSeriesById(seriesLinks[0].series_id) : null
 
   const editionSlug = edition.slug || edition.id
+
+  const breadcrumbItems = series
+    ? [
+        { label: 'canfly', url: '/' },
+        { label: series.title, url: `/series/${series.slug}` },
+        { label: release.title, url: `/release/${release.slug}` },
+      ]
+    : [
+        { label: 'canfly', url: '/' },
+        { label: 'Релиз', url: '/releases' },
+        { label: release.title, url: `/release/${release.slug}` },
+      ]
+
   const jsonLd = (
     <JsonLd
       schemas={[
@@ -116,6 +130,9 @@ export default async function VvvvvReaderPage({
     return (
       <>
         {jsonLd}
+        <div className="mx-auto max-w-6xl px-5 pt-4 md:px-8">
+          <Breadcrumbs items={breadcrumbItems} />
+        </div>
         <ReleaseComicReader release={release} edition={edition} chapters={chapters} />
       </>
     )
@@ -129,6 +146,9 @@ export default async function VvvvvReaderPage({
     return (
       <>
         {jsonLd}
+        <div className="mx-auto max-w-6xl px-5 pt-4 md:px-8">
+          <Breadcrumbs items={breadcrumbItems} />
+        </div>
         <ReleaseAudioPlayer release={release} edition={edition} chapters={chapters} />
       </>
     )
@@ -159,6 +179,9 @@ export default async function VvvvvReaderPage({
   return (
     <>
       {jsonLd}
+      <div className="mx-auto max-w-6xl px-5 pt-4 md:px-8">
+        <Breadcrumbs items={breadcrumbItems} />
+      </div>
       <SpreadReader
         release={release}
         edition={edition}
