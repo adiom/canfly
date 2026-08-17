@@ -209,7 +209,7 @@ export function ReleaseBookReader({
     contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
     window.scrollTo({ top: 0, behavior: 'smooth' })
     const editionSlug = edition.slug || edition.id
-    window.history.replaceState(null, '', `/scroll/${editionSlug}/${currentIndex + 1}`)
+    window.history.replaceState(null, '', `/vvvvv/${editionSlug}`)
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reset selection/artifact on chapter navigation
     setSelection(null)
     setArtifactOpen(false)
@@ -1036,7 +1036,7 @@ export function ReleaseBookReader({
               {otherBookEditions.map(other => (
                 <Link
                   key={other.id}
-                  href={`/scroll/${other.slug || other.id}`}
+                  href={`/vvvvv/${other.slug || other.id}`}
                   className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition-colors hover:border-current"
                   style={{
                     borderColor: `${textColor}20`,

@@ -56,8 +56,7 @@ Legacy-система книг удалена 9 августа 2026: стран�
 
 Иерархия данных: **release** (произведение) → **edition** (издание конкретного формата: book/comic/magazine/audio, у book ещё `quality_tier` ∈ draft/standard/premium) → **chapter** (+ версии). Один и тот же релиз может иметь несколько изданий разных форматов. Публичная страница релиза — только `/release/[slug]`, читалки живут отдельно:
 
-- `/scroll/[editionSlug]/[chapterIndex]` — скролл-читалка (`ReleaseBookReader`) для book/magazine; вход `/scroll/[editionSlug]` редиректит на главу из прогресса;
-- `/vvvvv/[editionSlug]` — разворот `SpreadReader` и диспетчер для comic/audio;
+- `/vvvvv/[editionSlug]` — единый ридер для всех форматов: `SpreadReader` для book/magazine, `ReleaseComicReader` для comic, `ReleaseAudioPlayer` для audio;
 - `/highlight/[highlightId]` — расшаренная цитата.
 
 ### 2. Middleware называется `proxy.ts`

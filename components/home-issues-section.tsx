@@ -22,16 +22,8 @@ function getEventHref(event: {
   chapter_index: number | null
   event_type: string
 }) {
-  const isScrollReader =
-    event.format === 'book' || event.format === 'magazine'
   if (event.event_type === 'new_chapter' && event.chapter_index != null) {
-    if (isScrollReader) {
-      return `/scroll/${event.edition_slug}/${event.chapter_index}`
-    }
     return `/vvvvv/${event.edition_slug}`
-  }
-  if (isScrollReader) {
-    return `/scroll/${event.edition_slug}`
   }
   return `/vvvvv/${event.edition_slug}`
 }

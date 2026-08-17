@@ -29,11 +29,7 @@ export function ref(id: string) {
 }
 
 /**
- * Канонический адрес издания.
- *
- * Не `getEditionTocUrl()`: тот для book/magazine ведёт на `/scroll/…`, а это
- * `noindex`-читалка. Индексируется `/vvvvv/[slug]`, который рендерит любой
- * формат, — в граф должны попадать только индексируемые документы.
+ * Канонический адрес издания — всегда `/vvvvv/[slug]`.
  */
 export function editionUrl(editionSlug: string) {
   return `${BASE_URL}/vvvvv/${editionSlug}`

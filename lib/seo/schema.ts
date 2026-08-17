@@ -284,8 +284,8 @@ export function generateEditionSchema(opts: {
   const isAudio = isAudioSchemaType(spec.type)
   const tierLabel = QUALITY_TIER_EDITION_LABELS[edition.quality_tier]
 
-  // У глав нет собственных индексируемых адресов (`/scroll/**` — noindex),
-  // поэтому части описываются именем и позицией, без ссылок в никуда.
+  // У глав нет собственных индексируемых адресов, поэтому части описываются
+  // именем и позицией, без ссылок в никуда.
   const hasPart = chapters.map(chapter => ({
     '@type': isAudio ? 'AudioObject' : 'Chapter',
     name: chapter.title,

@@ -138,7 +138,8 @@
 ## 5. UI
 
 ### Читалка со скроллом — `components/release-book-reader.tsx` (1056 стр.)
-Маршрут `/scroll/[editionSlug]/[chapterIndex]` (вход `/scroll/[editionSlug]` редиректит на главу из прогресса). При смене главы ридер сам переписывает URL на `/scroll/[editionSlug]/[n]`.
+Компонент используется на странице `/highlight/[id]` для навигации по главам.
+При смене главы ридер обновляет URL на `/vvvvv/[editionSlug]`.
 
 Выделение мышью (≥3 символа) → floating pill → `HighlightArtifact`. Клик по `<mark data-cf-hl>` открывает попап цитаты (автор, дата, заметка, лайк, «Поделиться»), по `<mark data-cf-en>` — попап правки со сменой статуса. Правки грузятся через общий хук `useEditorialNotes` (см. ниже) при смене главы, если роль позволяет (`enabled: isEditor`).
 

@@ -87,7 +87,7 @@ const DEFAULT_OG_IMAGE = '/opengraph-image'
  * Единая сборка title/description/canonical/OG/Twitter.
  *
  * До этого каждая страница собирала блок руками, поэтому у части не было
- * `twitter`, у `/scroll` — вообще ничего, а у `/series` стоял `og:type: 'book'`
+ * `twitter`, а у `/series` стоял `og:type: 'book'`
  * без обязательных для него `book:author`/`book:isbn`.
  */
 export function buildMetadata(opts: BuildMetadataOptions): Metadata {

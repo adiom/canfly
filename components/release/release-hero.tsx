@@ -73,7 +73,7 @@ export function ReleaseHero({ release, editions, primaryEditionSlug, seriesLink,
               {published.map(edition => {
                 const isDigital = isDigitalFormat(edition.format)
                 const label = isDigital && edition.platform ? edition.platform : getEditionLabel(edition)
-                const href = isDigital && edition.external_url ? edition.external_url : edition.format === 'book' || edition.format === 'magazine' ? `/scroll/${edition.slug}` : `/vvvvv/${edition.slug}`
+                const href = isDigital && edition.external_url ? edition.external_url : `/vvvvv/${edition.slug}`
                 return <Link key={edition.id} href={href} {...(isDigital ? { target: '_blank', rel: 'noopener noreferrer' } : {})} className="inline-flex items-center gap-2 rounded-full border border-cf-text-1/15 px-5 py-2.5 text-sm font-bold text-cf-text-1 transition-all hover:border-cf-text-1/30 hover:bg-cf-text-1/6 hover:shadow-md hover:shadow-cf-text-1/5">{label}{isDigital ? <ExternalLink className="h-3.5 w-3.5 opacity-50" /> : <ArrowRight className="h-3.5 w-3.5" />}</Link>
               })}
             </div>

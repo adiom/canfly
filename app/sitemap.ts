@@ -48,11 +48,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.7,
   }))
 
-  // У book/magazine точка входа — скролл-читалка `/scroll/[editionSlug]`,
-  // у comic/audio/digital — `/vvvvv/[editionSlug]`. Та же логика, что
-  // в `getEditionTocUrl` и на странице релиза. Читалка `/scroll` — noindex,
-  // но страницы должны быть в карте как точки входа (sitemap не форсирует
-  // индексацию). Приоритет ниже релиза: страница релиза остаётся главной.
+  // Все издания ссылаются на `/vvvvv/[editionSlug]`. Приоритет ниже релиза:
+  // страница релиза остаётся главной SEO-точкой.
   const editionEntries = editions.map((edition) => ({
     url: `${BASE_URL}${getEditionTocUrl(edition.release_slug, edition)}`,
     lastModified: new Date(edition.updated_at),

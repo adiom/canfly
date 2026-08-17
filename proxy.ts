@@ -147,6 +147,12 @@ export async function proxy(request: NextRequest) {
     return permanent(request, editionId ? `/vvvvv/${editionId}` : CATALOG)
   }
 
+  // --- Скролл-читалка переехала в /vvvvv ---
+  if (pathname.startsWith('/scroll')) {
+    const slug = (pathname.split('/')[2] ?? '').toLowerCase()
+    return permanent(request, slug ? `/vvvvv/${slug}` : CATALOG)
+  }
+
   return NextResponse.next({ request })
 }
 
@@ -175,5 +181,7 @@ export const config = {
     '/cart/:path*',
     '/reader',
     '/reader/:path*',
+    '/scroll',
+    '/scroll/:path*',
   ],
 }

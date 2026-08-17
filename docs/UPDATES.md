@@ -2,6 +2,31 @@
 
 ---
 
+## [17 августа 2026] Удаление /scroll: единый canonical на /vvvvv
+
+### Что изменено
+
+- **Удалены** `app/scroll/` (page.tsx, [slug]/page.tsx, [slug]/[chapterIndex]/page.tsx)
+  и `lib/server/scroll-reader.ts` — постраничный ридер для book/magazine.
+- **301-редирект** `/scroll/*` → `/vvvvv/[slug]` добавлен в `proxy.ts`.
+- **robots.txt**: `/scroll` добавлен в disallow.
+- **Sitemap**: все издания ссылаются на `/vvvvv/[editionSlug]` (раньше book/magazine
+  ссылались на `/scroll/...`).
+- **Кнопка «Читать»** (`release-hero.tsx`) и **лента активности** (`home-issues-section.tsx`):
+  все форматы ведут на `/vvvvv/[slug]`.
+- **JSON-LD canonical** (`editionUrl()`) уже указывал на `/vvvvv` — без изменений.
+- **e2e-тесты**: удалены тесты на `/scroll` robots/OG, обновлён robots.txt тест.
+
+### Как проверить
+
+```bash
+pnpm build
+pnpm lint
+pnpm exec playwright test e2e/seo.spec.ts
+```
+
+---
+
 ## [17 августа 2026] SEO.md: уточнения по /colors и /releases
 
 ### Что изменено

@@ -29,34 +29,24 @@ export function getPrimaryEdition(editions: Edition[]): Edition | null {
 }
 
 /**
- * Ссылка на главу издания. У book/magazine — скролл-читалка `/scroll/[editionSlug]/[n]`,
- * у comic/audio — читалка `/vvvvv/[editionSlug]` (номера главы в пути нет).
+ * Ссылка на главу издания. Все форматы ведут в `/vvvvv/[editionSlug]`.
  */
 export function getChapterUrl(
-  releaseSlug: string,
+  _releaseSlug: string,
   edition: { format: EditionFormat; slug: string; quality_tier: string },
-  chapterNumber: number,
+  _chapterNumber: number,
 ): string {
-  const editionSlug = edition.slug
-  if (edition.format === 'book' || edition.format === 'magazine') {
-    return `/scroll/${editionSlug}/${chapterNumber}`
-  }
-  return `/vvvvv/${editionSlug}`
+  return `/vvvvv/${edition.slug}`
 }
 
 /**
- * Ссылка на вход в издании — у book/magazine скролл-читалка `/scroll/[editionSlug]`,
- * у остальных форматов `/vvvvv/[editionSlug]`.
+ * Ссылка на вход в издании — всегда `/vvvvv/[editionSlug]`.
  */
 export function getEditionTocUrl(
   releaseSlug: string,
   edition: { format: EditionFormat; slug: string; quality_tier: string },
 ): string {
-  const editionSlug = edition.slug
-  if (edition.format === 'book' || edition.format === 'magazine') {
-    return `/scroll/${editionSlug}`
-  }
-  return `/vvvvv/${editionSlug}`
+  return `/vvvvv/${edition.slug}`
 }
 
 export const EDITION_FORMAT_LABELS: Record<EditionFormat, string> = {

@@ -57,8 +57,7 @@ layout, один от самой страницы. Больше двух озн�
 |---|---|---|
 | `/`, `/home`, `/release/**`, `/series/**`, `/characters/**`, `/news/**` | открыто | — |
 | `/colors` | открыто | контентная страница вселенной (18 цветов с историями из `lib/canfly-colors.ts`), не дизайн-система. Покрыта e2e-тестом `seo.spec.ts:284` как публичная. Закрывать от индексации не нужно |
-| `/vvvvv/[editionSlug]` | **открыто** | сознательное решение: издание индексируется под своим типом. Легко потерять при рефакторинге |
-| `/scroll/**` | `noindex, follow` | дубль текста издания; canonical **self**, не на `/vvvvv` — `noindex` + чужой canonical Google считает конфликтом |
+| `/vvvvv/[editionSlug]` | **открыто** | единый canonical для всех форматов (book, comic, magazine, audio). Легко потерять при рефакторинге |
 | `/hi/**`, `/studio-access-denied` | `noindex, nofollow` | magic-link и служебная страница |
 | `/user/[slug]` | `noindex` при `profile_is_public = false` | закрытый профиль |
 | `/search`, `/profile`, `/studio/**`, `/admin/**` | закрыто ранее | не трогалось |

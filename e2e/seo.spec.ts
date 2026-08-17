@@ -348,15 +348,14 @@ test.describe('OG и Twitter', () => {
     expect(res.headers()['content-type']).toContain('image/')
   })
 
-  test('читалка тоже отдаёт карточку', async ({ page }) => {
+  test('читалка отдаёт карточку', async ({ page }) => {
     const releasePath = await firstHref(page, '/', 'a[href^="/release/"]')
     test.skip(!releasePath, 'нет опубликованных релизов в БД')
 
-    const scrollPath = await firstHref(page, releasePath!, 'a[href^="/scroll/"]')
-    test.skip(!scrollPath, 'у релиза нет книжных изданий')
+    const editionPath = await firstHref(page, releasePath!, 'a[href^="/vvvvv/"]')
+    test.skip(!editionPath, 'у релиза нет изданий с читалкой')
 
-    await page.goto(scrollPath!, { waitUntil: 'domcontentloaded' })
-    // У /scroll метатегов не было вовсе.
+    await page.goto(editionPath!, { waitUntil: 'domcontentloaded' })
     expect(await metaContent(page, 'og:title')).toBeTruthy()
     expect(await metaContent(page, 'twitter:card')).toBe('summary_large_image')
   })
@@ -379,7 +378,7 @@ test.describe('матрица noindex', () => {
     const res = await request.get('/robots.txt')
     expect(res.status()).toBe(200)
     const body = await res.text()
-    for (const path of ['/admin', '/studio', '/login', '/profile', '/api', '/search']) {
+    for (const path of ['/admin', '/studio', '/login', '/profile', '/api', '/search', '/scroll']) {
       expect(body, `robots.txt не закрывает ${path}`).toContain(`Disallow: ${path}`)
     }
   })
@@ -397,23 +396,6 @@ test.describe('матрица noindex', () => {
     // Ссылка входа не должна ни индексироваться, ни обходиться.
     expect(robots).toContain('noindex')
     expect(robots).toContain('nofollow')
-  })
-
-  test('скролл-читалка: noindex, но follow', async ({ page }) => {
-    const releasePath = await firstHref(page, '/', 'a[href^="/release/"]')
-    test.skip(!releasePath, 'нет опубликованных релизов в БД')
-
-    const scrollPath = await firstHref(page, releasePath!, 'a[href^="/scroll/"]')
-    test.skip(!scrollPath, 'у релиза нет книжных изданий')
-
-    await page.goto(scrollPath!, { waitUntil: 'domcontentloaded' })
-    const robots = await metaContent(page, 'robots')
-    expect(robots).toContain('noindex')
-    expect(robots).not.toContain('nofollow')
-
-    // Self-canonical: noindex + чужой canonical Google считает конфликтом.
-    const canonical = await page.locator('link[rel="canonical"]').first().getAttribute('href')
-    expect(canonical).toContain('/scroll/')
   })
 
   test('релиз и издание открыты', async ({ page }) => {
