@@ -11,7 +11,6 @@ import { computeEditionMeta, getPrimaryEdition } from '@/lib/utils/editions'
 import { generateReleaseSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
 import { buildMetadata, notFoundMetadata } from '@/lib/seo/metadata'
 import { JsonLd } from '@/components/seo/json-ld'
-import { CATALOG_PATH } from '@/lib/nav'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
@@ -111,11 +110,24 @@ export default async function ReleasePublicPage({ params }: { params: Promise<{ 
     primaryMeta: meta,
     primaryEditionId: primaryEdition?.id ?? null,
   })
-  const breadcrumbSchema = generateBreadcrumbSchema([
-    { label: 'canfly', url: `${BASE_URL}/` },
-    { label: 'Релизы', url: `${BASE_URL}${CATALOG_PATH}` },
-    { label: release.title, url: `${BASE_URL}/release/${release.slug}` },
-  ])
+  const breadcrumbItems = validSeriesLink
+    ? [
+        { label: 'canfly', url: '/' },
+        { label: validSeriesLink.series.title, url: `/series/${validSeriesLink.series.slug}` },
+        { label: release.title, url: `/release/${release.slug}` },
+      ]
+    : [
+        { label: 'canfly', url: '/' },
+        { label: 'Релиз', url: '/releases' },
+        { label: release.title, url: `/release/${release.slug}` },
+      ]
+
+  const breadcrumbSchema = generateBreadcrumbSchema(
+    breadcrumbItems.map(item => ({
+      label: item.label,
+      url: `${BASE_URL}${item.url}`,
+    })),
+  )
 
   return (
     <>
@@ -129,11 +141,7 @@ export default async function ReleasePublicPage({ params }: { params: Promise<{ 
         meta={meta}
         characters={characters}
         otherSeriesReleases={otherSeriesReleases}
-        breadcrumbs={[
-          { label: 'canfly', url: '/' },
-          { label: 'Релиз', url: '/releases' },
-          { label: release.title, url: `/release/${release.slug}` },
-        ]}
+        breadcrumbs={breadcrumbItems}
       />
     </>
   )
