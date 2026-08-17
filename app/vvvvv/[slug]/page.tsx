@@ -16,7 +16,6 @@ import { generateEditionSchema, generateBreadcrumbSchema } from '@/lib/seo/schem
 import { buildMetadata, notFoundMetadata } from '@/lib/seo/metadata'
 import { computeEditionMeta, EDITION_FORMAT_LABELS, isAudioFormat } from '@/lib/utils/editions'
 import { fetchSeriesById } from '@/lib/server/series'
-import { CATALOG_PATH } from '@/lib/nav'
 import type { UserRole } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -94,13 +93,16 @@ export default async function VvvvvReaderPage({
   const breadcrumbItems = series
     ? [
         { label: 'canfly', url: '/' },
+        { label: 'Серии', url: '/series' },
         { label: series.title, url: `/series/${series.slug}` },
         { label: release.title, url: `/release/${release.slug}` },
+        { label: 'Читать', url: `/vvvvv/${editionSlug}` },
       ]
     : [
         { label: 'canfly', url: '/' },
-        { label: 'Релиз', url: '/releases' },
+        { label: 'Релизы', url: '/releases' },
         { label: release.title, url: `/release/${release.slug}` },
+        { label: 'Читать', url: `/vvvvv/${editionSlug}` },
       ]
 
   const jsonLd = (
@@ -113,15 +115,12 @@ export default async function VvvvvReaderPage({
           meta: computeEditionMeta(chapters),
           series: series ? { slug: series.slug, title: series.title } : null,
         }),
-        generateBreadcrumbSchema([
-          { label: 'canfly', url: `${BASE_URL}/` },
-          { label: 'Релизы', url: `${BASE_URL}${CATALOG_PATH}` },
-          { label: release.title, url: `${BASE_URL}/release/${release.slug}` },
-          {
-            label: EDITION_FORMAT_LABELS[edition.format] ?? edition.format,
-            url: `${BASE_URL}/vvvvv/${editionSlug}`,
-          },
-        ]),
+        generateBreadcrumbSchema(
+          breadcrumbItems.map(item => ({
+            label: item.label,
+            url: `${BASE_URL}${item.url}`,
+          })),
+        ),
       ]}
     />
   )

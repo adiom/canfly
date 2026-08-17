@@ -5,7 +5,6 @@ import { SeriesPage } from '@/components/series-page'
 import { generateBreadcrumbSchema, generateSeriesSchema } from '@/lib/seo/schema'
 import { buildMetadata, notFoundMetadata } from '@/lib/seo/metadata'
 import { JsonLd } from '@/components/seo/json-ld'
-import { CATALOG_PATH } from '@/lib/nav'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
@@ -18,9 +17,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     title: `${series.title} | canfly`,
     description: series.description ?? `Серия «${series.title}» на canfly`,
     path: `/series/${series.slug}`,
-    // Не 'book': og:type='book' требует book:author/book:isbn, которых у серии нет.
     ogType: 'website',
-    // og:image — из opengraph-image.tsx рядом.
     generatedImage: true,
   })
 }
@@ -32,7 +29,7 @@ export default async function SeriesPageRoute({ params }: { params: Promise<{ sl
 
   const breadcrumbSchema = generateBreadcrumbSchema([
     { label: 'canfly', url: `${BASE_URL}/` },
-    { label: 'Релизы', url: `${BASE_URL}${CATALOG_PATH}` },
+    { label: 'Серии', url: `${BASE_URL}/series` },
     { label: series.title, url: `${BASE_URL}/series/${series.slug}` },
   ])
 
@@ -44,7 +41,7 @@ export default async function SeriesPageRoute({ params }: { params: Promise<{ sl
         releases={series.releases}
         breadcrumbs={[
           { label: 'canfly', url: '/' },
-          { label: 'Серии', url: '/releases' },
+          { label: 'Серии', url: '/series' },
           { label: series.title, url: `/series/${series.slug}` },
         ]}
       />

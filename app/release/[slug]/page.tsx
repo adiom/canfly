@@ -113,12 +113,13 @@ export default async function ReleasePublicPage({ params }: { params: Promise<{ 
   const breadcrumbItems = validSeriesLink
     ? [
         { label: 'canfly', url: '/' },
+        { label: 'Серии', url: '/series' },
         { label: validSeriesLink.series.title, url: `/series/${validSeriesLink.series.slug}` },
         { label: release.title, url: `/release/${release.slug}` },
       ]
     : [
         { label: 'canfly', url: '/' },
-        { label: 'Релиз', url: '/releases' },
+        { label: 'Релизы', url: '/releases' },
         { label: release.title, url: `/release/${release.slug}` },
       ]
 

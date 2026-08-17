@@ -19,6 +19,31 @@ export async function fetchAllSeries() {
   )
 }
 
+export interface SeriesWithStats extends Series {
+  release_count: number
+  cover_image: string | null
+}
+
+export async function fetchAllSeriesWithStats() {
+  return dbQuery<SeriesWithStats>(
+    `SELECT s.id, s.title, s.slug, s.description, s.created_at, s.updated_at,
+       COUNT(rs.release_id) FILTER (WHERE r.status = 'published') AS release_count,
+       (
+         SELECT r2.cover_image
+         FROM release_series rs2
+         JOIN releases r2 ON r2.id = rs2.release_id
+         WHERE rs2.series_id = s.id AND r2.status = 'published'
+         ORDER BY rs2.phase_number ASC NULLS LAST, r2.release_date ASC NULLS LAST
+         LIMIT 1
+       ) AS cover_image
+     FROM series s
+     LEFT JOIN release_series rs ON rs.series_id = s.id
+     LEFT JOIN releases r ON r.id = rs.release_id
+     GROUP BY s.id
+     ORDER BY s.title ASC`,
+  )
+}
+
 export async function fetchSeriesById(id: string) {
   return dbQueryOne<Series>(
     `SELECT ${seriesColumns} FROM series WHERE id = $1 LIMIT 1`,

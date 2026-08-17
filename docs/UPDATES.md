@@ -2,6 +2,38 @@
 
 ---
 
+## [17 августа 2026] Страница серий + исправление крошек
+
+### Что изменено
+
+- **Новая страница `/series`** — список всех серий вселенной canfly.
+  Карточки с обложкой, названием, описанием и количеством релизов.
+  Title: «Все серии | canfly».
+
+- **Расширена `fetchAllSeriesWithStats()`** в `lib/server/series.ts` —
+  теперь возвращает `release_count` и `cover_image` (обложка первого релиза).
+
+- **Исправлены хлебные крошки** на всех страницах по новой структуре:
+
+  | Страница | Было | Стало |
+  |---|---|---|
+  | `/series` | — | canfly › Серии |
+  | `/series/[slug]` | canfly › Серии → `/releases` | canfly › Серии → `/series` |
+  | `/release/[slug]` (с серией) | canfly › {series} › {title} | canfly › Серии › {series} › {title} |
+  | `/release/[slug]` (без серии) | canfly › Релиз → `/releases` | canfly › Релизы → `/releases` |
+  | `/vvvvv/[slug]` (с серией) | canfly › {series} › {title} | canfly › Серии › {series} › {title} › Читать |
+  | `/vvvvv/[slug]` (без серии) | canfly › Релиз → `/releases` | canfly › Релизы › {title} › Читать |
+  | `/highlight/[id]` | canfly(`→ /releases`) › {title} › highlight | canfly › Релизы › {title} › Цитата (+ серия если есть) |
+
+- JSON-LD `BreadcrumbList` синхронизирован с визуальными крошками на всех страницах.
+
+### Как использовать
+
+- `/series` — доступен по URL, ссылка в навигацию не добавлена.
+- Все релизы в сериях теперь показывают полную цепочку: Серии → серия → релиз.
+
+---
+
 ## [17 августа 2026] Хлебные крошки с BreadcrumbList
 
 ### Что изменено

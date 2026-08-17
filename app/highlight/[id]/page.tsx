@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { fetchReleaseById } from '@/lib/server/releases'
+import { fetchReleaseById, fetchReleaseSeries } from '@/lib/server/releases'
 import { fetchChapterById } from '@/lib/server/chapters'
 import {
   fetchChapterHighlights,
@@ -18,7 +18,7 @@ import { generateQuotationSchema, generateBreadcrumbSchema } from '@/lib/seo/sch
 import { buildMetadata, notFoundMetadata } from '@/lib/seo/metadata'
 import { JsonLd } from '@/components/seo/json-ld'
 import { Breadcrumbs } from '@/components/breadcrumbs'
-import { CATALOG_PATH } from '@/lib/nav'
+import { fetchSeriesById } from '@/lib/server/series'
 import type { UserRole } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -100,11 +100,31 @@ export default async function HighlightSharePage({ params }: PageProps) {
   }
 
   const quotationSchema = generateQuotationSchema({ highlight, release, chapter })
-  const breadcrumbSchema = generateBreadcrumbSchema([
-    { label: 'canfly', url: `${BASE_URL}${CATALOG_PATH}` },
-    { label: release.title, url: `${BASE_URL}/release/${release.slug}` },
-    { label: 'Цитата', url: `${BASE_URL}/highlight/${highlight.id}` },
-  ])
+
+  const seriesLinks = await fetchReleaseSeries(release.id)
+  const series = seriesLinks.length > 0 ? await fetchSeriesById(seriesLinks[0].series_id) : null
+
+  const breadcrumbItems = series
+    ? [
+        { label: 'canfly', url: '/' },
+        { label: 'Серии', url: '/series' },
+        { label: series.title, url: `/series/${series.slug}` },
+        { label: release.title, url: `/release/${release.slug}` },
+        { label: 'Цитата', url: `/highlight/${highlight.id}` },
+      ]
+    : [
+        { label: 'canfly', url: '/' },
+        { label: 'Релизы', url: '/releases' },
+        { label: release.title, url: `/release/${release.slug}` },
+        { label: 'Цитата', url: `/highlight/${highlight.id}` },
+      ]
+
+  const breadcrumbSchema = generateBreadcrumbSchema(
+    breadcrumbItems.map(item => ({
+      label: item.label,
+      url: `${BASE_URL}${item.url}`,
+    })),
+  )
 
   return (
     <>
@@ -119,11 +139,7 @@ export default async function HighlightSharePage({ params }: PageProps) {
       </div>
       <div className="pt-12">
         <div className="mx-auto max-w-3xl px-4 pb-2">
-          <Breadcrumbs items={[
-            { label: 'canfly', url: '/' },
-            { label: release.title, url: `/release/${release.slug}` },
-            { label: 'highlight', url: `/highlight/${highlight.id}` },
-          ]} />
+          <Breadcrumbs items={breadcrumbItems} />
         </div>
         {primaryEdition ? (
           <ReleaseBookReader
