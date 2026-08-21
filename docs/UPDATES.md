@@ -2,6 +2,65 @@
 
 ---
 
+## [21 августа 2026] Слой изданий: тираж, is_primary, слаги + раздел «Издания»
+
+### Что изменено
+
+**Данные.** Новая миграция `postgres/019_editions_is_primary.sql`: добавляет
+`editions.is_primary` (колонка была только в живой базе — ни одна миграция её не
+создавала, на чистой БД создание издания падало), бэкфиллит `quality_tier` из
+слага (`web-draft*` → `draft`, `premium*` → `premium`) и ставит
+`CHECK (quality_tier IN ('draft','standard','premium'))` — TS обещал union, а
+колонка была свободным `text`.
+
+**`lib/server/editions.ts`.**
+- `createEdition` / `updateEdition` приняли типы `EditionCreateInput` /
+  `EditionUpdateInput` (`lib/releases-types.ts`) вместо `Record<string, unknown>`.
+- `updateEdition` переведён на `dbUpdatePartial` — раньше он перезаписывал всю
+  строку и `data.is_primary ?? false` стирал флаг на каждом сохранении настроек
+  издания (в базе не было ни одного primary-издания).
+- Слаг издания теперь производный от релиза: `{release-slug}-0`, `-1`, `-2`…
+  Вставка атомарная — `INSERT ... ON CONFLICT (slug) DO NOTHING RETURNING` в цикле
+  вместо `SELECT`-потом-`INSERT` (гонка давала `unique_violation` → 500).
+- Добавлены сквозные выборки `listAllEditionsWithRelease()` и
+  `listEditionsByAuthorWithRelease(userId)`.
+- Удалён мёртвый `fetchEditionByReleaseFormatTier`.
+
+**Тираж перестал теряться.** `editionFormSchema` не знал поля `quality_tier`,
+поэтому zod срезал его на входе и в базу всегда шёл `standard`; тираж жил только
+в слаге. Теперь `quality_tier` есть в схеме, `createEditionAction` его передаёт, а
+`edition-format-selector.tsx` больше не подменяет слаг. Это лечило и выбор
+«основного» издания: `getPrimaryEdition` мог отдать читателю черновик.
+
+**Раздел «Издания» в Studio.** `app/studio/editions/page.tsx` +
+`components/studio/editions-page-client.tsx`: все издания одним списком,
+сгруппированные по релизу, с фильтрами (формат, статус, поиск по релизу / слагу /
+платформе) и ссылками на главы, настройки и читалку. В `studio-sidebar.tsx`
+появился пункт «Издания». Карты подписей и иконок форматов больше не дублируются —
+`EDITION_FORMAT_ICONS` / `EDITION_STATUS_STAMPS` экспортируются из
+`edition-card.tsx`, тексты берутся из `lib/utils/editions.ts`.
+
+### Зачем
+
+Четыре дефекта портили данные молча: терялся тираж издания, обнулялся `is_primary`,
+схема репозитория расходилась с базой, слаги накапливали хвост `web-book-2/3` и
+`edition-N` (это публичный URL `/vvvvv/…`). Плюс до издания нельзя было добраться
+иначе, чем через страницу его релиза.
+
+### Как использовать
+
+1. Применить `postgres/019_editions_is_primary.sql` к базе, до этого проверив
+   значения: `SELECT quality_tier, count(*) FROM editions GROUP BY 1;`
+2. Издания — в `/studio/editions` (у автора только свои, у админа все).
+3. Слаг издания при создании не передаётся: он собирается из слага релиза.
+   Переименование вручную по-прежнему доступно в настройках издания.
+
+**Не сделано осознанно:** логика `is_primary` (переключатель в UI, инвариант «один
+primary на релиз») — отложено; сейчас только починено стирание флага. Старые слаги
+изданий не переименовываются: `/vvvvv/[slug]` в индексе, редиректов для изданий нет.
+
+---
+
 ## [21 августа 2026] Аудит кода: 10 новых багов (#41–#50)
 
 ### Что изменено

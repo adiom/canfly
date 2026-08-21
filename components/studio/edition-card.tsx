@@ -2,41 +2,32 @@
 
 import Link from 'next/link'
 import type { Edition } from '@/lib/releases-types'
-import { BookOpen, Headphones, Image, Music, Newspaper, Radio } from 'lucide-react'
+import { EDITION_FORMAT_LABELS, QUALITY_TIER_LABELS } from '@/lib/utils/editions'
+import { BookOpen, Globe, Headphones, Image, Music, Newspaper, Radio } from 'lucide-react'
 
-const formatIcons: Record<string, React.ElementType> = {
+/** Иконки форматов — общие с разделом /studio/editions. */
+export const EDITION_FORMAT_ICONS: Record<string, React.ElementType> = {
   book: BookOpen,
   comic: Image,
   audiobook: Headphones,
   audiorelease: Radio,
   album: Music,
   magazine: Newspaper,
+  digital: Globe,
 }
 
-const formatLabels: Record<string, string> = {
-  book: 'Книга',
-  comic: 'Комикс',
-  audiobook: 'Аудиокнига',
-  audiorelease: 'Аудиорелиз',
-  album: 'Альбом',
-  magazine: 'Журнал',
-}
-
-const tierLabels: Record<string, string> = {
-  standard: 'Стандарт',
-  premium: 'Премиум',
-}
-
-const STATUS = {
+export const EDITION_STATUS_STAMPS = {
   draft: { label: 'Черновик', stamp: 'border-cf-text-1/20 text-cf-text-3' },
   published: { label: 'Опубликован', stamp: 'border-cf-warm/40 text-cf-warm' },
   archived: { label: 'Архив', stamp: 'border-cf-text-1/15 text-cf-text-4' },
 } as const
 
 export function EditionCard({ edition }: { edition: Edition }) {
-  const Icon = formatIcons[edition.format] ?? BookOpen
-  const status = STATUS[edition.status] ?? STATUS.draft
-  const tier = edition.quality_tier ? tierLabels[edition.quality_tier] ?? edition.quality_tier : null
+  const Icon = EDITION_FORMAT_ICONS[edition.format] ?? BookOpen
+  const status = EDITION_STATUS_STAMPS[edition.status] ?? EDITION_STATUS_STAMPS.draft
+  const tier = edition.quality_tier
+    ? QUALITY_TIER_LABELS[edition.quality_tier] ?? edition.quality_tier
+    : null
 
   return (
     <Link
@@ -50,7 +41,7 @@ export function EditionCard({ edition }: { edition: Edition }) {
       <div className="flex min-w-0 flex-1 flex-col gap-1.5">
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="text-sm font-black uppercase leading-none tracking-[0.04em] text-cf-text-heading transition-colors group-hover:text-cf-accent">
-            {formatLabels[edition.format] ?? edition.format}
+            {EDITION_FORMAT_LABELS[edition.format] ?? edition.format}
           </h3>
           {tier && (
             <span className="border border-cf-text-1/15 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.12em] text-cf-text-3">

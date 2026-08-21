@@ -16,7 +16,7 @@ import * as chaptersDb from '@/lib/server/chapters'
 import * as seriesDb from '@/lib/server/series'
 import { dbQuery } from '@/lib/db'
 import { parseAudioBlobMetadata } from '@/lib/server/audio-metadata'
-import type { ReleaseCharacterRole, ReleaseDesignConfig } from '@/lib/releases-types'
+import type { QualityTier, ReleaseCharacterRole, ReleaseDesignConfig } from '@/lib/releases-types'
 import {
   releaseFormSchema,
   editionFormSchema,
@@ -223,6 +223,18 @@ export async function getEditions(releaseId: string) {
   return editionsDb.fetchEditionsByRelease(releaseId)
 }
 
+/**
+ * Сквозной список изданий для раздела /studio/editions. Отдельной проверки
+ * владения не нужно: выборка по автору сама ограничена release_collaborators.
+ */
+export async function getMyEditions() {
+  const session = await requireAuth()
+  if (session.roles.includes('admin')) {
+    return editionsDb.listAllEditionsWithRelease()
+  }
+  return editionsDb.listEditionsByAuthorWithRelease(session.user.id)
+}
+
 export async function getReleaseSeries(releaseId: string) {
   await requireReleaseOwnership(releaseId)
   return releasesDb.fetchReleaseSeries(releaseId)
@@ -244,12 +256,16 @@ export async function createEditionAction(formData: FormData) {
     format: data.format,
     platform: data.platform,
     external_url: data.external_url,
-    slug: data.slug,
+    // slug не передаём: собирается на сервере из слага релиза
     status: 'draft',
     is_primary: data.is_primary,
+    // Тираж раньше терялся — форма его присылала, но схема не описывала,
+    // и zod срезал ключ: в БД уходил дефолтный 'standard'.
+    quality_tier: data.quality_tier,
   })
 
   revalidatePath(`/studio/releases/${data.release_id}`)
+  revalidatePath('/studio/editions')
   if (edition) redirect(`/studio/editions/${edition.id}/setup`)
 }
 
@@ -262,6 +278,7 @@ export async function updateEditionStatusAction(id: string, status: string) {
   const edition = await editionsDb.fetchEditionById(id)
   if (edition) {
     revalidatePath(`/studio/editions/${id}`)
+    revalidatePath('/studio/editions')
     revalidatePath(`/studio/releases/${edition.release_id}`)
   }
 }
@@ -269,6 +286,7 @@ export async function updateEditionStatusAction(id: string, status: string) {
 export async function deleteEditionAction(id: string, releaseId: string) {
   await requireEditionOwnership(id)
   await editionsDb.deleteEdition(id)
+  revalidatePath('/studio/editions')
   revalidatePath(`/studio/releases/${releaseId}`)
   redirect(`/studio/releases/${releaseId}`)
 }
@@ -582,7 +600,7 @@ export async function updateEditionSetupAction(
     slug?: string
     platform?: string | null
     external_url?: string | null
-    quality_tier?: string
+    quality_tier?: QualityTier
     cover_image?: string | null
     annotation?: string | null
   },
@@ -591,13 +609,14 @@ export async function updateEditionSetupAction(
   const edition = await editionsDb.fetchEditionById(editionId)
   if (!edition) return null
 
+  // Передаём только пришедшие поля: updateEdition делает частичный UPDATE,
+  // поэтому подставлять текущие значения не нужно. Раньше здесь не было
+  // is_primary — и каждое сохранение настроек сбрасывало флаг в false.
   await editionsDb.updateEdition(editionId, {
-    format: edition.format,
-    platform: data.platform ?? edition.platform,
-    external_url: data.external_url ?? edition.external_url,
-    slug: data.slug ?? edition.slug,
-    status: edition.status,
-    quality_tier: data.quality_tier ?? edition.quality_tier,
+    platform: data.platform,
+    external_url: data.external_url,
+    slug: data.slug,
+    quality_tier: data.quality_tier,
   })
 
   if (data.cover_image !== undefined || data.annotation !== undefined) {
@@ -621,5 +640,6 @@ export async function updateEditionSetupAction(
 
   revalidatePath(`/studio/editions/${editionId}`)
   revalidatePath(`/studio/editions/${editionId}/setup`)
+  revalidatePath('/studio/editions')
   revalidatePath(`/studio/releases/${edition.release_id}`)
 }

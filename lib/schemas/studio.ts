@@ -72,7 +72,10 @@ export const editionFormSchema = z.object({
   format: editionFormatSchema.default('book'),
   platform: optionalString,
   external_url: optionalString,
-  slug: slugSchema,
+  // Слаг собирает сервер из слага релиза — форма его не присылает. Поле
+  // оставлено опциональным для импорта и ручных сценариев.
+  slug: slugSchema.optional(),
+  quality_tier: qualityTierSchema.default('standard'),
   is_primary: z
   .union([z.literal('true'), z.literal('false'), z.literal(''), z.null(), z.undefined()])
   .transform((v) => v === 'true')

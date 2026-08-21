@@ -70,6 +70,35 @@ export interface Edition {
   updated_at: string
 }
 
+/**
+ * Вход createEdition. Слаг не передаётся из форм: он собирается на сервере из
+ * слага релиза, поле оставлено для импорта и миграций данных.
+ */
+export interface EditionCreateInput {
+  release_id: string
+  format?: EditionFormat
+  platform?: string | null
+  external_url?: string | null
+  slug?: string
+  status?: EditionStatus
+  is_primary?: boolean
+  quality_tier?: QualityTier
+}
+
+/**
+ * Вход updateEdition: в UPDATE попадают только переданные ключи. Отсутствие
+ * ключа — «не трогать», поэтому Partial здесь означает именно частичный апдейт.
+ */
+export type EditionUpdateInput = Partial<Omit<EditionCreateInput, 'release_id'>>
+
+/** Издание вместе с релизом-владельцем — для сквозных списков в Studio. */
+export type EditionWithRelease = Edition & {
+  release_title: string
+  release_slug: string
+  release_status: ReleaseStatus
+  chapter_count: number
+}
+
 export interface Chapter {
   id: string
   edition_id: string

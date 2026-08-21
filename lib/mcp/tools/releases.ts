@@ -172,7 +172,7 @@ export function registerReleasesTools(server: McpServer) {
     {
       title: 'Создать издание',
       description:
-        'Добавить формат (book/comic/audiobook/audiorelease/album/magazine/digital) к релизу. slug генерируется автоматически.',
+        'Добавить формат (book/comic/audiobook/audiorelease/album/magazine/digital) к релизу. slug генерируется автоматически из слага релиза: {release-slug}-0, -1, -2…',
       inputSchema: z.object({
         release_id: uuid.describe('UUID релиза'),
         format: editionFormat.optional().describe('Формат (по умолчанию book)'),

@@ -1,5 +1,11 @@
-import { dbQuery, dbQueryOne } from '@/lib/db'
-import type { Edition } from '@/lib/releases-types'
+import { dbQuery, dbQueryOne, dbUpdatePartial } from '@/lib/db'
+import type { UpdatableColumn } from '@/lib/db'
+import type {
+  Edition,
+  EditionCreateInput,
+  EditionUpdateInput,
+  EditionWithRelease,
+} from '@/lib/releases-types'
 
 const editionColumns = `
   id, release_id, format, platform, external_url,
@@ -42,18 +48,6 @@ export async function fetchEditionByIdOrSlug(idOrSlug: string) {
     : fetchEditionBySlug(idOrSlug)
 }
 
-export async function fetchEditionByReleaseFormatTier(
-  releaseId: string,
-  format: string,
-  qualityTier: string
-) {
-  return dbQueryOne<Edition>(
-    `SELECT ${editionColumns} FROM editions
-     WHERE release_id = $1 AND format = $2::edition_format AND quality_tier = $3 LIMIT 1`,
-    [releaseId, format, qualityTier],
-  )
-}
-
 /**
  * Опубликованные издания опубликованных релизов вместе со слагом релиза —
  * для sitemap: без слага релиза URL оглавления не собрать.
@@ -75,74 +69,175 @@ export async function fetchPublishedEditionsForSitemap() {
   )
 }
 
-export async function createEdition(data: Record<string, unknown>) {
-  const baseSlug = (data.slug as string)?.trim() || 'edition'
-  const uniqueSlug = await makeUniqueEditionSlugGlobal(baseSlug)
+// --- Сквозные списки для Studio ---
 
-  return dbQueryOne<Edition>(
-    `INSERT INTO editions (release_id, format, platform, external_url, slug, status, is_primary, quality_tier)
-     VALUES ($1, $2::edition_format, $3, $4, $5, $6::edition_status, $7, $8)
-     RETURNING ${editionColumns}`,
-    [
-      data.release_id,
-      data.format ?? 'book',
-      data.platform ?? null,
-      data.external_url ?? null,
-      uniqueSlug,
-      data.status ?? 'draft',
-      data.is_primary ?? false,
-      data.quality_tier ?? 'standard',
-    ],
+const editionWithReleaseSelect = `
+  e.id, e.release_id, e.format, e.platform, e.external_url,
+  e.slug, e.status, e.is_primary, e.quality_tier, e.created_at, e.updated_at,
+  r.title AS release_title, r.slug AS release_slug, r.status AS release_status,
+  (COUNT(c.id))::integer AS chapter_count
+`
+
+const editionWithReleaseGroupBy = `
+  GROUP BY e.id, e.release_id, e.format, e.platform, e.external_url,
+           e.slug, e.status, e.is_primary, e.quality_tier, e.created_at, e.updated_at,
+           r.title, r.slug, r.status
+  ORDER BY e.updated_at DESC
+`
+
+export async function listAllEditionsWithRelease() {
+  return dbQuery<EditionWithRelease>(
+    `SELECT ${editionWithReleaseSelect}
+     FROM editions e
+     JOIN releases r ON r.id = e.release_id
+     LEFT JOIN chapters c ON c.edition_id = e.id
+     ${editionWithReleaseGroupBy}`,
   )
 }
 
-async function makeUniqueEditionSlugGlobal(baseSlug: string): Promise<string> {
+/**
+ * Издания релизов, где пользователь состоит коллаборатором. Ограничение по
+ * `release_collaborators` — та же граница, что у `listReleasesByAuthorWithEditions`:
+ * список не отдаёт чужие издания даже без отдельной проверки владения.
+ */
+export async function listEditionsByAuthorWithRelease(userId: string) {
+  return dbQuery<EditionWithRelease>(
+    `SELECT ${editionWithReleaseSelect}
+     FROM editions e
+     JOIN releases r ON r.id = e.release_id
+     JOIN release_collaborators rc ON rc.release_id = r.id AND rc.user_id = $1
+     LEFT JOIN chapters c ON c.edition_id = e.id
+     ${editionWithReleaseGroupBy}`,
+    [userId],
+  )
+}
+
+// --- Мутации ---
+
+const MAX_SLUG_ATTEMPTS = 50
+
+/**
+ * Слаг издания собирается из слага релиза: `{release-slug}-0`, `-1`, `-2`… .
+ * Раньше база слага не зависела от релиза (`web-book`, `comic`), а уникальность
+ * глобальная — поэтому копился хвост `web-book-2/3/…`, а MCP-тул без слага
+ * плодил публичные адреса вида `/vvvvv/edition-7`.
+ */
+async function fetchReleaseSlugForEdition(releaseId: string): Promise<string> {
+  const release = await dbQueryOne<{ slug: string }>(
+    `SELECT slug FROM releases WHERE id = $1 LIMIT 1`,
+    [releaseId],
+  )
+  if (!release) throw new Error('Релиз не найден')
+  return release.slug
+}
+
+/**
+ * Вставка с подбором слага. `ON CONFLICT (slug) DO NOTHING` делает попытку
+ * атомарной: параллельное создание изданий одного релиза больше не роняет
+ * запрос через unique_violation, а просто берёт следующий номер.
+ */
+export async function createEdition(data: EditionCreateInput) {
+  const explicitSlug = data.slug?.trim()
+  const baseSlug = explicitSlug || (await fetchReleaseSlugForEdition(data.release_id))
+  const startIndex = explicitSlug
+    ? 0
+    : await countEditionsOfRelease(data.release_id)
+
+  for (let attempt = 0; attempt < MAX_SLUG_ATTEMPTS; attempt++) {
+    const candidate = explicitSlug && attempt === 0
+      ? explicitSlug
+      : `${baseSlug}-${startIndex + attempt}`
+
+    const inserted = await dbQueryOne<Edition>(
+      `INSERT INTO editions (release_id, format, platform, external_url, slug, status, is_primary, quality_tier)
+       VALUES ($1, $2::edition_format, $3, $4, $5, $6::edition_status, $7, $8)
+       ON CONFLICT (slug) DO NOTHING
+       RETURNING ${editionColumns}`,
+      [
+        data.release_id,
+        data.format ?? 'book',
+        data.platform ?? null,
+        data.external_url ?? null,
+        candidate,
+        data.status ?? 'draft',
+        data.is_primary ?? false,
+        data.quality_tier ?? 'standard',
+      ],
+    )
+    if (inserted) return inserted
+  }
+
+  throw new Error(`Не удалось подобрать слаг издания для «${baseSlug}»`)
+}
+
+async function countEditionsOfRelease(releaseId: string): Promise<number> {
+  const row = await dbQueryOne<{ count: number }>(
+    `SELECT (COUNT(*))::integer AS count FROM editions WHERE release_id = $1`,
+    [releaseId],
+  )
+  return row?.count ?? 0
+}
+
+/**
+ * Подбор свободного слага для явного переименования из настроек издания:
+ * автор задаёт основу руками, а числовой суффикс добавляется при конфликте.
+ */
+async function makeUniqueEditionSlugGlobal(baseSlug: string, excludeId?: string): Promise<string> {
   const existing = await dbQuery<{ slug: string }>(
-    `SELECT slug FROM editions WHERE slug = $1 OR slug LIKE $2`,
-    [baseSlug, `${baseSlug}-%`],
+    `SELECT slug FROM editions
+     WHERE (slug = $1 OR slug LIKE $2) AND ($3::uuid IS NULL OR id <> $3::uuid)`,
+    [baseSlug, `${baseSlug}-%`, excludeId ?? null],
   )
   const used = new Set(existing.map(e => e.slug))
   if (!used.has(baseSlug)) return baseSlug
 
-  for (let i = 2; i < 100000; i++) {
+  for (let i = 2; i < MAX_SLUG_ATTEMPTS; i++) {
     const candidate = `${baseSlug}-${i}`
     if (!used.has(candidate)) return candidate
   }
-  return `${baseSlug}-${Date.now()}`
+  throw new Error(`Не удалось подобрать слаг издания для «${baseSlug}»`)
 }
 
-export async function updateEdition(id: string, data: Record<string, unknown>) {
-  const current = await fetchEditionById(id)
-  if (!current) throw new Error('Edition not found')
+/**
+ * Колонки, которые разрешено менять через updateEdition. Ключ отсутствует в
+ * data — колонка не участвует в UPDATE.
+ */
+const editionUpdatable: Record<string, UpdatableColumn> = {
+  format: { column: 'format', cast: '::edition_format' },
+  platform: { column: 'platform' },
+  external_url: { column: 'external_url' },
+  slug: { column: 'slug' },
+  status: { column: 'status', cast: '::edition_status' },
+  is_primary: { column: 'is_primary' },
+  quality_tier: { column: 'quality_tier' },
+}
 
-  let nextSlug = (data.slug as string)?.trim() || current.slug
-  if (nextSlug !== current.slug) {
-    const clash = await dbQuery<{ slug: string }>(
-      `SELECT slug FROM editions WHERE slug = $1 AND id != $2 LIMIT 1`,
-      [nextSlug, id],
-    )
-    if (clash.length > 0) {
-      nextSlug = await makeUniqueEditionSlugGlobal(nextSlug)
-    }
+/**
+ * Частичный апдейт: перезаписываются только переданные поля. Раньше запрос
+ * выставлял все колонки сразу, поэтому сохранение настроек издания (где
+ * is_primary не передаётся) сбрасывало флаг основного издания в false.
+ */
+export async function updateEdition(id: string, data: EditionUpdateInput) {
+  const patch: EditionUpdateInput = { ...data }
+
+  const requestedSlug = data.slug?.trim()
+  if (requestedSlug) {
+    const current = await fetchEditionById(id)
+    if (!current) throw new Error('Edition not found')
+    patch.slug = requestedSlug === current.slug
+      ? undefined
+      : await makeUniqueEditionSlugGlobal(requestedSlug, id)
+  } else {
+    delete patch.slug
   }
 
-  return dbQueryOne<Edition>(
-    `UPDATE editions SET
-      format = $2::edition_format, platform = $3, external_url = $4,
-      slug = $5, status = $6::edition_status, is_primary = $7, quality_tier = $8
-     WHERE id = $1
-     RETURNING ${editionColumns}`,
-    [
-      id,
-      data.format ?? 'book',
-      data.platform ?? null,
-      data.external_url ?? null,
-      nextSlug,
-      data.status ?? 'draft',
-      data.is_primary ?? false,
-      data.quality_tier ?? 'standard',
-    ],
-  )
+  return dbUpdatePartial<Edition>({
+    table: 'editions',
+    id,
+    data: patch as Record<string, unknown>,
+    columns: editionUpdatable,
+    returning: editionColumns,
+  })
 }
 
 export async function updateEditionStatus(id: string, status: string) {

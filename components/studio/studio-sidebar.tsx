@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { BookOpen, Library, Home, PenTool, Users } from 'lucide-react'
+import { BookOpen, Layers, Library, Home, PenTool, Users } from 'lucide-react'
 import type { SessionUser } from '@/lib/server/session'
 import {
   Sidebar,
@@ -20,6 +20,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 
 const baseNav = [
   { title: 'Релизы', href: '/studio', icon: BookOpen },
+  { title: 'Издания', href: '/studio/editions', icon: Layers },
   { title: 'Серии', href: '/studio/series', icon: Library },
 ]
 
