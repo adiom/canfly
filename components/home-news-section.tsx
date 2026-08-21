@@ -27,12 +27,12 @@ export async function HomeNewsSection() {
               <p className="mb-3 text-xs font-black uppercase tracking-[0.18em] text-cf-blue">
                 {item.section}
               </p>
-              <Link href={`/news/${item.id}`} className="group">
+              <Link href={`/news/${item.slug}`} className="group">
                 <h3 className="text-xl font-bold leading-tight text-cf-text-1 group-hover:text-cf-accent transition-colors">{item.title}</h3>
               </Link>
               <p className="mt-5 text-xs uppercase tracking-[0.14em] text-cf-text-4">{item.tag}</p>
               <Link
-                href={`/news/${item.id}`}
+                href={`/news/${item.slug}`}
                 className="mt-4 inline-block text-xs font-black uppercase tracking-[0.14em] text-cf-accent hover:text-[#a81919]"
               >
                 Читать →

@@ -31,7 +31,7 @@ export default async function NewsPage() {
     path: '/news',
     items: news.map(item => ({
       name: item.title,
-      url: `${BASE_URL}/news/${item.id}`,
+      url: `${BASE_URL}/news/${item.slug}`,
       image: item.cover_image,
     })),
   })
@@ -92,7 +92,7 @@ export default async function NewsPage() {
                         </span>
                       )}
                     </div>
-                    <Link href={`/news/${item.id}`} className="group block">
+                    <Link href={`/news/${item.slug}`} className="group block">
                       {item.cover_image && (
                         <div className="relative mb-4 h-48 w-full overflow-hidden border border-cf-text-1/10 sm:h-64">
                           <Image

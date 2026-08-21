@@ -49,7 +49,7 @@ function NewsRow({ news }: { news: NewsPost }) {
         </span>
         {news.status === 'published' && (
           <a
-            href={`/news/${news.id}`}
+            href={`/news/${news.slug}`}
             target="_blank"
             rel="noopener noreferrer"
             className="flex h-7 w-7 items-center justify-center border border-cf-text-1/10 text-cf-text-3 transition-colors hover:border-cf-text-1/30 hover:text-cf-text-1"

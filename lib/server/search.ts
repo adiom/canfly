@@ -12,6 +12,7 @@ export interface SearchResultCharacter {
 export interface SearchResultNews {
   kind: 'news'
   id: string
+  slug: string
   title: string
   section: string
   tag: string | null
@@ -134,7 +135,7 @@ export async function searchAll(q: string): Promise<SearchResults> {
       'news'          AS kind,
       id::text,
       title,
-      ''              AS slug,
+      slug,
       NULL::text      AS type,
       content         AS description,
       NULL::text      AS cover_image,
@@ -195,6 +196,7 @@ export async function searchAll(q: string): Promise<SearchResults> {
       news.push({
         kind: 'news',
         id: row.id,
+        slug: row.slug,
         title: row.title,
         section: row.section ?? '',
         tag: row.tag,
@@ -273,7 +275,7 @@ export async function searchAutocomplete(q: string, limit = 5): Promise<Autocomp
     )
     UNION ALL
     (
-      SELECT 'news' AS kind, id::text, title, '' AS slug, NULL AS type,
+      SELECT 'news' AS kind, id::text, title, slug, NULL AS type,
              NULL AS cover_image, NULL AS avatar, NULL AS label, section
       FROM news_posts
       WHERE status = 'published'
@@ -318,7 +320,7 @@ export async function searchAutocomplete(q: string, limit = 5): Promise<Autocomp
         id: row.id,
         title: row.title,
         subtitle: row.section ?? 'Новости',
-        href: `/news/${row.id}`,
+        href: `/news/${row.slug}`,
         image: null,
       }
     }

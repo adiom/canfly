@@ -563,7 +563,7 @@ export function generateQuotationSchema(opts: {
  * новостных изданий.
  */
 export function generateNewsArticleSchema(post: NewsPost, authorName?: string | null) {
-  const url = `${BASE_URL}/news/${post.id}`
+  const url = `${BASE_URL}/news/${post.slug}`
   const body = stripHtml(post.content)
 
   return {

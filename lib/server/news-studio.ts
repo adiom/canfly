@@ -8,7 +8,7 @@ import {
 } from '@/lib/server/studio-auth'
 
 const newsColumns = `
-  id, section, title, content, tag, display_order, is_active,
+  id, slug, section, title, content, tag, display_order, is_active,
   author_user_id, cover_image, status, published_at, created_at, updated_at
 `
 

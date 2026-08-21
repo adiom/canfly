@@ -38,7 +38,6 @@ export async function updateNewsAction(id: string, formData: FormData) {
   revalidatePath(`/studio/news/${id}`)
   revalidatePath('/studio/news')
   revalidatePath('/news')
-  revalidatePath('/news/' + id)
 }
 
 export async function updateNewsStatusAction(id: string, status: string) {
@@ -54,7 +53,6 @@ export async function updateNewsStatusAction(id: string, status: string) {
   revalidatePath(`/studio/news/${id}`)
   revalidatePath('/studio/news')
   revalidatePath('/news')
-  revalidatePath('/news/' + id)
 }
 
 export async function deleteNewsAction(id: string) {

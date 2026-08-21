@@ -2,6 +2,7 @@ export type HomepageSlideTheme = 'atelier' | 'night-city' | 'pvz' | 'volga' | 'd
 
 export interface NewsPost {
   id: string;
+  slug: string;
   section: string;
   title: string;
   content: string | null;

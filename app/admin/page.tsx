@@ -380,7 +380,7 @@ export default function AdminPage() {
                       </p>
                     </div>
                     <div className="flex shrink-0 gap-2">
-                      <Link href={`/news/${post.id}`} target="_blank">
+                      <Link href={`/news/${post.slug}`} target="_blank">
                         <Button variant="outline" size="sm">Просмотр</Button>
                       </Link>
                       <Link href={`/admin/news/${post.id}/edit`}>

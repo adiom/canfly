@@ -220,7 +220,7 @@ export function NewsEditor({ news }: NewsEditorProps) {
   }
 
   const statusCfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.draft
-  const publishedUrl = `/news/${news.id}`
+  const publishedUrl = `/news/${news.slug}`
 
   return (
     <div className="space-y-6">

@@ -8,6 +8,11 @@ export const newsFormSchema = z.object({
     .trim()
     .min(1, 'Заголовок обязателен')
     .max(300, 'Слишком длинное название'),
+  slug: z
+    .union([z.string(), z.null(), z.undefined()])
+    .transform((v) => (v == null || v === '' ? null : v.trim()))
+    .nullable()
+    .optional(),
   section: z
     .string()
     .trim()

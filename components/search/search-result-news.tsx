@@ -11,7 +11,7 @@ export function SearchResultNewsRow({ item, query = '' }: SearchResultNewsRowPro
   return (
     <li>
       <Link
-        href={`/news/${item.id}`}
+        href={`/news/${item.slug}`}
         className="group flex items-start gap-4 rounded-sm px-3 py-3 transition-colors hover:bg-[#f4efe5]/6"
       >
         <div className="min-w-0 flex-1">

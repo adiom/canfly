@@ -1,8 +1,8 @@
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 
-import { fetchNewsPostById } from '@/lib/server/news'
+import { fetchNewsPostBySlug, fetchNewsPostById } from '@/lib/server/news'
 import { generateNewsArticleSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
 import { buildMetadata, notFoundMetadata } from '@/lib/seo/metadata'
 import { JsonLd } from '@/components/seo/json-ld'
@@ -13,13 +13,27 @@ const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
 export const dynamic = 'force-dynamic'
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 interface NewsPageProps {
-  params: Promise<{ id: string }>
+  params: Promise<{ slug: string }>
+}
+
+async function resolveNewsSlug(slug: string) {
+  // Если slug похож на UUID — найти по ID и перенаправить на slug
+  if (UUID_RE.test(slug)) {
+    const post = await fetchNewsPostById(slug)
+    if (post && post.status === 'published') {
+      redirect(`/news/${post.slug}`)
+    }
+    return null
+  }
+  return fetchNewsPostBySlug(slug)
 }
 
 export async function generateMetadata({ params }: NewsPageProps) {
-  const { id } = await params
-  const post = await fetchNewsPostById(id)
+  const { slug } = await params
+  const post = await resolveNewsSlug(slug)
 
   if (!post || post.status !== 'published') return notFoundMetadata('Новость не найдена')
 
@@ -27,7 +41,7 @@ export async function generateMetadata({ params }: NewsPageProps) {
     title: `${post.title} — canfly`,
     // content — HTML: без stripHtml в описание уезжали теги.
     description: post.content ?? post.title,
-    path: `/news/${post.id}`,
+    path: `/news/${post.slug}`,
     // og:image — из opengraph-image.tsx рядом.
     generatedImage: true,
     ogType: 'article',
@@ -37,8 +51,8 @@ export async function generateMetadata({ params }: NewsPageProps) {
 }
 
 export default async function NewsPage({ params }: NewsPageProps) {
-  const { id } = await params
-  const post = await fetchNewsPostById(id)
+  const { slug } = await params
+  const post = await resolveNewsSlug(slug)
 
   if (!post || post.status !== 'published') {
     notFound()
@@ -48,7 +62,7 @@ export default async function NewsPage({ params }: NewsPageProps) {
   const breadcrumbSchema = generateBreadcrumbSchema([
     { label: 'canfly', url: `${BASE_URL}/` },
     { label: 'Новости', url: `${BASE_URL}/news` },
-    { label: post.title, url: `${BASE_URL}/news/${post.id}` },
+    { label: post.title, url: `${BASE_URL}/news/${post.slug}` },
   ])
 
   const date = post.published_at ?? post.created_at
@@ -75,7 +89,7 @@ export default async function NewsPage({ params }: NewsPageProps) {
         <Breadcrumbs items={[
           { label: 'canfly', url: '/' },
           { label: 'Новости', url: '/news' },
-          { label: post.title, url: `/news/${post.id}` },
+          { label: post.title, url: `/news/${post.slug}` },
         ]} />
       </div>
 

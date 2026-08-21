@@ -1,8 +1,9 @@
 import { dbQuery, dbQueryOne } from '@/lib/db'
 import { sanitizeChapterHtml } from '@/lib/sanitize'
+import { generateSlug } from '@/lib/slug-utils'
 import { NewsPost } from '@/lib/types'
 
-const newsColumns = `id, section, title, content, tag, display_order, is_active, created_at, author_user_id, cover_image, status, published_at, updated_at`
+const newsColumns = `id, slug, section, title, content, tag, display_order, is_active, created_at, author_user_id, cover_image, status, published_at, updated_at`
 
 /** Контент новости пишет любой author — доверенным он не является */
 function withSafeContent<T extends { content?: string | null }>(row: T): T {
@@ -34,12 +35,36 @@ export async function fetchNewsPostById(id: string) {
   return row ? withSafeContent(row) : row
 }
 
+export async function fetchNewsPostBySlug(slug: string) {
+  const row = await dbQueryOne<NewsPost>(
+    `SELECT ${newsColumns} FROM news_posts WHERE slug = $1 LIMIT 1`,
+    [slug],
+  )
+  return row ? withSafeContent(row) : row
+}
+
+/** Генерирует уникальный slug из title, проверяя коллизии в БД */
+async function generateUniqueNewsSlug(title: string): Promise<string> {
+  const base = generateSlug(title)
+  const existing = await dbQuery<{ slug: string }>(
+    'SELECT slug FROM news_posts WHERE slug = $1 OR slug LIKE $2',
+    [base, `${base}-%`],
+  )
+  const slugs = existing.map(r => r.slug)
+  if (slugs.length === 0) return base
+
+  let counter = 2
+  while (slugs.includes(`${base}-${counter}`)) counter++
+  return `${base}-${counter}`
+}
+
 export async function createNewsPost(data: Record<string, unknown>) {
+  const slug = await generateUniqueNewsSlug((data.title as string) || 'untitled')
   return dbQueryOne<NewsPost>(
-    `INSERT INTO news_posts (section, title, content, tag, display_order, is_active)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO news_posts (section, title, slug, content, tag, display_order, is_active)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING ${newsColumns}`,
-    [data.section, data.title, data.content, data.tag, data.display_order, data.is_active],
+    [data.section, data.title, slug, data.content, data.tag, data.display_order, data.is_active],
   )
 }
 

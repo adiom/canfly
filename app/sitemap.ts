@@ -27,7 +27,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   }))
 
   const newsEntries = newsPosts.map((post) => ({
-    url: `${BASE_URL}/news/${post.id}`,
+    url: `${BASE_URL}/news/${post.slug}`,
     lastModified: new Date(post.created_at),
     changeFrequency: 'monthly' as const,
     priority: 0.7,
