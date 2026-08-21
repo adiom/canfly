@@ -25,13 +25,20 @@ function priorityLabel(labels) {
 
 function stripBody(body) {
   if (!body) return ''
-  return body
+  const text = body
     .replace(/<!--.*?-->/gs, '')
     .replace(/#{1,6}\s/g, '')
     .replace(/\*{1,2}/g, '')
     .replace(/`{1,3}/g, '')
     .trim()
-    .slice(0, 300)
+
+  const LIMIT = 600
+  if (text.length <= LIMIT) return text
+
+  // Резать по границе слова, иначе описание обрывается на полуслове
+  const cut = text.slice(0, LIMIT)
+  const breakAt = Math.max(cut.lastIndexOf('\n'), cut.lastIndexOf(' '))
+  return `${cut.slice(0, breakAt > 0 ? breakAt : LIMIT).trimEnd()}…`
 }
 
 async function main() {
@@ -39,8 +46,22 @@ async function main() {
     year: 'numeric', month: 'long', day: 'numeric',
   })
 
-  const bugIssues = JSON.parse(run('gh issue list --label bug --json number,title,labels,state,body,updatedAt --limit 100 --state open'))
-  const featureIssues = JSON.parse(run('gh issue list --label enhancement --json number,title,labels,state,body,updatedAt --limit 100 --state open'))
+  // Один листинг вместо двух запросов с --label: серверный фильтр по лейблу идёт
+  // через search API, индекс которого для этого репозитория пуст после
+  // переименования (v0-canfly → canfly) — `--label bug` отдаёт [] при живых
+  // issues, и docs молча перезаписывались пустыми. Делим по лейблам на клиенте.
+  const allIssues = JSON.parse(run('gh issue list --json number,title,labels,state,body,updatedAt --limit 200 --state open'))
+  const hasLabel = (issue, name) => issue.labels?.some(l => l.name === name)
+
+  const bugIssues = allIssues.filter(i => hasLabel(i, 'bug'))
+  const featureIssues = allIssues.filter(i => hasLabel(i, 'enhancement'))
+
+  // Issue без bug/enhancement не попадает ни в один документ и становится
+  // невидимой — так три недели пролежала #17.
+  const unlabeled = allIssues.filter(i => !hasLabel(i, 'bug') && !hasLabel(i, 'enhancement'))
+  if (unlabeled.length > 0) {
+    console.warn(`⚠ Без лейбла bug/enhancement (не попадут в docs): ${unlabeled.map(i => `#${i.number}`).join(', ')}`)
+  }
 
   bugIssues.sort((a, b) => prioritySort(a.labels) - prioritySort(b.labels))
   featureIssues.sort((a, b) => prioritySort(a.labels) - prioritySort(b.labels))

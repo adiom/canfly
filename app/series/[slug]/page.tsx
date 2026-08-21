@@ -14,7 +14,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   if (!series) return notFoundMetadata('Серия не найдена')
 
   return buildMetadata({
-    title: `${series.title} | canfly`,
+    title: `Серия книг: ${series.title} | canfly`,
     description: series.description ?? `Серия «${series.title}» на canfly`,
     path: `/series/${series.slug}`,
     ogType: 'website',
