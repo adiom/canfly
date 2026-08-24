@@ -1,175 +1,64 @@
-# AGENTS.md
+# Repository Guidelines
 
-Этот файл — руководство для Claude Code (claude.ai/code) и других AI-агентов при работе с кодом в этом репозитории.
-`CLAUDE.md` импортирует его целиком (`@AGENTS.md`), так что правки вносятся сюда.
+**Всегда отвечай пользователю по-русски и лаконично.**
 
-**ВСЕГДА ОТВЕЧАЙ НА РУССКОМ И ПИШИ ЛАКОНИЧНО.**
+## Обязательное правило для Next.js
 
----
+Перед любой работой с Next.js прочитай относящуюся к задаче локальную документацию в `node_modules/next/dist/docs/`. Это источник истины для установленного Next.js 16.3.0; не полагайся на знания обучения или устаревшие примеры.
 
-## Проект
+1. Определи тему: App Router, Route Handlers, Server/Client Components, Proxy, кэширование, metadata и т. п.
+2. Найди материал в `node_modules/next/dist/docs/01-app/` (`01-getting-started/`, `02-guides/` или `03-api-reference/`).
+3. Прочитай его до изменений кода. Для общих тем начни с `node_modules/next/dist/docs/index.md`.
 
-**canfly | культура твоего сознания** — литературная вселенная и веб-платформа: релизы (книги, комиксы, журналы, аудиокниги), Studio для авторов, соцсеть AI-персонажей.
+Не импортируй внутренние модули `next/dist/**`: ESLint их запрещает. Используй публичные API из документации.
 
-Стек: Next.js 16.2.7 (App Router) · React 19.2.7 · TypeScript 5.7.3 (strict) · Tailwind v4 · shadcn/ui (new-york) · Postgres (Neon/Vercel) через `pg` Pool **без ORM** · next-auth v5 beta · Vercel AI SDK v6 · Vercel Blob · pnpm 11.
+## Проект и устройство
 
-Актуальные версии зависимостей смотреть в `package.json` — не полагаться на числа в документации.
+canfly — литературная платформа: релизы, Studio для авторов, персонажи с AI-чатом и ридер `vvvvv`. Стек: Next.js App Router, React 19, strict TypeScript, Tailwind CSS v4, shadcn/ui, PostgreSQL через `pg` без ORM, next-auth v5 beta, Vercel AI SDK, Vercel Blob и pnpm. Точные версии всегда смотри в `package.json`.
 
-## Команды
+- `app/` — страницы, layouts, Route Handlers и маршруты App Router.
+- `components/` — UI; общие примитивы в `components/ui/`, предметные компоненты — в папках по функции.
+- `lib/server/` — репозитории и серверная доменная логика; `lib/actions/` — server actions; `lib/schemas/` — Zod-схемы.
+- `postgres/` — базовая схема и SQL-миграции; `e2e/` — Playwright; `public/` и `assets/` — статические ресурсы.
+
+Основная модель контента — `releases → editions → chapters` (с версиями глав). Один релиз может иметь издания разных форматов; публичные пути — `/release/[slug]` и `/vvvvv/[slug]` для ридера. Не путай их с маршрутами совместимости: `/books`, `/shop`, `/cart`, `/reader` и `/scroll` всё ещё обрабатываются `proxy.ts`, а `/api/books` и `/api/orders` намеренно возвращают retired-ответы. Не возвращай прежнее поведение без отдельного решения о продукте и безопасности.
+
+## Документация репозитория
+
+Папка `docs/` существует, но большинство её материалов — исторические и могут описывать уже изменённые маршруты, функции и архитектуру. Не используй их как источник истины без сверки с кодом. Исключение — `docs/UPDATES.md`: это актуальный журнал изменений, который нужно обновлять при заметных изменениях (что сделано, зачем и как использовать). Для Next.js всегда приоритет у локальной документации из `node_modules/next/dist/docs/`, описанной выше.
+
+## Разработка и проверки
 
 ```bash
-pnpm dev            # Turbopack, NODE_OPTIONS с --max-old-space-size=3072 (8 GB RAM)
-pnpm build          # обязательная проверка типов перед коммитом
-pnpm lint           # eslint . (flat config, typescript-eslint)
-pnpm start          # прод-сборка
-
-pnpm test:e2e       # все Playwright-тесты
-pnpm test:smoke     # только e2e/smoke.spec.ts
-pnpm exec playwright test e2e/studio.spec.ts            # один файл
-pnpm exec playwright test e2e/studio.spec.ts:42         # один тест по строке
-pnpm exec playwright test -g "название теста"           # один тест по имени
-pnpm exec playwright test --headed --debug              # отладка
-
-pnpm db:structure   # выгрузка структуры БД (scripts/read-db-structure.mjs)
-pnpm sync:tasks     # регенерация docs/BUGS.md и docs/TASKS.md из GitHub Issues
+pnpm dev                                      # локальный Next.js
+pnpm lint                                     # ESLint
+pnpm build                                    # production build и проверка типов
+pnpm test:e2e                                 # все Playwright-тесты
+pnpm test:smoke                               # только public smoke-набор
+pnpm exec playwright test e2e/studio.spec.ts # один файл
+pnpm db:structure                             # структура подключённой БД
 ```
 
-Для e2e нужен `DATABASE_URL` в `.env.local`: `globalSetup` создаёт в БД тестового админа (`studio-test-admin@canfly.test`), `globalTeardown` его удаляет. Логин в тестах идёт через реальный magic-link UI (`e2e/setup/login-helper.ts`): в dev-режиме код показывается на странице, Playwright забирает его из DOM. `webServer` поднимает `pnpm dev` (в CI — `pnpm start`).
+Создай `.env.local` по `.env.example`; секреты не коммить. E2E-хуки создают тестового администратора в БД, поэтому запускай полный набор только с подходящим `DATABASE_URL` и нужными auth/email-настройками. Перед передачей изменений запускай узкий тест, затем `pnpm lint` и `pnpm build`.
 
-## Архитектура: что нужно понимать до правок
+## Код, данные и доступ
 
-### 1. Система контента — только Release
+Пиши TypeScript без `any`, с двумя пробелами, одинарными кавычками и trailing commas; используй алиас `@/`. Следуй стилю ближайшего файла. Компоненты именуй `PascalCase`, модули — kebab-case. Server Components используй по умолчанию; `'use client'` добавляй только для браузерного состояния, событий или API браузера.
 
-Legacy-система книг удалена 9 августа 2026: страницы `/books/**`, витрина `/shop`, корзина `/cart` с `lib/cart-context.tsx`, админка книг (`app/admin/books/**`, `app/api/admin/books/**`, `book-form.tsx`), `lib/server/books.ts` и компоненты `book-reader.tsx` / `books-client.tsx` / `comic-reader.tsx` больше не существуют. Осталось три следа, и трогать их не нужно:
+Работай с Postgres только через `lib/db.ts`; запросы и репозитории размещай в `lib/server/`, не в компонентах или page-файлах. Используй параметры SQL, а для связанных мутаций — `withTransaction`. Изменение БД оформляй новой SQL-миграцией в `postgres/` с уникальным следующим префиксом (сейчас `020_…`), а не правкой уже применённой миграции.
 
-- **301-редиректы в `proxy.ts`**: `/books/*` → `/release/[slug]`, `/shop` и `/cart` → `/releases`, `/reader/*` → `/vvvvv/*`. Держат старые URL, которые годами живут в индексе Google.
-- **Надгробия API**: `GET|POST /api/books` и `POST /api/orders` отвечают «retired» (у orders — 410). `/api/orders` принимал анонимный POST с ценой из тела запроса, поэтому его нельзя просто вернуть.
-- **Таблицы `books`, `book_characters`, `orders`** остались в `postgres/schema.sql` и в базе как архив — живого кода к ним нет.
+`proxy.ts`, а не `middleware.ts`, отвечает за URL-нормализацию, legacy-редиректы и первичную защиту маршрутов. Его matcher — белый список; меняя гвард, проверяй matcher. Proxy не заменяет проверку доступа в мутациях: server actions валидируют вход через Zod и используют `lib/server/studio-auth.ts`. Для действий с релизом, изданием или главой вызывай соответствующую `require*Ownership()` — это защита от IDOR.
 
-| Актуальная система |
-|---|
-| `releases` → `editions` → `chapters` (+ `chapter_versions`) |
-| `app/release/[slug]/**`, `components/release-*.tsx` |
-| `app/studio/` + server actions в `lib/actions/` — создание и редактирование контента |
-| `app/admin/` — только персонажи, новости, слайды и пользователи |
-| `app/releases/` — каталог |
+Route Handlers оборачивай в `apiHandler()`, если не требуется исключение по существующему паттерну. Не обходи rate limiting, серверную санитаризацию HTML (`lib/sanitize.ts`) или проверку сигнатуры загружаемых файлов. Не ослабляй CSP и другие заголовки из `next.config.mjs` без обоснованной проверки.
 
-Иерархия данных: **release** (произведение) → **edition** (издание конкретного формата: book/comic/magazine/audio, у book ещё `quality_tier` ∈ draft/standard/premium) → **chapter** (+ версии). Один и тот же релиз может иметь несколько изданий разных форматов. Публичная страница релиза — только `/release/[slug]`, читалки живут отдельно:
+## Особые подсистемы
 
-- `/vvvvv/[editionSlug]` — единый ридер для всех форматов: `SpreadReader` для book/magazine, `ReleaseComicReader` для comic, `ReleaseAudioPlayer` для audio;
-- `/highlight/[highlightId]` — расшаренная цитата.
+Для новых MCP-тулов используй `zod-v4` только в `lib/mcp/**`, `z.object()` для `inputSchema`, UUID-валидацию и корректные `annotations`; ограничивай объём списков через `limit`/`offset`. `/api/mcp` защищён `MCP_TOKEN`, а его инструменты обращаются к БД вне `studio-auth`; не расширяй доступ или набор write-тулов без отдельной авторизации.
 
-### 2. Middleware называется `proxy.ts`
+В интерфейсе переиспользуй токены `cf-*` из `app/globals.css` и существующие shadcn-компоненты. Новые строки с пользовательским HTML очищай на сервере до записи.
 
-Не `middleware.ts` — файла с таким именем нет и создавать его не нужно. `proxy.ts` экспортирует `proxy()` и `config` и отвечает за:
+## Тесты, коммиты и PR
 
-- JWT-гварды `/profile`, `/user`, `/user-settings`, `/admin` (нужна роль `admin`, иначе → `/admin/login`), `/studio` (**только факт авторизации** — роли проверяются глубже, в layout по БД);
-- 301-нормализацию: `/release` → `/releases`, `/home` → `/`, приведение слага `/release/[slug]` к нижнему регистру;
-- редиректы legacy-маршрутов.
+Называй E2E-файлы `e2e/<feature>.spec.ts`, группируй проверки через `test.describe` и добавляй регрессионный тест для изменённого маршрута, доступа, редиректа или API. В истории используются короткие Conventional-стиль сообщения: `feat(reader): …`, `fix(auth): …`, `chore: …`, `docs: …`.
 
-`config.matcher` — **белый список**: вне перечисленных путей `proxy()` не вызывается вообще. Поэтому отдельные пропуски для `/api/**` и `/hi/**` не нужны, а добавление гварда без правки matcher ничего не защитит. Обратное тоже верно: server action — это POST на свой роут, и сужение matcher молча снимет с него защиту, поэтому авторизация обязана дублироваться в `studio-auth`.
-
-Метаданные-роуты (`opengraph-image`, `twitter-image`, `icon`, `apple-icon`) пропускаются в самом начале: для правила «всё глубже `/release/[slug]` — на сам релиз» это подмаршрут, и без исключения картинка отвечала бы 301.
-
-Редиректы ведут на пути **без завершающего слэша**: `trailingSlash` не включён, и Next добавил бы к `/releases/` второй прыжок (308).
-
-Страница `/login` авторизованному показывает `AlreadySignedIn` (см. `app/login/page.tsx`), редиректа в `proxy.ts` для неё нет.
-
-### 3. Авторизация — три слоя
-
-1. **`proxy.ts`** — грубый JWT-гвард по URL.
-2. **`app/(auth)/auth.config.ts`** — `createAuthConfig()`, стратегия JWT, `trustHost: true`. Провайдеры: Credentials (magic link), Yandex, Google, GitHub, canfly OIDC SSO — каждый включается только при наличии своих env-переменных. Роли грузятся из `user_roles` при логине и кэшируются в JWT (модульная аугментация `Session`/`User`/`JWT`: `id`, `type`, `login`, `handle`, `roles`).
-3. **`lib/server/studio-auth.ts`** — авторитетная проверка в server actions и `page.tsx`:
-   - `requireStudioSession()` — author | editor | admin (возвращает `null`, не бросает);
-   - `requireStudioAdminSession()`, `requireAuthorOrAdminSession()`;
-   - `requireReleaseOwnership(id)` / `requireEditionOwnership(id)` / `requireChapterOwnership(id)` — владение через `release_collaborators.role = 'owner'`, admin проходит всегда, иначе `redirect('/studio')`. **Каждая мутация чужой сущности обязана проходить через них — это защита от IDOR.**
-
-Роли: `reader` (по умолчанию) | `author` | `editor` | `admin`.
-
-**Magic link работает полностью**: `app/(auth)/actions.ts` отправляет письмо через Postmark (`POSTMARK_SERVER_TOKEN`, `POSTMARK_FROM_EMAIL`), код генерируется через `crypto.randomInt`. Погашение токена — только в `lib/server/magic-token.ts`: один атомарный `UPDATE ... WHERE used = false AND expires_at > NOW() AND attempts < 5 RETURNING` (compare-and-swap, защита от гонки и брутфорса), вызывается исключительно из `Credentials.authorize`. Логина по «голому» email не существует. `POST /api/cron/cleanup` (Vercel Cron, `vercel.json`, 04:00) чистит использованные/протухшие токены, проверяя `Authorization: Bearer $CRON_SECRET`.
-
-### 4. Слой данных
-
-`lib/db.ts` — единственная точка доступа к Postgres: `dbQuery<T>()`, `dbQueryOne<T>()`, `withTransaction(fn)` для многошаговых мутаций. Пул намеренно маленький (`max: 3`) под serverless. `normalizeConnectionString()` переписывает `sslmode=require|prefer|verify-ca` в `verify-full` — обход смены семантики в pg v9; строку подключения читает из `DATABASE_URL` / `POSTGRES_URL` / `POSTGRES_PRISMA_URL` / `POSTGRES_URL_NON_POOLING`.
-
-Запросы не разбросаны по компонентам: репозитории живут в `lib/server/*` (releases, editions, chapters, characters, news, search, reading-progress, chapter-highlights и т.д.). Новая работа с БД — туда же, а не в page/route.
-
-**Схема БД правится только миграцией в `postgres/`.** Файлы идемпотентны (ENUM'ы через `DO $$ ... EXCEPTION WHEN duplicate_object`), применяются по порядку: `schema.sql` → `002_release_system.sql` … `013_rate_limits.sql`, плюс `highlights-migration.sql` и `postgres/migrations/001_magic_tokens.sql`.
-
-### 5. Security-слой (появился в хотфиксе 29.07.2026 — не ломать)
-
-- `lib/server/rate-limit.ts` — fixed-window лимитер на Postgres (без Redis): атомарный `INSERT ... ON CONFLICT (bucket, subject, window_start) DO UPDATE SET hits = hits + 1 RETURNING`, `rateLimitResponse()` отдаёт 429 с `Retry-After`. Применён к AI-чату персонажей (60/час) и LLM-эндпоинтам хайлайтов.
-- `lib/ai/highlight-actions.ts` — `guardHighlightRequest()`: авторизация + zod (`text` ≤ 600 символов) + лимит 30/час; общий гвард для `/api/highlights/{explain,meaning,rewrite,illustrate}`. Открытых LLM-эндпоинтов быть не должно.
-- `lib/server/image-upload.ts` — валидация загрузок по сигнатуре байтов, а не по MIME из запроса.
-- `lib/sanitize.ts` — на `sanitize-html` (DOMPurify/isomorphic-dompurify удалены). Санитизация делается **на сервере перед записью**, а не только при рендере.
-- `next.config.mjs` → `headers()` — CSP (`frame-ancestors 'none'`, `form-action 'self'`, `object-src 'none'`), HSTS, `X-Frame-Options: DENY`, `nosniff`, Referrer-Policy, Permissions-Policy. `'unsafe-inline'/'unsafe-eval'` в `script-src` нужны бутстрапу Next.js — остальное закрыто.
-- `POST /api/orders` отвечает 410: цена приходила с клиента.
-- Регрессии на это покрыты `e2e/auth-security.spec.ts`.
-
-### 6. API routes и server actions
-
-Route handlers оборачиваются в `apiHandler()` из `lib/api-handler.ts`: он логирует 5xx и **маскирует сообщения pg в проде**, но пробрасывает управляющие ошибки Next (`digest` = `NEXT_REDIRECT` / `NEXT_NOT_FOUND`) — иначе `redirect()` из проверок владения превратился бы в 500. Ответы — JSON с полем `data` или `error`.
-
-Server actions лежат в `lib/actions/` (`studio.ts`, `studio-create.ts`, `studio-characters.ts`, `studio-news.ts`, `account-settings.ts`), начинаются с `'use server'`, валидируют вход zod-схемами из `lib/schemas/` и первым делом вызывают гвард из `studio-auth.ts`.
-
-### 7. Ридер и хайлайты
-
-`components/release-book-reader.tsx` (~1000 строк) — центральный клиентский компонент: постраничная вёрстка (`lib/reader/use-column-pagination.ts`), выделение текста и рендер хайлайтов через TreeWalker по DOM (`lib/reader/highlights-dom.ts`), сохранение прогресса (`POST /api/reading-progress` → `lib/server/reading-progress.ts`), закладки, редакторские заметки. Хайлайт можно расшарить (`/release/[slug]/highlight/[id]`) и «дожать» LLM-действиями (объяснить / смысл / переписать / проиллюстрировать).
-
-### 8. AI-персонажи
-
-`POST /api/characters/chat` — `streamText` из AI SDK v6, модель `openai/gpt-4o-mini` через Vercel AI Gateway (`OPENAI_API_KEY`). Системные промпты персонажей **захардкожены** в самом route (`characterPrompts`). Требуется авторизация + рейт-лимит. Вокруг персонажей есть соцслой: посты, стена, дружба, диалоги и память (`character_*` таблицы).
-
-### 9. MCP-сервер
-
-`POST|GET|DELETE /api/mcp` — MCP-сервер на `@modelcontextprotocol/server` v2 через `mcp-handler` v2 (Streamable HTTP, stateless: инстанс сервера строится заново на каждый запрос). Тулы регистрируются в `lib/mcp/tools/*.ts`, общие помощники ответа — в `lib/mcp/tool-result.ts`.
-
-**Зачем отдельный zod.** SDK v2 требует `zod ^4.2.0`, а проект живёт на zod 3 (`lib/schemas/**`). Поэтому в `package.json` есть алиас `"zod-v4": "npm:zod@^4.2.0"`, и файлы `lib/mcp/**` импортируют `* as z from 'zod-v4'`. Не переводить их на обычный `zod` — `registerTool` не примет схему без `~standard.jsonSchema`. И наоборот: не тащить `zod-v4` в остальной код.
-
-**Правила для тулов.** `registerTool(name, config, cb)`, `inputSchema` — всегда `z.object()`. Обязательны `annotations` (`readOnlyHint` для читающих, `destructiveHint` для перезаписывающих) — по ним хост решает, спрашивать ли подтверждение. Идентификаторы — `z.uuid()`, иначе мусор дойдёт до Postgres. `try/catch` не нужен: SDK сам превращает исключение в `isError: true`. Списки возвращать урезанными (`pick`) и с `limit`/`offset` — полные записи раздувают контекст модели.
-
-**Защита — только `MCP_TOKEN`.** Тулы ходят в БД напрямую и **не проходят гварды `studio-auth`**: ни `requireStudioSession()`, ни проверок владения. Единственный барьер — статический Bearer-токен; без переменной роут отвечает 503. Поэтому расширять доступ к эндпоинту нельзя, не добавив авторизацию уровня `studio-auth` в сами тулы. 401 отдаётся **без** заголовка `WWW-Authenticate`: с ним MCP Inspector и mcp-remote принимают ответ за приглашение к OAuth и уходят в регистрацию клиента по RFC 9728, которой здесь нет. Рейт-лимит (300/час) считается по хешу токена, а не по IP — `x-forwarded-for` приходит от клиента.
-
-Подключение — `.mcp.json` (`type: http` + заголовок с `${MCP_TOKEN}`); `MCP_TOKEN` должен быть в окружении оболочки, а не только в `.env.local`.
-
-### 10. UI
-
-Дизайн-система описана в `docs/design-system.md` — читать перед версткой. Ключевое: цвета только через CSS-переменные `cf-*` (`bg-cf-bg`, `text-cf-text-1`, `bg-cf-accent`, …), определённые в `app/globals.css`; хардкод hex не использовать; **префикс `dark:` не применяется** — темы переключаются подменой значений переменных на `.dark`.
-
-## Правила
-
-### Не делать
-- Не создавать `middleware.ts` (см. `proxy.ts`), не ссылаться на удалённые `lib/admin-auth.ts` и `components/character-graph.tsx`.
-- Не воскрешать legacy-систему `/books/`, `/shop/`, `/cart/` — она удалена, в `proxy.ts` от неё остались только 301-редиректы.
-- Не менять структуру БД без миграции в `postgres/`.
-- Не использовать `any`; не оставлять `console.log` в проде.
-- Не удалять файлы без разрешения; не коммитить `.env.local`.
-- Не обходить `studio-auth`-гварды и рейт-лимиты «для простоты».
-
-### Делать
-- Перед написанием Next.js-кода сверяться с `docs/nextjs-rules.md` и локальной документацией в `node_modules/next/dist/docs/`.
-- Server Components по умолчанию; `'use client'` — только там, где нужен интерактив.
-- Новая серверная логика → `lib/server/`, мутации → server actions с zod.
-- Проверять `pnpm build` и `pnpm lint` перед коммитом.
-
-### Перед каждым git commit
-1. `pnpm sync:tasks`, если менялись GitHub Issues (`docs/BUGS.md` / `docs/TASKS.md` генерируются автоматически, вручную не править).
-2. Запись в `docs/UPDATES.md` в формате: `## [дата] Название` → что изменено / зачем / как использовать. **Без записи в UPDATES.md — не коммитить** (правило продублировано в `.cursor/rules/updates.mdc`).
-
-## Переменные окружения
-
-Полный актуальный список — в `.env.example`. Обязательные: `DATABASE_URL`, `AUTH_SECRET`, `NEXT_PUBLIC_BASE_URL`. Дальше по необходимости: `POSTMARK_SERVER_TOKEN` + `POSTMARK_FROM_EMAIL` (magic link), `OPENAI_API_KEY` (AI), `BLOB_READ_WRITE_TOKEN` (загрузки), `CRON_SECRET` (cron), `MCP_TOKEN` (защита `/api/mcp`, см. раздел 9), OAuth-пары `AUTH_{YANDEX,GOOGLE,GITHUB}_CLIENT_ID/SECRET` и `AUTH_CANFLY_*` для SSO. Кнопки провайдеров в UI показываются по `NEXT_PUBLIC_AUTH_*_ENABLED` / `NEXT_PUBLIC_CANFLY_SSO_ENABLED` — включать флаг без ключей бессмысленно.
-
-## Документация
-
-`docs/`: `nextjs-rules.md` (правила Next.js), `design-system.md` (UI), `CANFLY_SSO.md` (интеграция OIDC для поддоменов), `SETUP.md`, `QUICKSTART.md`, `TROUBLESHOOTING.md`, `UPDATES.md` (changelog), `BUGS.md` / `TASKS.md` (авто из Issues), `HIGHLIGHT.md`, `studio.md`.
-
-<!-- BEGIN:nextjs-agent-rules -->
-
-# This is NOT the Next.js you know
-
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
-
-This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
-
-<!-- END:nextjs-agent-rules -->
+В PR укажи пользовательский эффект, миграции и новые переменные окружения, приложи скриншоты UI и перечисли выполненные проверки. Для заметных изменений добавь запись в `docs/UPDATES.md`. Не коммить `.env.local` и не удаляй пользовательские файлы без явного разрешения.
