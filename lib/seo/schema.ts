@@ -484,6 +484,7 @@ export function generateCharacterSchema(
 export function generateProfilePageSchema(
   user: Pick<UserProfile, 'handle' | 'display_name' | 'avatar' | 'bio' | 'tagline' | 'created_at'>,
   stats?: { quotes?: number },
+  socialLinks?: Array<{ url: string }>,
 ) {
   const url = `${BASE_URL}/user/${user.handle}`
   const bio = stripHtml(user.tagline ?? user.bio)
@@ -503,6 +504,7 @@ export function generateProfilePageSchema(
       url,
       image: imageObject(user.avatar),
       ...(bio && { description: truncate(bio, 300) }),
+      ...(socialLinks && socialLinks.length > 0 && { sameAs: socialLinks.map(link => link.url) }),
       ...(stats?.quotes != null &&
         stats.quotes > 0 && {
           interactionStatistic: {
@@ -512,6 +514,43 @@ export function generateProfilePageSchema(
           },
         }),
     },
+  }
+}
+
+type AuthorWorkRef = Pick<
+  Release,
+  'slug' | 'title' | 'cover_image' | 'release_date'
+> & { formats?: EditionFormat[] }
+
+/**
+ * Страница автора: `ProfilePage` + Person, который «владеет» своими работами.
+ * Произведения — ссылочные узлы (только @id, имя и дата), полная разметка
+ * лежит на страницах самих релизов. Book ставится, только если основное
+ * издание — книга: для комикса/аудио остаётся абстрактный CreativeWork.
+ */
+export function generateAuthorProfileSchema(
+  user: Pick<UserProfile, 'handle' | 'display_name' | 'avatar' | 'bio' | 'tagline' | 'created_at'>,
+  works: AuthorWorkRef[],
+  socialLinks?: Array<{ url: string }>,
+) {
+  const base = generateProfilePageSchema(user, undefined, socialLinks)
+
+  const hasPart = works.map(work => {
+    const isBook = work.formats?.includes('book')
+    return {
+      '@type': isBook ? 'Book' : 'CreativeWork',
+      '@id': ID.work(work.slug),
+      name: work.title,
+      url: `${BASE_URL}/release/${work.slug}`,
+      ...(work.cover_image && { image: work.cover_image }),
+      ...(work.release_date && { datePublished: toISODate(work.release_date) }),
+      author: ref(ID.user(user.handle)),
+    }
+  })
+
+  return {
+    ...base,
+    ...(hasPart.length > 0 && { hasPart }),
   }
 }
 

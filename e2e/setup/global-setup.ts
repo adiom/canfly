@@ -1,33 +1,13 @@
 import { Client } from 'pg'
-import { writeFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs'
+import { writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { loadEnvLocal, pgConfig } from './pg'
 
 const TEST_ADMIN_EMAIL = 'studio-test-admin@canfly.test'
 const TEST_ADMIN_LOGIN = 'studio_test_admin'
 const TEST_ADMIN_DISPLAY = 'Studio Test Admin'
 const TEST_ADMIN_HANDLE = 'studio_test_admin'
 const CREDENTIALS_FILE = join(process.cwd(), 'e2e', '.test-credentials.json')
-
-function loadEnvLocal() {
-  const path = join(process.cwd(), '.env.local')
-  if (!existsSync(path)) return
-  const content = readFileSync(path, 'utf-8')
-  for (const line of content.split('\n')) {
-    const trimmed = line.trim()
-    if (!trimmed || trimmed.startsWith('#')) continue
-    const eq = trimmed.indexOf('=')
-    if (eq < 0) continue
-    const key = trimmed.slice(0, eq).trim()
-    let value = trimmed.slice(eq + 1).trim()
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1)
-    }
-    if (process.env[key] === undefined) process.env[key] = value
-  }
-}
 
 export default async function globalSetup() {
   loadEnvLocal()
@@ -38,10 +18,7 @@ export default async function globalSetup() {
     return
   }
 
-  const client = new Client({
-    connectionString: url,
-    ssl: { rejectUnauthorized: false },
-  })
+  const client = new Client(pgConfig(url))
 
   try {
     await client.connect()
@@ -67,15 +44,6 @@ export default async function globalSetup() {
         WHERE id = $1
       `,
       [userId],
-    )
-
-    await client.query(
-      `
-        INSERT INTO admins (email)
-        VALUES ($1)
-        ON CONFLICT (email) DO NOTHING
-      `,
-      [TEST_ADMIN_EMAIL],
     )
 
     mkdirSync(dirname(CREDENTIALS_FILE), { recursive: true })

@@ -11,8 +11,14 @@ import {
   fetchShelf,
   fetchCoreWeeks,
   fetchUserByHandle,
+  fetchUserSocialLinks,
 } from '@/lib/server/user-profile'
-import { getCurrentUser } from '@/lib/server/session'
+import {
+  fetchPublicAuthorWorks,
+  fetchAuthorSeries,
+  fetchAuthorLatest,
+} from '@/lib/server/author-profile'
+import { getCurrentUser, getSystemRoles } from '@/lib/server/session'
 import { signatureTheme } from '@/lib/user-signature'
 import type { ShelfItem } from '@/lib/server/user-profile'
 
@@ -20,7 +26,12 @@ import { SignatureBand } from '@/components/user/signature-band'
 import { ProfileIdentity } from '@/components/user/profile-identity'
 import { ReadingShelf } from '@/components/user/reading-shelf'
 import { CoreSample } from '@/components/user/core-sample'
-import { generateProfilePageSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
+import { AuthorShowcase } from '@/components/user/author-showcase'
+import {
+  generateProfilePageSchema,
+  generateAuthorProfileSchema,
+  generateBreadcrumbSchema,
+} from '@/lib/seo/schema'
 import { buildMetadata, notFoundMetadata } from '@/lib/seo/metadata'
 import { JsonLd } from '@/components/seo/json-ld'
 import { CATALOG_PATH } from '@/lib/nav'
@@ -38,15 +49,32 @@ export async function generateMetadata({ params }: PublicPageProps) {
   const user = await fetchUserByHandle(slug)
   if (!user) return notFoundMetadata()
 
+  const [viewer, systemRoles] = await Promise.all([getCurrentUser(), getSystemRoles(user.id)])
+  const isOwner = viewer?.id === user.id
+
+  // Editor публичного профиля не имеет: страницу видит только владелец,
+  // чужим — 404, поисковикам — noindex.
+  if (systemRoles.includes('editor') && !isOwner) {
+    return notFoundMetadata('Профиль не публичный')
+  }
+
+  const isAuthor = user.public_role === 'author'
+  const indexable = isAuthor && user.profile_is_public && systemRoles.length === 0
+
+  const description =
+    user.tagline ??
+    user.bio ??
+    (isAuthor ? 'Автор на canfly' : 'Профиль читателя canfly.')
+
   return buildMetadata({
     title: `${user.display_name} (@${user.handle}) | canfly`,
-    description: user.tagline ?? user.bio ?? 'Профиль читателя canfly.',
+    description,
     path: `/user/${user.handle}`,
     // og:image — из opengraph-image.tsx рядом.
     generatedImage: true,
     ogType: 'profile',
-    // Закрытый профиль виден только владельцу — в индексе ему не место.
-    noindex: !user.profile_is_public,
+    // Закрытый профиль, reader-витрина и editor-страница не должны попадать в индекс.
+    noindex: !indexable,
   })
 }
 
@@ -58,15 +86,81 @@ export default async function PublicProfilePage({ params }: PublicPageProps) {
   // Канонический URL: иначе /user/Adiom и /user/adiom отдавали бы разные страницы
   if (user.handle !== slug) redirect(`/user/${user.handle}`)
 
-  const viewer = await getCurrentUser()
+  const [viewer, systemRoles] = await Promise.all([getCurrentUser(), getSystemRoles(user.id)])
   const isOwner = viewer?.id === user.id
   const isPublic = user.profile_is_public || isOwner
 
   if (!isPublic) notFound()
 
-  const theme = signatureTheme(user)
+  // Editor публичного профиля не получает: только владелец видит свою страницу.
+  if (systemRoles.includes('editor') && !isOwner) notFound()
 
-  // Для не-владельца скрываем приватные слои
+  const theme = signatureTheme(user)
+  const socialLinks = await fetchUserSocialLinks(user.id)
+
+  const isAuthor = user.public_role === 'author'
+
+  // ── Author: витрина творчества ──────────────────────────────────────
+  if (isAuthor) {
+    const [works, series, latest] = await Promise.all([
+      fetchPublicAuthorWorks(user.id),
+      fetchAuthorSeries(user.id),
+      fetchAuthorLatest(user.id),
+    ])
+
+    const authorSchema = generateAuthorProfileSchema(user, works, socialLinks)
+    const breadcrumbSchema = generateBreadcrumbSchema([
+      { label: 'canfly', url: `${BASE_URL}${CATALOG_PATH}` },
+      { label: `@${user.handle}`, url: `${BASE_URL}/user/${user.handle}` },
+    ])
+
+    return (
+      <main className="min-h-screen bg-cf-bg text-cf-text-1">
+        <JsonLd schemas={[authorSchema, breadcrumbSchema]} />
+        <SiteHeader activePath="/characters" />
+        <div className="mx-auto max-w-7xl px-4 pt-4 md:px-8">
+          <Breadcrumbs items={[
+            { label: 'canfly', url: '/' },
+            { label: `@${user.handle}`, url: `/user/${user.handle}` },
+          ]} />
+        </div>
+
+        <SignatureBand theme={theme} caption="Витрина автора" />
+
+        <div className="pb-12 pt-10 md:pb-16">
+          <ProfileIdentity
+            user={{
+              display_name: user.display_name,
+              handle: user.handle,
+              tagline: user.tagline,
+              bio: user.bio,
+              avatar: user.avatar,
+              created_at: user.created_at,
+            }}
+            theme={theme}
+            publicRole={user.public_role}
+            socialLinks={socialLinks}
+            actions={
+              isOwner ? (
+                <Link href="/user">
+                  <Button variant="outline" className="border-cf-text-1/15 text-cf-text-2">
+                    <UserRound className="mr-2 h-4 w-4" />
+                    Вернуться в свой профиль
+                  </Button>
+                </Link>
+              ) : undefined
+            }
+          />
+
+          <AuthorShowcase works={works} series={series} latest={latest} theme={theme} />
+        </div>
+
+        <SiteFooter variant="simple" />
+      </main>
+    )
+  }
+
+  // ── Reader: читательский мир ────────────────────────────────────────
   const [quotes, shelf, weeks] = isPublic
     ? await Promise.all([
         fetchChapterHighlights({
@@ -90,7 +184,7 @@ export default async function PublicProfilePage({ params }: PublicPageProps) {
       created_at: quote.created_at,
     }))
 
-  const profileSchema = generateProfilePageSchema(user, { quotes: publicQuotes.length })
+  const profileSchema = generateProfilePageSchema(user, { quotes: publicQuotes.length }, socialLinks)
   const breadcrumbSchema = generateBreadcrumbSchema([
     { label: 'canfly', url: `${BASE_URL}${CATALOG_PATH}` },
     { label: `@${user.handle}`, url: `${BASE_URL}/user/${user.handle}` },
@@ -121,6 +215,7 @@ export default async function PublicProfilePage({ params }: PublicPageProps) {
           }}
           theme={theme}
           publicRole={user.public_role}
+          socialLinks={socialLinks}
           actions={
             isOwner ? (
               <Link href="/user">

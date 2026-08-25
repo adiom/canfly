@@ -1,20 +1,19 @@
 import { Client } from 'pg'
 import { existsSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
+import { loadEnvLocal, pgConfig } from './pg'
 
 const TEST_ADMIN_LOGIN = 'studio-test-admin@canfly.test'
 const CREDENTIALS_FILE = join(process.cwd(), 'e2e', '.test-credentials.json')
 
 export default async function globalTeardown() {
+  loadEnvLocal()
   const url = process.env.DATABASE_URL
   if (existsSync(CREDENTIALS_FILE)) unlinkSync(CREDENTIALS_FILE)
 
   if (!url) return
 
-  const client = new Client({
-    connectionString: url,
-    ssl: { rejectUnauthorized: false },
-  })
+  const client = new Client(pgConfig(url))
 
   try {
     await client.connect()

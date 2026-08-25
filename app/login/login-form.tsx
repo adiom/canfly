@@ -12,12 +12,14 @@ const isCanflySsoEnabled = process.env.NEXT_PUBLIC_CANFLY_SSO_ENABLED === 'true'
 const isYandexEnabled = process.env.NEXT_PUBLIC_AUTH_YANDEX_ENABLED === 'true'
 const isGoogleEnabled = process.env.NEXT_PUBLIC_AUTH_GOOGLE_ENABLED === 'true'
 const isGitHubEnabled = process.env.NEXT_PUBLIC_AUTH_GITHUB_ENABLED === 'true'
+const isTwitterEnabled = process.env.NEXT_PUBLIC_AUTH_TWITTER_ENABLED === 'true'
 
 const oauthProviders: { id: string; label: string }[] = [
   ...(isCanflySsoEnabled ? [{ id: 'canfly', label: 'canfly ID' }] : []),
   ...(isYandexEnabled ? [{ id: 'yandex', label: 'Яндекс' }] : []),
   ...(isGoogleEnabled ? [{ id: 'google', label: 'Google' }] : []),
   ...(isGitHubEnabled ? [{ id: 'github', label: 'GitHub' }] : []),
+  ...(isTwitterEnabled ? [{ id: 'twitter', label: 'X' }] : []),
 ]
 
 const hasOAuth = oauthProviders.length > 0

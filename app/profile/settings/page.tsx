@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
   title: 'Настройки аккаунта | canfly',
-  description: 'Управление email адресами и привязанными внешними аккаунтами.',
+  description: 'Управление привязанными внешними аккаунтами.',
   robots: { index: false, follow: false },
 }
 
@@ -45,7 +45,6 @@ export default async function ProfileSettingsPage() {
         </div>
 
         <AccountSettingsClient
-          initialEmails={settings?.emails ?? []}
           initialLinkedAccounts={settings?.linkedAccounts ?? []}
         />
       </section>

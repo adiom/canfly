@@ -1,6 +1,8 @@
 import Image from 'next/image'
+import Link from 'next/link'
 import type { UserProfile } from '@/lib/types'
 import type { SignatureTheme } from '@/lib/user-signature'
+import type { UserSocialLink } from '@/lib/server/user-profile'
 
 const JOINED = new Intl.DateTimeFormat('ru-RU', {
   day: '2-digit',
@@ -18,11 +20,13 @@ export function ProfileIdentity({
   theme,
   publicRole,
   actions,
+  socialLinks,
 }: {
   user: Pick<UserProfile, 'display_name' | 'handle' | 'tagline' | 'bio' | 'avatar' | 'created_at'>
   theme: SignatureTheme
   publicRole: string
   actions?: React.ReactNode
+  socialLinks?: UserSocialLink[]
 }) {
   const badge = publicRole === 'author' ? 'Автор' : ''
 
@@ -64,6 +68,22 @@ export function ProfileIdentity({
 
       {user.bio && (
         <p className="mt-6 max-w-2xl leading-7 text-cf-text-caption">{user.bio}</p>
+      )}
+
+      {socialLinks && socialLinks.length > 0 && (
+        <div className="mt-5 flex flex-wrap gap-2">
+          {socialLinks.map(link => (
+            <Link
+              key={`${link.provider}:${link.url}`}
+              href={link.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="border border-cf-text-1/12 px-3 py-1.5 font-mono text-[9px] uppercase tracking-[0.18em] text-cf-text-3 transition-colors hover:border-cf-text-1/30 hover:text-cf-text-1 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-cf-accent"
+            >
+              {link.label} ↗
+            </Link>
+          ))}
+        </div>
       )}
     </section>
   )

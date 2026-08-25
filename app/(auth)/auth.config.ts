@@ -6,6 +6,7 @@ import Credentials from 'next-auth/providers/credentials'
 import Yandex from 'next-auth/providers/yandex'
 import Google from 'next-auth/providers/google'
 import GitHub from 'next-auth/providers/github'
+import Twitter from 'next-auth/providers/twitter'
 
 import { dbQuery, dbQueryOne } from '@/lib/db'
 import { validateAndConsumeMagicToken } from '@/lib/server/magic-token'
@@ -63,7 +64,7 @@ function findUserByEmail(email: string): Promise<UserProfile | null> {
   )
 }
 
-async function createUserWithReaderRole(email: string, name?: string | null): Promise<UserProfile | null> {
+async function createUserWithReaderRole(email: string | null, name?: string | null): Promise<UserProfile | null> {
   const handle = `user-${crypto.randomUUID().slice(0, 8)}`
   return dbQueryOne<UserProfile>(
     `INSERT INTO users (email, handle, display_name)
@@ -79,12 +80,13 @@ function linkOAuthAccount(
   providerAccountId: string,
   displayName: string | null,
   avatarUrl: string | null,
+  url: string | null,
 ): Promise<unknown> {
   return dbQueryOne(
-    `INSERT INTO linked_accounts (user_id, provider, provider_account_id, display_name, avatar_url)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO linked_accounts (user_id, provider, provider_account_id, display_name, avatar_url, url)
+     VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (provider, provider_account_id) DO NOTHING`,
-    [userId, provider, providerAccountId, displayName, avatarUrl],
+    [userId, provider, providerAccountId, displayName, avatarUrl, url],
   )
 }
 
@@ -110,6 +112,27 @@ const trustedEmailProviders = new Set(
 function hasVerifiedEmail(provider: string, profile: unknown): boolean {
   if (trustedEmailProviders.has(provider)) return true
   return (profile as { email_verified?: unknown } | null | undefined)?.email_verified === true
+}
+
+/**
+ * Публичный URL профиля провайдера — показывается на странице автора как
+ * соцсеть и уходит в Person.sameAs. Провайдеры без публичного профиля
+ * (yandex, google) дают null.
+ */
+function oauthProfileUrl(
+  provider: string,
+  profile: unknown,
+  user: { login?: string | null },
+): string | null {
+  if (provider === 'twitter') {
+    const username = (profile as { data?: { username?: string } } | null | undefined)?.data?.username
+    return username ? `https://x.com/${username}` : null
+  }
+  if (provider === 'github') {
+    const login = (profile as { login?: string } | null | undefined)?.login ?? user.login
+    return login ? `https://github.com/${login}` : null
+  }
+  return null
 }
 
 const canflyIssuer = process.env.AUTH_CANFLY_ISSUER?.replace(/\/$/, '')
@@ -188,6 +211,37 @@ export function createAuthConfig(request?: NextRequest): NextAuthConfig {
             clientId: process.env.AUTH_GITHUB_CLIENT_ID,
             clientSecret: process.env.AUTH_GITHUB_CLIENT_SECRET,
             issuer: 'https://github.com/login/oauth',
+            profile(profile) {
+              return {
+                id: profile.id.toString(),
+                name: profile.name ?? profile.login,
+                email: profile.email,
+                image: profile.avatar_url,
+                login: profile.login,
+                type: 'regular' as UserType,
+              }
+            },
+          }),
+        ]
+      : []),
+
+    ...(process.env.AUTH_TWITTER_CLIENT_ID && process.env.AUTH_TWITTER_CLIENT_SECRET
+      ? [
+          Twitter({
+            clientId: process.env.AUTH_TWITTER_CLIENT_ID,
+            clientSecret: process.env.AUTH_TWITTER_CLIENT_SECRET,
+            // Twitter OAuth 2.0 не отдаёт email без user.fields=email в userinfo.
+            userinfo: 'https://api.x.com/2/users/me?user.fields=profile_image_url,email',
+            profile(profile) {
+              return {
+                id: profile.data.id,
+                name: profile.data.name,
+                email: profile.data.email ?? null,
+                image: profile.data.profile_image_url,
+                login: profile.data.username,
+                type: 'regular' as UserType,
+              }
+            },
           }),
         ]
       : []),
@@ -232,21 +286,18 @@ export function createAuthConfig(request?: NextRequest): NextAuthConfig {
       if (account?.provider !== 'credentials') {
         if (!account || !provider) return false
 
-        if (!user?.email) {
-          // В логах — только причина и провайдер: email, user и profile это PII.
-          console.warn('[auth] signIn rejected: no email', { provider })
-          return false
-        }
-
         const providerAccountId = account.providerAccountId
         const profileName = (profile as { name?: string | null })?.name ?? user.name ?? null
         const profileImage =
           (profile as { image?: string | null })?.image ??
           (profile as { picture?: string | null })?.picture ??
           null
+        const profileUrl = oauthProfileUrl(provider, profile, user)
 
         try {
-          // Если это режим привязки — привязываем к текущему пользователю из JWT
+          // Если это режим привязки — привязываем к текущему пользователю из JWT.
+          // Email не участвует: аккаунт цепляется по provider_account_id, поэтому
+          // проверка ниже (для входа) здесь не нужна.
           if (isLinking) {
             if (!request) {
               console.warn('[auth] signIn linking rejected: no request context', { provider })
@@ -264,7 +315,7 @@ export function createAuthConfig(request?: NextRequest): NextAuthConfig {
               return '/profile/settings?link_error=session'
             }
 
-            await linkOAuthAccount(currentUserId, provider, providerAccountId, profileName, profileImage)
+            await linkOAuthAccount(currentUserId, provider, providerAccountId, profileName, profileImage, profileUrl)
 
             return `/profile/settings?linked=${provider}`
           }
@@ -272,6 +323,8 @@ export function createAuthConfig(request?: NextRequest): NextAuthConfig {
           // Обычный OAuth-вход. Основной ключ — provider_account_id, а не email:
           // GitHub и Yandex не отдают email_verified, поэтому вход по чужому
           // (непроверенному) адресу иначе отдавал бы чужой аккаунт целиком.
+          // Twitter OAuth 2.0 может не отдать email вовсе — такой вход допустим:
+          // пользователь создаётся без адреса и входит только этим провайдером.
           const existingLink = await dbQueryOne<{ user_id: string }>(
             'SELECT user_id FROM linked_accounts WHERE provider = $1 AND provider_account_id = $2 LIMIT 1',
             [provider, providerAccountId],
@@ -286,20 +339,24 @@ export function createAuthConfig(request?: NextRequest): NextAuthConfig {
               [existingLink.user_id],
             )
           } else {
-            const byEmail = await findUserByEmail(user.email)
+            if (user.email) {
+              const byEmail = await findUserByEmail(user.email)
 
-            if (byEmail && !hasVerifiedEmail(provider, profile)) {
-              // Аккаунт с таким адресом уже есть, а провайдер подтверждение
-              // не прислал. Привязать можно только осознанно — из настроек,
-              // уже будучи внутри аккаунта (ветка isLinking выше).
-              console.warn('[auth] signIn rejected: unverified email would merge accounts', { provider })
-              return '/login?error=link_required'
+              if (byEmail && !hasVerifiedEmail(provider, profile)) {
+                // Аккаунт с таким адресом уже есть, а провайдер подтверждение
+                // не прислал. Привязать можно только осознанно — из настроек,
+                // уже будучи внутри аккаунта (ветка isLinking выше).
+                console.warn('[auth] signIn rejected: unverified email would merge accounts', { provider })
+                return '/login?error=link_required'
+              }
+
+              dbUser = byEmail ?? (await createUserWithReaderRole(user.email, user.name))
+            } else {
+              dbUser = await createUserWithReaderRole(null, user.name)
             }
 
-            dbUser = byEmail ?? (await createUserWithReaderRole(user.email, user.name))
-
             if (dbUser) {
-              await linkOAuthAccount(dbUser.id, provider, providerAccountId, profileName, profileImage)
+              await linkOAuthAccount(dbUser.id, provider, providerAccountId, profileName, profileImage, profileUrl)
             }
           }
 

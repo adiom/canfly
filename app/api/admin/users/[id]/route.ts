@@ -9,7 +9,6 @@ import {
   softDeleteUser,
   updateUserPassword,
 } from '@/lib/server/users'
-import { getSystemRoles } from '@/lib/server/session'
 import { apiHandler } from '@/lib/api-handler'
 import { normalizePublicRole, normalizeRolesUpdate } from '@/lib/api/normalizers'
 

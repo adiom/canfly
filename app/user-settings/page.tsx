@@ -51,21 +51,20 @@ export default async function UserSettingsPage() {
 
           <div className="space-y-12">
             <UserSettingsClient user={session} theme={theme} />
-            <section id="access" className="border-t border-cf-text-1/10 pt-8">
-              <h2 className="font-mono text-[9px] uppercase tracking-[0.2em] text-cf-accent">
-                Доступ · email и привязки
-              </h2>
-              <div className="mt-6">
-                {account ? (
-                  <AccountSettingsClient
-                    initialEmails={account.emails}
-                    initialLinkedAccounts={account.linkedAccounts}
-                  />
-                ) : (
-                  <p className="text-cf-text-3">Не удалось загрузить</p>
-                )}
-              </div>
-            </section>
+              <section id="access" className="border-t border-cf-text-1/10 pt-8">
+                <h2 className="font-mono text-[9px] uppercase tracking-[0.2em] text-cf-accent">
+                  Доступ · привязки
+                </h2>
+                <div className="mt-6">
+                  {account ? (
+                    <AccountSettingsClient
+                      initialLinkedAccounts={account.linkedAccounts}
+                    />
+                  ) : (
+                    <p className="text-cf-text-3">Не удалось загрузить</p>
+                  )}
+                </div>
+              </section>
           </div>
 
           <aside className="space-y-4 self-start">

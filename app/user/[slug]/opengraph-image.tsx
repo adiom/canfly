@@ -1,7 +1,7 @@
 import { fetchUserByHandle } from '@/lib/server/user-profile'
 import { OG_SIZE, OG_CONTENT_TYPE, ogResponse, ogFallback, ogClamp } from '@/lib/seo/og-shared'
 
-export const alt = 'Профиль читателя canfly'
+export const alt = 'Профиль canfly'
 export const size = OG_SIZE
 export const contentType = OG_CONTENT_TYPE
 

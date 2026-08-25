@@ -1,4 +1,5 @@
 import type { MetadataRoute } from 'next'
+import { dbQuery } from '@/lib/db'
 import { fetchReleasesWithEditions } from '@/lib/server/releases'
 import { fetchNewsPosts } from '@/lib/server/news'
 import { fetchPublicCharactersList } from '@/lib/server/characters'
@@ -10,12 +11,18 @@ import { getEditionTocUrl } from '@/lib/utils/editions'
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const [releases, newsPosts, characters, series, editions] = await Promise.all([
+  const [releases, newsPosts, characters, series, editions, authorUsers] = await Promise.all([
     fetchReleasesWithEditions({ status: 'published' }),
     fetchNewsPosts(100),
     fetchPublicCharactersList(),
     fetchAllSeries(),
     fetchPublishedEditionsForSitemap(),
+    // В индекс — только публичные профили авторов (reader и editor не попадают).
+    dbQuery<{ handle: string; updated_at: string }>(
+      `SELECT handle, updated_at FROM users
+       WHERE public_role = 'author' AND profile_is_public = TRUE
+         AND COALESCE(is_deleted, FALSE) = FALSE`,
+    ),
   ])
 
   const releaseEntries = releases.map((release) => ({
@@ -46,6 +53,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     lastModified: new Date(s.updated_at),
     changeFrequency: 'monthly' as const,
     priority: 0.7,
+  }))
+
+  // Публичные страницы авторов: /user/{handle} — канонический URL.
+  const authorEntries = authorUsers.map((u) => ({
+    url: `${BASE_URL}/user/${u.handle}`,
+    lastModified: new Date(u.updated_at),
+    changeFrequency: 'monthly' as const,
+    priority: 0.6,
   }))
 
   // Все издания ссылаются на `/vvvvv/[editionSlug]`. Приоритет ниже релиза:
@@ -99,5 +114,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...newsEntries,
     ...characterEntries,
     ...seriesEntries,
+    ...authorEntries,
   ]
 }

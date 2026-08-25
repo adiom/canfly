@@ -200,3 +200,34 @@ export async function isHandleAvailable(handle: string, exceptUserId: string) {
   )
   return !taken
 }
+
+export interface UserSocialLink {
+  provider: string
+  label: string
+  url: string
+}
+
+const SOCIAL_LABELS: Record<string, string> = {
+  twitter: 'X',
+  github: 'GitHub',
+  google: 'Google',
+  yandex: 'Яндекс',
+  canfly: 'canfly',
+}
+
+/** Публичные ссылки на внешние профили — соцсети на странице автора. */
+export async function fetchUserSocialLinks(userId: string): Promise<UserSocialLink[]> {
+  const rows = await dbQuery<{ provider: string; url: string | null }>(
+    `SELECT provider, url FROM linked_accounts
+     WHERE user_id = $1 AND url IS NOT NULL AND url <> ''
+     ORDER BY created_at ASC`,
+    [userId],
+  )
+  return rows
+    .filter(row => row.url)
+    .map(row => ({
+      provider: row.provider,
+      label: SOCIAL_LABELS[row.provider] ?? row.provider,
+      url: row.url as string,
+    }))
+}
