@@ -49,6 +49,35 @@ export interface Character {
 export type PublicRole = 'reader' | 'author';
 export type SystemRole = 'editor';
 export type CharacterType = 'person' | 'city';
+
+export interface Place {
+  id: string;
+  name: string;
+  slug: string;
+  avatar: string | null;
+  bio: string | null;
+  full_description: string | null;
+  map_image_url: string | null;
+  theme_color: string | null;
+  era: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ReleasePlaceLink {
+  release_id: string;
+  release_slug: string;
+  release_title: string;
+  role: string;
+}
+
+export interface CharacterPlaceLink {
+  character_id: string;
+  character_name: string;
+  character_slug: string;
+  character_avatar: string | null;
+  role: string;
+}
 export type CharacterReplyMode = 'ai_auto' | 'manual' | 'hybrid' | 'disabled';
 export type CharacterFriendshipStatus = 'pending' | 'accepted' | 'blocked';
 export type CharacterMessageRole = 'user' | 'character' | 'system';

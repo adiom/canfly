@@ -12,12 +12,10 @@ import {
 import { HomepageSlide } from '@/lib/types'
 import { SiteHeader } from '@/components/site-header'
 import { SiteFooter } from '@/components/site-footer'
-import { generateWebPageSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
+import { generateWebPageSchema } from '@/lib/seo/schema'
 import { JsonLd } from '@/components/seo/json-ld'
 import { buildMetadata } from '@/lib/seo/metadata'
 import { CATALOG_PATH, LANDING_PATH } from '@/lib/nav'
-
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
 export const revalidate = 60
 
@@ -53,15 +51,7 @@ export default async function Home() {
   return (
     <main className="min-h-screen bg-cf-bg text-cf-text-1">
       <h1 className="sr-only">canfly — культура твоего сознания</h1>
-      <JsonLd
-        schemas={[
-          pageSchema,
-          generateBreadcrumbSchema([
-            { label: 'canfly', url: `${BASE_URL}/` },
-            { label: 'О вселенной', url: `${BASE_URL}${LANDING_PATH}` },
-          ]),
-        ]}
-      />
+      <JsonLd schemas={[pageSchema]} />
       <SiteHeader activePath={LANDING_PATH} />
 
       {slides.length > 0 ? (

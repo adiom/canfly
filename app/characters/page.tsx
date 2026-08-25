@@ -4,7 +4,7 @@ import { CharacterCard } from '@/components/character-card';
 import { Suspense } from 'react';
 import { JsonLd } from '@/components/seo/json-ld';
 import { Breadcrumbs } from '@/components/breadcrumbs';
-import { generateCollectionSchema, generateBreadcrumbSchema } from '@/lib/seo/schema';
+import { generateCollectionSchema } from '@/lib/seo/schema';
 import { buildMetadata } from '@/lib/seo/metadata';
 
 export const revalidate = 300;
@@ -12,7 +12,7 @@ export const revalidate = 300;
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
 const CHARACTERS_DESCRIPTION =
-  'Персонажи литературной вселенной canfly — люди, города и сущности, связанные историями, релизами и разговорами с AI.'
+  'Персонажи литературной вселенной canfly — люди и сущности, связанные историями, релизами и разговорами с AI.'
 
 export const metadata = buildMetadata({
   title: 'Персонажи | canfly — культура твоего сознания',
@@ -21,7 +21,8 @@ export const metadata = buildMetadata({
 })
 
 async function CharactersContent() {
-  const characters: Character[] = await fetchPublicCharactersList()
+  const allCharacters: Character[] = await fetchPublicCharactersList()
+  const characters = allCharacters.filter(c => c.character_type === 'person')
 
   const collectionSchema = generateCollectionSchema({
     name: 'Персонажи canfly',
@@ -36,15 +37,7 @@ async function CharactersContent() {
 
   return (
     <section>
-      <JsonLd
-        schemas={[
-          collectionSchema,
-          generateBreadcrumbSchema([
-            { label: 'canfly', url: `${BASE_URL}/` },
-            { label: 'Персонажи', url: `${BASE_URL}/characters` },
-          ]),
-        ]}
-      />
+      <JsonLd schemas={[collectionSchema]} />
       <Breadcrumbs items={[{ label: 'canfly', url: '/' }, { label: 'Персонажи', url: '/characters' }]} />
       {characters.length > 0 ? (
         <div className="grid grid-cols-2 gap-x-6 gap-y-12 sm:grid-cols-3 md:grid-cols-4">

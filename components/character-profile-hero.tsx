@@ -55,7 +55,6 @@ export function CharacterProfileHero({
 }: CharacterProfileHeroProps) {
   const canChat =
     character.can_receive_messages !== false && character.reply_mode !== 'disabled'
-  const isCity = character.character_type === 'city'
   const presence = presenceOf(character)
 
   // Нули не показываем: пустая метрика — шум, а не информация
@@ -80,7 +79,7 @@ export function CharacterProfileHero({
 
       <div className="mt-3 flex items-center gap-2.5 text-[13px]">
         <span className="text-cf-text-3">
-          {isCity ? 'место вселенной' : 'персонаж вселенной'}
+          персонаж вселенной
         </span>
         <span className="text-cf-text-4">·</span>
         <span className="inline-flex items-center gap-2 text-cf-text-3">

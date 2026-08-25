@@ -17,8 +17,8 @@ export const ID = {
   work: (releaseSlug: string) => `${BASE_URL}/release/${releaseSlug}#work`,
   edition: (editionSlug: string) => `${BASE_URL}/vvvvv/${editionSlug}#edition`,
   series: (seriesSlug: string) => `${BASE_URL}/series/${seriesSlug}#series`,
-  character: (slug: string, type: 'person' | 'city') =>
-    `${BASE_URL}/characters/${slug}#${type === 'city' ? 'place' : 'person'}`,
+  character: (slug: string) => `${BASE_URL}/characters/${slug}#person`,
+  place: (slug: string) => `${BASE_URL}/places/${slug}#place`,
   user: (handle: string) => `${BASE_URL}/user/${handle}#person`,
   quotation: (id: string) => `${BASE_URL}/highlight/${id}#quote`,
 } as const
@@ -152,7 +152,13 @@ export function authorNode() {
     '@id': ID.author,
     name: 'Адиом Тимур',
     url: `${BASE_URL}/user/adiom`,
-    sameAs: ['https://twitter.com/adiomtimur', 'https://github.com/adiom'],
+    jobTitle: 'Основатель и автор',
+    worksFor: ref(ID.organization),
+    sameAs: [
+      'https://twitter.com/adiomtimur',
+      'https://github.com/adiom',
+      'https://x.com/adiomtimur',
+    ],
   }
 }
 

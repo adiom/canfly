@@ -5,6 +5,7 @@ import { fetchEditionsByRelease } from '@/lib/server/editions'
 import { fetchPublishedChapterListByEdition } from '@/lib/server/chapters'
 import { fetchSeriesById, fetchSeriesWithReleases } from '@/lib/server/series'
 import { fetchCharactersList } from '@/lib/server/characters'
+import { fetchPlacesByRelease } from '@/lib/server/places'
 import { fetchPublicHighlightsByRelease } from '@/lib/server/chapter-highlights'
 import { ReleasePagePublic } from '@/components/release-page'
 import { computeEditionMeta, getPrimaryEdition } from '@/lib/utils/editions'
@@ -44,11 +45,12 @@ export default async function ReleasePublicPage({ params }: { params: Promise<{ 
     meta = computeEditionMeta(await fetchPublishedChapterListByEdition(primaryEdition.id))
   }
 
-  const [releaseChars, allCharacters, seriesLinks, highlights] = await Promise.all([
+  const [releaseChars, allCharacters, seriesLinks, highlights, releasePlaces] = await Promise.all([
     fetchReleaseCharacters(release.id),
     fetchCharactersList(),
     fetchReleaseSeries(release.id),
     fetchPublicHighlightsByRelease(release.id, 6),
+    fetchPlacesByRelease(release.id),
   ])
 
   const characters = releaseChars
@@ -58,7 +60,6 @@ export default async function ReleasePublicPage({ params }: { params: Promise<{ 
     })
     .filter(Boolean) as { id: string; name: string; slug: string; avatar: string | null; role: string }[]
 
-  // Для разметки нужен ещё character_type: город должен стать Place, а не Person.
   const schemaCharacters = releaseChars
     .map(rc => allCharacters.find(c => c.id === rc.character_id))
     .filter(Boolean)
@@ -66,7 +67,6 @@ export default async function ReleasePublicPage({ params }: { params: Promise<{ 
       name: ch!.name,
       slug: ch!.slug,
       avatar: ch!.avatar ?? null,
-      character_type: ch!.character_type,
     }))
 
   // Карта slug → role. Используется в JSON-LD, чтобы выделить protagonist
@@ -97,12 +97,11 @@ export default async function ReleasePublicPage({ params }: { params: Promise<{ 
 
   const releaseSchema = generateReleaseSchema({
     release,
-    // Все опубликованные издания, а не только book: комиксы, аудиокниги и
-    // журналы раньше в workExample не попадали вообще.
     editions,
     formats,
     characters: schemaCharacters,
     characterRoles,
+    places: releasePlaces.map(p => ({ name: p.name, slug: p.slug })),
     series: validSeriesLink?.series
       ? { slug: validSeriesLink.series.slug, title: validSeriesLink.series.title }
       : null,

@@ -1,10 +1,9 @@
 import { Cormorant_Garamond } from 'next/font/google'
 import ColorsPageClient from './colors-client'
 import { JsonLd } from '@/components/seo/json-ld'
-import { generateCollectionSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
+import { generateCollectionSchema } from '@/lib/seo/schema'
 import { buildMetadata } from '@/lib/seo/metadata'
 import { CANFLY_COLORS } from '@/lib/canfly-colors'
-import { CATALOG_PATH } from '@/lib/nav'
 
 const cormorant = Cormorant_Garamond({
   subsets: ['latin', 'cyrillic'],
@@ -38,15 +37,7 @@ export default function ColorsPage() {
 
   return (
     <div className={cormorant.variable}>
-      <JsonLd
-        schemas={[
-          collectionSchema,
-          generateBreadcrumbSchema([
-            { label: 'canfly', url: `${BASE_URL}${CATALOG_PATH}` },
-            { label: 'Colors', url: `${BASE_URL}/colors` },
-          ]),
-        ]}
-      />
+      <JsonLd schemas={[collectionSchema]} />
       <ColorsPageClient
         breadcrumbs={[{ label: 'canfly', url: '/' }, { label: 'Colors', url: '/colors' }]}
       />

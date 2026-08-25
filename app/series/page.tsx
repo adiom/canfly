@@ -5,13 +5,9 @@ import { fetchAllSeriesWithStats } from '@/lib/server/series'
 import { SiteHeader } from '@/components/site-header'
 import { SiteFooter } from '@/components/site-footer'
 import { Breadcrumbs } from '@/components/breadcrumbs'
-import { JsonLd } from '@/components/seo/json-ld'
-import { generateBreadcrumbSchema } from '@/lib/seo/schema'
 import { buildMetadata } from '@/lib/seo/metadata'
 
 export const dynamic = 'force-dynamic'
-
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
 export async function generateMetadata(): Promise<Metadata> {
   return buildMetadata({
@@ -32,16 +28,6 @@ export default async function SeriesListPage() {
 
   return (
     <>
-      <JsonLd
-        schemas={[
-          generateBreadcrumbSchema(
-            breadcrumbs.map(item => ({
-              label: item.label,
-              url: `${BASE_URL}${item.url}`,
-            })),
-          ),
-        ]}
-      />
       <main className="min-h-screen bg-cf-bg text-cf-text-1">
         <SiteHeader activePath="/series" />
         <div className="mx-auto max-w-7xl px-4 pt-4 md:px-8">

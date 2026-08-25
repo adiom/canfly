@@ -13,15 +13,15 @@ export default async function Image({ params }: { params: Promise<{ slug: string
     const character = data?.character
     if (!character) return ogFallback()
 
-    const isCity = character.character_type === 'city'
+    // Города теперь на отдельном маршруте /places
+    if (character.character_type === 'city') return ogFallback()
 
     return ogResponse({
-      kicker: isCity ? 'место' : 'персонаж',
+      kicker: 'персонаж',
       title: character.name,
       note: ogClamp(character.bio ?? character.full_description, 160),
       image: character.avatar,
-      // Города показываем прямоугольником: круг читается как портрет.
-      imageRounded: !isCity,
+      imageRounded: true,
     })
   } catch {
     return ogFallback()

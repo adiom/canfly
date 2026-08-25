@@ -4,7 +4,7 @@ import { fetchReleasesPage } from '@/lib/server/releases'
 import type { EditionFormat } from '@/lib/releases-types'
 import { ReleasesPageBookmate } from '@/components/releases-page-bookmate'
 import { JsonLd } from '@/components/seo/json-ld'
-import { generateCollectionSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
+import { generateCollectionSchema } from '@/lib/seo/schema'
 import { websiteNode } from '@/lib/seo/entities'
 import { buildMetadata } from '@/lib/seo/metadata'
 
@@ -126,7 +126,6 @@ export default async function HomeCatalogPage({ searchParams }: ReleasesPageProp
         schemas={[
           websiteNode(),
           collectionSchema,
-          generateBreadcrumbSchema([{ label: 'canfly', url: `${BASE_URL}/` }]),
         ]}
       />
       <ReleasesPageBookmate

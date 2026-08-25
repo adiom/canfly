@@ -1,4 +1,4 @@
-import { notFound, redirect } from 'next/navigation'
+import { notFound, permanentRedirect, redirect } from 'next/navigation'
 import Link from 'next/link'
 
 import { CharacterProfileHero } from '@/components/character-profile-hero'
@@ -14,6 +14,7 @@ import { listVisibleCharacterPosts } from '@/lib/server/character-posts'
 import { fetchWallPosts } from '@/lib/server/character-wall'
 import { fetchReleasesByCharacter } from '@/lib/server/releases'
 import { fetchSeriesByCharacter } from '@/lib/server/series'
+import { fetchPlacesByCharacter } from '@/lib/server/places'
 import { getCurrentUser } from '@/lib/server/session'
 import { generateCharacterSchema } from '@/lib/seo/schema'
 import { buildMetadata, notFoundMetadata } from '@/lib/seo/metadata'
@@ -48,34 +49,39 @@ export async function generateMetadata({ params }: CharacterPageProps) {
   if (!data?.character) return notFoundMetadata('Персонаж не найден')
 
   const { character } = data
-  const isCity = character.character_type === 'city'
+
+  // Города теперь живут на отдельном маршруте /places
+  if (character.character_type === 'city') {
+    permanentRedirect(`/places/${character.slug}`)
+  }
 
   return buildMetadata({
     title: `${character.name} - canfly | культура твоего сознания`,
     description:
       character.bio ??
-      `${isCity ? 'Место' : 'Персонаж'} литературной вселенной canfly — ${character.name}.`,
+      `Персонаж литературной вселенной canfly — ${character.name}.`,
     path: `/characters/${character.slug}`,
-    // og:image — из opengraph-image.tsx рядом.
     generatedImage: true,
-    // Город — не профиль человека; profile-теги (first_name/username) ему чужие.
-    ogType: isCity ? 'website' : 'profile',
+    ogType: 'profile',
   })
 }
 
 export default async function CharacterPage({ params, searchParams }: CharacterPageProps) {
   const { slug } = await params
-  // ?tab= из прежней версии профиля: вкладок больше нет, но старые ссылки
-  // из индекса и переписок должны попадать на свой раздел.
   const { tab } = await searchParams
   const data = await getCharacterData(slug)
   if (!data?.character) notFound()
+
+  // Города теперь живут на отдельном маршруте /places
+  if (data.character.character_type === 'city') {
+    permanentRedirect(`/places/${data.character.slug}`)
+  }
 
   if (tab && LEGACY_TAB_ANCHOR[tab]) {
     redirect(`/characters/${slug}#${LEGACY_TAB_ANCHOR[tab]}`)
   }
 
-  const [stats, friends, posts, wall, currentUser, subjectReleases, subjectSeries] = await Promise.all([
+  const [stats, friends, posts, wall, currentUser, subjectReleases, subjectSeries, characterPlaces] = await Promise.all([
     fetchCharacterStats(data.character.id),
     fetchCharacterFriends(data.character.id, 12),
     listVisibleCharacterPosts(data.character.slug),
@@ -83,12 +89,11 @@ export default async function CharacterPage({ params, searchParams }: CharacterP
     getCurrentUser(),
     fetchReleasesByCharacter(data.character.id, { onlyPublished: true }),
     fetchSeriesByCharacter(data.character.id),
+    fetchPlacesByCharacter(data.character.id),
   ])
 
   const isAdmin = currentUser?.is_admin ?? false
 
-  // subjectOf — все опубликованные релизы с участием персонажа + серии,
-  // где у него role = 'main'. Дублей по @id не будет: уникальность по slug.
   const subjectOfRefs = [
     ...subjectReleases.map(release => ({
       slug: release.release_slug,
@@ -102,7 +107,15 @@ export default async function CharacterPage({ params, searchParams }: CharacterP
     })),
   ]
 
-  const characterSchema = generateCharacterSchema(data.character, { subjectOf: subjectOfRefs })
+  const locationRefs = characterPlaces.map(p => ({
+    slug: p.slug,
+    name: p.name,
+  }))
+
+  const characterSchema = generateCharacterSchema(data.character, {
+    subjectOf: subjectOfRefs,
+    location: locationRefs,
+  })
 
   return (
     <main className="relative mx-auto w-full max-w-3xl px-6 pb-32">
@@ -125,8 +138,6 @@ export default async function CharacterPage({ params, searchParams }: CharacterP
         })}
       />
 
-      {/* Нити орбитального поля тянутся именно к этим релизам — поэтому
-          список стоит сразу под портретом, а не внизу страницы. */}
       {subjectReleases.some((rel) => rel.role === 'main') ? (
         <div className="cf-rise-late mt-12">
           <CharacterReleasesSection releases={subjectReleases} />

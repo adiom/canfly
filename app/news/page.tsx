@@ -6,9 +6,8 @@ import { fetchNewsPosts } from '@/lib/server/news'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { JsonLd } from '@/components/seo/json-ld'
 import { Breadcrumbs } from '@/components/breadcrumbs'
-import { generateCollectionSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
+import { generateCollectionSchema } from '@/lib/seo/schema'
 import { buildMetadata, stripHtml, truncate } from '@/lib/seo/metadata'
-import { CATALOG_PATH } from '@/lib/nav'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
@@ -38,15 +37,7 @@ export default async function NewsPage() {
 
   return (
     <main className="min-h-screen bg-cf-bg text-cf-text-1">
-      <JsonLd
-        schemas={[
-          collectionSchema,
-          generateBreadcrumbSchema([
-            { label: 'canfly', url: `${BASE_URL}${CATALOG_PATH}` },
-            { label: 'Новости', url: `${BASE_URL}/news` },
-          ]),
-        ]}
-      />
+      <JsonLd schemas={[collectionSchema]} />
       <header className="sticky top-0 z-50 border-b border-cf-text-1/10 bg-cf-bg/92 backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 md:px-8">
           <Link href="/" className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.12em] text-cf-text-2 hover:text-cf-text-heading">

@@ -6,7 +6,7 @@ import type {
   Series,
   ChapterHighlight,
 } from '@/lib/releases-types'
-import type { Character, NewsPost, UserProfile } from '@/lib/types'
+import type { Character, NewsPost, Place, UserProfile } from '@/lib/types'
 import type { SeriesRelease } from '@/lib/server/series'
 import type { EditionMeta } from '@/lib/utils/editions'
 import { stripHtml, truncate } from '@/lib/seo/metadata'
@@ -165,22 +165,26 @@ function releaseGenres(formats: EditionFormat[], genre: string | null): string[]
  *
  * Связи с персонажами:
  * - `character` — ВСЕ привязанные (главные и второстепенные), как массив @id-ссылок;
- * - `about` — главный герой (`role = 'main'`), как полный @id-ссылка.
+ * - `about` — главный герой (`role = 'main'`), как полная @id-ссылка.
  * Без разделения поисковик не понимает, кто ведёт сюжет, а кто эпизодичен.
+ *
+ * Связи с местами:
+ * - `contentLocation` — локации, где происходит действие (через release_places).
  */
 export function generateReleaseSchema(opts: {
   release: Release
   editions: Edition[]
   formats: EditionFormat[]
-  characters?: Array<Pick<Character, 'name' | 'slug' | 'avatar' | 'character_type'>>
+  characters?: Array<Pick<Character, 'name' | 'slug' | 'avatar'>>
   /** Роли каждого персонажа в релизе (`main`/`supporting`/`cameo`). */
   characterRoles?: Map<string, string>
+  places?: Array<Pick<Place, 'name' | 'slug'>>
   series?: { slug: string; title: string } | null
   /** Агрегаты основного издания — страницы, слова, длительность. */
   primaryMeta?: EditionMeta
   primaryEditionId?: string | null
 }) {
-  const { release, editions, formats, characters, characterRoles, series, primaryMeta, primaryEditionId } = opts
+  const { release, editions, formats, characters, characterRoles, places, series, primaryMeta, primaryEditionId } = opts
   const url = `${BASE_URL}/release/${release.slug}`
 
   const published = editions.filter(edition => edition.status === 'published')
@@ -192,23 +196,20 @@ export function generateReleaseSchema(opts: {
     ),
   )
 
-  // Сборка character/mentions/about из единого списка. role хранится в Map,
+  // Сборка character/about из единого списка. role хранится в Map,
   // чтобы не менять сигнатуру characterNode.
   const persons: Array<Record<string, unknown>> = []
-  const cities: Array<Record<string, unknown>> = []
 
   if (characters && characters.length > 0) {
     for (const character of characters) {
-      const isCity = character.character_type === 'city'
       const node: Record<string, unknown> = {
-        '@type': isCity ? 'Place' : 'Person',
-        '@id': ID.character(character.slug, isCity ? 'city' : 'person'),
+        '@type': 'Person',
+        '@id': ID.character(character.slug),
         name: character.name,
         url: `${BASE_URL}/characters/${character.slug}`,
         image: imageObject(character.avatar),
       }
-      if (isCity) cities.push(node)
-      else persons.push(node)
+      persons.push(node)
     }
   }
 
@@ -220,16 +221,23 @@ export function generateReleaseSchema(opts: {
       : null
 
   const protagonistNode = protagonist
-    ? (() => {
-        const isCity = protagonist.character_type === 'city'
-        return {
-          '@type': isCity ? 'Place' : 'Person',
-          '@id': ID.character(protagonist.slug, isCity ? 'city' : 'person'),
-          name: protagonist.name,
-          url: `${BASE_URL}/characters/${protagonist.slug}`,
-        }
-      })()
+    ? {
+        '@type': 'Person',
+        '@id': ID.character(protagonist.slug),
+        name: protagonist.name,
+        url: `${BASE_URL}/characters/${protagonist.slug}`,
+      }
     : null
+
+  // contentLocation — локации из release_places
+  const contentLocation = places
+    ?.filter(p => p?.slug)
+    .map(p => ({
+      '@type': 'Place',
+      '@id': ID.place(p.slug),
+      name: p.name,
+      url: `${BASE_URL}/places/${p.slug}`,
+    }))
 
   return {
     '@type': 'CreativeWork',
@@ -251,8 +259,8 @@ export function generateReleaseSchema(opts: {
     isAccessibleForFree: true,
     ...(series && { isPartOf: ref(ID.series(series.slug)) }),
     ...(persons.length > 0 && { character: persons }),
-    ...(cities.length > 0 && { mentions: cities }),
     ...(protagonistNode && { about: protagonistNode }),
+    ...(contentLocation && contentLocation.length > 0 && { contentLocation }),
     ...(workExample.length > 0 && { workExample }),
     ...(release.view_count > 0 && {
       interactionStatistic: {
@@ -370,7 +378,7 @@ export function generateSeriesSchema(series: Series, releases: SeriesRelease[]) 
 
 // === Персонажи и профили ===
 
-type CharacterSeed = Pick<Character, 'name' | 'slug' | 'avatar' | 'character_type'> &
+type CharacterSeed = Pick<Character, 'name' | 'slug' | 'avatar'> &
   Partial<Pick<Character, 'bio' | 'full_description'>>
 
 /**
@@ -398,14 +406,13 @@ export interface CharacterSubjectRef {
  */
 export function characterNode(
   character: CharacterSeed,
-  opts: { full: boolean; subjectOf?: CharacterSubjectRef[] },
+  opts: { full: boolean; subjectOf?: CharacterSubjectRef[]; location?: Array<{ slug: string; name: string }> },
 ) {
-  const isCity = character.character_type === 'city'
   const url = `${BASE_URL}/characters/${character.slug}`
 
   const base = {
-    '@type': isCity ? 'Place' : 'Person',
-    '@id': ID.character(character.slug, isCity ? 'city' : 'person'),
+    '@type': 'Person' as const,
+    '@id': ID.character(character.slug),
     name: character.name,
     url,
     image: imageObject(character.avatar),
@@ -425,7 +432,6 @@ export function characterNode(
             : ID.work(s.slug),
         name: s.name,
       }
-      // url на серию — у произведения он уже есть в @id.
       if (s.type === 'CreativeWorkSeries') {
         node.url = `${BASE_URL}/series/${s.slug}`
       } else {
@@ -434,16 +440,26 @@ export function characterNode(
       return node
     })
 
+  const location = opts.location
+    ?.filter(l => l?.slug)
+    .map(l => ({
+      '@type': 'Place' as const,
+      '@id': ID.place(l.slug),
+      name: l.name,
+      url: `${BASE_URL}/places/${l.slug}`,
+    }))
+
   return {
     ...base,
     description: truncate(
       bio
-        ? `${bio} — ${isCity ? 'место' : 'персонаж'} литературной вселенной canfly.`
-        : `${isCity ? 'Место' : 'Персонаж'} литературной вселенной canfly.`,
+        ? `${bio} — персонаж литературной вселенной canfly.`
+        : 'Персонаж литературной вселенной canfly.',
       300,
     ),
     mainEntityOfPage: { '@type': 'WebPage', '@id': url },
     ...(subjectOf && subjectOf.length > 0 && { subjectOf }),
+    ...(location && location.length > 0 && { location }),
   }
 }
 
@@ -456,7 +472,7 @@ export function characterNode(
  */
 export function generateCharacterSchema(
   character: CharacterSeed,
-  opts: { subjectOf?: CharacterSubjectRef[]; jobTitle?: string; worksFor?: string } = {},
+  opts: { subjectOf?: CharacterSubjectRef[]; location?: Array<{ slug: string; name: string }>; jobTitle?: string; worksFor?: string } = {},
 ) {
   const url = `${BASE_URL}/characters/${character.slug}`
 
@@ -467,12 +483,82 @@ export function generateCharacterSchema(
     inLanguage: 'ru-RU',
     isPartOf: ref(ID.website),
     mainEntity: {
-      ...characterNode(character, { full: true, subjectOf: opts.subjectOf }),
+      ...characterNode(character, { full: true, subjectOf: opts.subjectOf, location: opts.location }),
       // Поля Person: jobTitle/worksFor — стандартные для schema.org/Person.
       // Заголовок и место работы задаются через Bio (character.bio) — структурированных
       // полей в БД нет, поэтому их пробрасывает вызывающая сторона, если знает.
       ...(opts.jobTitle && { jobTitle: opts.jobTitle }),
       ...(opts.worksFor && { worksFor: { '@type': 'Organization', name: opts.worksFor } }),
+    },
+  }
+}
+
+/**
+ * JSON-LD страницы места (локация литературной вселенной).
+ *
+ * Place — отдельная сущность, НЕ Person, НЕ ProfilePage.
+ * Собирает жителей (resident) и релизы (subjectOf) для замыкания графа.
+ */
+export function generatePlaceSchema(
+  place: Pick<Place, 'name' | 'slug' | 'avatar' | 'bio' | 'full_description'>,
+  opts: {
+    residents?: Array<{ slug: string; name: string; avatar?: string | null }>
+    subjectOf?: CharacterSubjectRef[]
+  } = {},
+) {
+  const url = `${BASE_URL}/places/${place.slug}`
+  const bio = stripHtml(place.bio ?? place.full_description)
+
+  const resident = opts.residents
+    ?.filter(r => r?.slug)
+    .map(r => ({
+      '@type': 'Person',
+      '@id': ID.character(r.slug),
+      name: r.name,
+      url: `${BASE_URL}/characters/${r.slug}`,
+      image: imageObject(r.avatar),
+    }))
+
+  const subjectOf = opts.subjectOf
+    ?.filter(s => s?.slug)
+    .map(s => {
+      const node: Record<string, unknown> = {
+        '@type': s.type ?? 'CreativeWork',
+        '@id':
+          s.type === 'CreativeWorkSeries'
+            ? ID.series(s.slug)
+            : ID.work(s.slug),
+        name: s.name,
+      }
+      if (s.type === 'CreativeWorkSeries') {
+        node.url = `${BASE_URL}/series/${s.slug}`
+      } else {
+        node.url = `${BASE_URL}/release/${s.slug}`
+      }
+      return node
+    })
+
+  return {
+    '@type': 'ProfilePage',
+    '@id': url,
+    url,
+    inLanguage: 'ru-RU',
+    isPartOf: ref(ID.website),
+    mainEntity: {
+      '@type': 'Place',
+      '@id': ID.place(place.slug),
+      name: place.name,
+      url,
+      image: imageObject(place.avatar),
+      description: truncate(
+        bio
+          ? `${bio} — место литературной вселенной canfly.`
+          : 'Место литературной вселенной canfly.',
+        300,
+      ),
+      mainEntityOfPage: { '@type': 'WebPage', '@id': url },
+      ...(resident && resident.length > 0 && { resident }),
+      ...(subjectOf && subjectOf.length > 0 && { subjectOf }),
     },
   }
 }
