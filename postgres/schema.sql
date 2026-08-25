@@ -23,7 +23,14 @@ END $$;
 
 DO $$
 BEGIN
-  CREATE TYPE public.user_role AS ENUM ('reader', 'author', 'editor', 'admin');
+  CREATE TYPE public.public_role AS ENUM ('reader', 'author');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+  CREATE TYPE public.user_role AS ENUM ('editor');
 EXCEPTION
   WHEN duplicate_object THEN NULL;
 END $$;
@@ -145,6 +152,8 @@ CREATE TABLE IF NOT EXISTS public.users (
   display_name TEXT NOT NULL,
   avatar TEXT,
   bio TEXT,
+  public_role public.public_role NOT NULL DEFAULT 'reader',
+  is_admin BOOLEAN NOT NULL DEFAULT FALSE,
   is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
   deleted_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -154,15 +163,20 @@ CREATE TABLE IF NOT EXISTS public.users (
 ALTER TABLE public.users
   ADD COLUMN IF NOT EXISTS login TEXT UNIQUE,
   ADD COLUMN IF NOT EXISTS password_hash TEXT,
+  ADD COLUMN IF NOT EXISTS public_role public.public_role NOT NULL DEFAULT 'reader',
+  ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 
 CREATE INDEX IF NOT EXISTS idx_users_is_deleted ON public.users (is_deleted)
   WHERE is_deleted = TRUE;
 
+CREATE INDEX IF NOT EXISTS idx_users_public_role ON public.users (public_role)
+  WHERE is_deleted = FALSE;
+
 CREATE TABLE IF NOT EXISTS public.user_roles (
   user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
-  role public.user_role NOT NULL DEFAULT 'reader',
+  role public.user_role NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (user_id, role)
 );

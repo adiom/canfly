@@ -1,5 +1,5 @@
 #!/bin/bash
-# Синхронизация удалённой БД (Neon) в локальную базу canfly_copy.
+# Синхронизация удалённой БД (Neon) в локальную базу canfly_copy2.
 # Использование: scripts/canfly-sync.sh
 # Расписание (раз в 12 часов) можно повесить на launchd/cron.
 
@@ -7,7 +7,7 @@ set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_FILE="$PROJECT_DIR/.env.local"
-LOCAL_URL="${CANFLY_LOCAL_DB_URL:-postgresql://localhost:5432/canfly_copy}"
+LOCAL_URL="${CANFLY_LOCAL_DB_URL:-postgresql://localhost:5432/canfly_copy2}"
 PG_BIN="/Applications/Postgres.app/Contents/Versions/latest/bin"
 
 [ -f "$ENV_FILE" ] || { echo "Нет $ENV_FILE" >&2; exit 1; }
