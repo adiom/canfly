@@ -30,15 +30,11 @@ import { AuthorShowcase } from '@/components/user/author-showcase'
 import {
   generateProfilePageSchema,
   generateAuthorProfileSchema,
-  generateBreadcrumbSchema,
 } from '@/lib/seo/schema'
 import { buildMetadata, notFoundMetadata } from '@/lib/seo/metadata'
 import { JsonLd } from '@/components/seo/json-ld'
-import { CATALOG_PATH } from '@/lib/nav'
 
 export const dynamic = 'force-dynamic'
-
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
 interface PublicPageProps {
   params: Promise<{ slug: string }>
@@ -67,7 +63,9 @@ export async function generateMetadata({ params }: PublicPageProps) {
     (isAuthor ? 'Автор на canfly' : 'Профиль читателя canfly.')
 
   return buildMetadata({
-    title: `${user.display_name} (@${user.handle}) | canfly`,
+    title: isAuthor
+      ? `${user.display_name} — писатель | canfly`
+      : `${user.display_name} (@${user.handle}) | canfly`,
     description,
     path: `/user/${user.handle}`,
     // og:image — из opengraph-image.tsx рядом.
@@ -109,14 +107,10 @@ export default async function PublicProfilePage({ params }: PublicPageProps) {
     ])
 
     const authorSchema = generateAuthorProfileSchema(user, works, socialLinks)
-    const breadcrumbSchema = generateBreadcrumbSchema([
-      { label: 'canfly', url: `${BASE_URL}${CATALOG_PATH}` },
-      { label: `@${user.handle}`, url: `${BASE_URL}/user/${user.handle}` },
-    ])
 
     return (
       <main className="min-h-screen bg-cf-bg text-cf-text-1">
-        <JsonLd schemas={[authorSchema, breadcrumbSchema]} />
+        <JsonLd schemas={[authorSchema]} />
         <SiteHeader activePath="/characters" />
         <div className="mx-auto max-w-7xl px-4 pt-4 md:px-8">
           <Breadcrumbs items={[
@@ -125,7 +119,7 @@ export default async function PublicProfilePage({ params }: PublicPageProps) {
           ]} />
         </div>
 
-        <SignatureBand theme={theme} caption="Витрина автора" />
+        <SignatureBand theme={theme} caption={`Автор · @${user.handle}`} />
 
         <div className="pb-12 pt-10 md:pb-16">
           <ProfileIdentity
@@ -185,14 +179,10 @@ export default async function PublicProfilePage({ params }: PublicPageProps) {
     }))
 
   const profileSchema = generateProfilePageSchema(user, { quotes: publicQuotes.length }, socialLinks)
-  const breadcrumbSchema = generateBreadcrumbSchema([
-    { label: 'canfly', url: `${BASE_URL}${CATALOG_PATH}` },
-    { label: `@${user.handle}`, url: `${BASE_URL}/user/${user.handle}` },
-  ])
 
   return (
     <main className="min-h-screen bg-cf-bg text-cf-text-1">
-      <JsonLd schemas={[profileSchema, breadcrumbSchema]} />
+      <JsonLd schemas={[profileSchema]} />
       <SiteHeader activePath="/characters" />
       <div className="mx-auto max-w-7xl px-4 pt-4 md:px-8">
         <Breadcrumbs items={[
@@ -201,7 +191,7 @@ export default async function PublicProfilePage({ params }: PublicPageProps) {
         ]} />
       </div>
 
-      <SignatureBand theme={theme} caption="Карточка читателя" />
+      <SignatureBand theme={theme} caption={`Читатель · @${user.handle}`} />
 
       <div className="pb-12 pt-10 md:pb-16">
         <ProfileIdentity
@@ -227,12 +217,6 @@ export default async function PublicProfilePage({ params }: PublicPageProps) {
             ) : undefined
           }
         />
-
-        {!isOwner && (
-          <p className="mx-auto mt-6 max-w-7xl px-4 font-mono text-[9px] uppercase tracking-[0.2em] text-cf-text-4 md:px-8">
-            Так тебя видят другие
-          </p>
-        )}
 
         {user.show_reading && (
           <>

@@ -509,7 +509,7 @@ export function generateProfilePageSchema(
         stats.quotes > 0 && {
           interactionStatistic: {
             '@type': 'InteractionCounter',
-            interactionType: 'https://schema.org/WriteAction',
+            interactionType: 'https://schema.org/CreateAction',
             userInteractionCount: stats.quotes,
           },
         }),

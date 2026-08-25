@@ -147,6 +147,32 @@ export async function updateVisibility(input: {
   return { status: 'success', message: 'Сохранено' }
 }
 
+/**
+ * Порядок и набор работ на публичной странице автора.
+ * null = все (fallback), [] = ничего, [id1, id2, ...] = только эти в этом порядке.
+ */
+export async function updateShowcaseReleases(releaseIds: string[]): Promise<ActionResult> {
+  const user = await getCurrentUser()
+  if (!user) return { status: 'error', message: 'Необходима авторизация' }
+
+  // Валидация: max 50 ID, все UUID
+  if (releaseIds.length > 50) {
+    return { status: 'error', message: 'Максимум 50 работ' }
+  }
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89abAB][0-9a-f]{3}-[0-9a-f]{12}$/i
+  if (releaseIds.some(id => !UUID_RE.test(id))) {
+    return { status: 'error', message: 'Невалидный ID релиза' }
+  }
+
+  await dbQuery(
+    'UPDATE users SET showcase_releases = $2, updated_at = NOW() WHERE id = $1',
+    [user.id, releaseIds.length > 0 ? releaseIds : null],
+  )
+
+  revalidateProfile(user.handle)
+  return { status: 'success', message: 'Витрина обновлена' }
+}
+
 export async function updateAvatar(url: string): Promise<ActionResult> {
   const user = await getCurrentUser()
   if (!user) return { status: 'error', message: 'Необходима авторизация' }

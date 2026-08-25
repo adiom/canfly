@@ -15,15 +15,13 @@ import { ReleaseBookReader } from '@/components/release-book-reader'
 import type { ReaderUserRole } from '@/components/spread-reader'
 import { HighlightScroller } from '@/components/highlight-scroller'
 import { fetchPublishedChaptersByEdition } from '@/lib/server/chapters'
-import { generateQuotationSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
+import { generateQuotationSchema } from '@/lib/seo/schema'
 import { buildMetadata, notFoundMetadata } from '@/lib/seo/metadata'
 import { JsonLd } from '@/components/seo/json-ld'
 import { Breadcrumbs } from '@/components/breadcrumbs'
 import { fetchSeriesById } from '@/lib/server/series'
 
 export const dynamic = 'force-dynamic'
-
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -127,16 +125,9 @@ export default async function HighlightSharePage({ params }: PageProps) {
         { label: 'Цитата', url: `/highlight/${highlight.id}` },
       ]
 
-  const breadcrumbSchema = generateBreadcrumbSchema(
-    breadcrumbItems.map(item => ({
-      label: item.label,
-      url: `${BASE_URL}${item.url}`,
-    })),
-  )
-
   return (
     <>
-      <JsonLd schemas={[quotationSchema, breadcrumbSchema]} />
+      <JsonLd schemas={[quotationSchema]} />
       <div className="fixed top-0 left-0 right-0 z-[60] bg-cf-bg border-b border-cf-text-1/12">
         <div className="mx-auto max-w-3xl flex items-center justify-between px-4 py-3">
           <Link href={`/release/${release.slug}`} className="text-xs font-black uppercase tracking-[0.12em] text-cf-text-2 hover:text-cf-text-heading">

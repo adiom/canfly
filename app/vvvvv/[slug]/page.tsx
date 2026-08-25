@@ -13,14 +13,12 @@ import { ReleaseComicReader } from '@/components/release-comic-reader'
 import { ReleaseAudioPlayer } from '@/components/release-audio-player'
 import { JsonLd } from '@/components/seo/json-ld'
 import { Breadcrumbs } from '@/components/breadcrumbs'
-import { generateEditionSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
+import { generateEditionSchema } from '@/lib/seo/schema'
 import { buildMetadata, notFoundMetadata } from '@/lib/seo/metadata'
 import { computeEditionMeta, EDITION_FORMAT_LABELS, isAudioFormat } from '@/lib/utils/editions'
 import { fetchSeriesById } from '@/lib/server/series'
 
 export const dynamic = 'force-dynamic'
-
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
 /**
  * generateMetadata и сама страница запрашивают издание с релизом независимо.
@@ -115,12 +113,6 @@ export default async function VvvvvReaderPage({
           meta: computeEditionMeta(chapters),
           series: series ? { slug: series.slug, title: series.title } : null,
         }),
-        generateBreadcrumbSchema(
-          breadcrumbItems.map(item => ({
-            label: item.label,
-            url: `${BASE_URL}${item.url}`,
-          })),
-        ),
       ]}
     />
   )

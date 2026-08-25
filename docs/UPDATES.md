@@ -2,6 +2,32 @@
 
 ---
 
+## [25 августа 2026] Redesign профиля, витрина автора, JSON-LD фиксы
+
+### Что изменено
+
+**Профиль `/user/[slug]`**: убран lowercase с имени (`adiom timur` → `Адиом Тимур`), убран badge «Автор» — роль видна из SignatureBand. Убран «Так тебя видят другие» с reader-страницы. SignatureBand caption теперь показывает роль: `Автор · @handle` или `Читатель · @handle`.
+
+**Title автора**: `Адиом Тимур — писатель | canfly` (кириллица, консистентно с H1 и JSON-LD Person.name).
+
+**Витрина автора** (`022_author_showcase.sql`): колонка `users.showcase_releases UUID[]` — автор выбирает порядок и набор работ на публичной странице. NULL = все, [] = ничего, [id1, id2] = только эти в этом порядке. UI: секция «Витрина» в настройках с чекбоксами и стрелками вверх/вниз.
+
+**JSON-LD фиксы**:
+- `authorNode().url` → `/user/adiom` (был `BASE_URL`)
+- `organizationNode().sameAs` → только canfly-аккаунты (`x.com/_canfly`, `github.com/Canfly`, `linkedin.com/company/canfly`)
+- `WriteAction` → `CreateAction` в `generateProfilePageSchema`
+- Убрана дублирующая `BreadcrumbList` из `<JsonLd>` на 7 страницах (компонент `<Breadcrumbs>` уже генерирует свой JSON-LD)
+
+**e2e**: обновлены тесты под новые SignatureBand captions.
+
+### Как использовать
+
+- Автор заходит в `/user-settings` → «Витрина» (видно только авторам)
+- Выбирает работы чекбоксами, задаёт порядок стрелками ↑↓
+- Публичная страница `/user/{handle}` показывает выбранные работы в указанном порядке
+
+---
+
 ## [25 августа 2026] Публичный профиль автора, соцсети через OAuth, удаление мульти-email, провайдер X
 
 ### Что изменено

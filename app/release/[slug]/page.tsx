@@ -8,11 +8,10 @@ import { fetchCharactersList } from '@/lib/server/characters'
 import { fetchPublicHighlightsByRelease } from '@/lib/server/chapter-highlights'
 import { ReleasePagePublic } from '@/components/release-page'
 import { computeEditionMeta, getPrimaryEdition } from '@/lib/utils/editions'
-import { generateReleaseSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
+import { generateReleaseSchema } from '@/lib/seo/schema'
 import { buildMetadata, notFoundMetadata } from '@/lib/seo/metadata'
 import { JsonLd } from '@/components/seo/json-ld'
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params
@@ -123,16 +122,9 @@ export default async function ReleasePublicPage({ params }: { params: Promise<{ 
         { label: release.title, url: `/release/${release.slug}` },
       ]
 
-  const breadcrumbSchema = generateBreadcrumbSchema(
-    breadcrumbItems.map(item => ({
-      label: item.label,
-      url: `${BASE_URL}${item.url}`,
-    })),
-  )
-
   return (
     <>
-      <JsonLd schemas={[releaseSchema, breadcrumbSchema]} />
+      <JsonLd schemas={[releaseSchema]} />
       <ReleasePagePublic
         release={release}
         editions={editions}

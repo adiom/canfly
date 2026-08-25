@@ -3,13 +3,11 @@ import Link from 'next/link'
 import Image from 'next/image'
 
 import { fetchNewsPostBySlug, fetchNewsPostById } from '@/lib/server/news'
-import { generateNewsArticleSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
+import { generateNewsArticleSchema } from '@/lib/seo/schema'
 import { buildMetadata, notFoundMetadata } from '@/lib/seo/metadata'
 import { JsonLd } from '@/components/seo/json-ld'
 import { Breadcrumbs } from '@/components/breadcrumbs'
 import { ThemeToggle } from '@/components/theme-toggle'
-
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
 export const dynamic = 'force-dynamic'
 
@@ -59,17 +57,12 @@ export default async function NewsPage({ params }: NewsPageProps) {
   }
 
   const articleSchema = generateNewsArticleSchema(post)
-  const breadcrumbSchema = generateBreadcrumbSchema([
-    { label: 'canfly', url: `${BASE_URL}/` },
-    { label: 'Новости', url: `${BASE_URL}/news` },
-    { label: post.title, url: `${BASE_URL}/news/${post.slug}` },
-  ])
 
   const date = post.published_at ?? post.created_at
 
   return (
     <main className="min-h-screen bg-cf-bg text-cf-text-1">
-      <JsonLd schemas={[articleSchema, breadcrumbSchema]} />
+      <JsonLd schemas={[articleSchema]} />
 
       <header className="sticky top-0 z-50 border-b border-cf-text-1/10 bg-cf-bg/92 backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 md:px-8">

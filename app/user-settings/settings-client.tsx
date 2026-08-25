@@ -10,6 +10,7 @@ import {
   updateAvatar,
   updateIdentity,
   updateSignatureColor,
+  updateShowcaseReleases,
   updateVisibility,
 } from '@/lib/actions/user-profile'
 import type { ActionResult } from '@/lib/actions/user-profile'
@@ -20,6 +21,7 @@ const LABEL_BY_FIELD = {
   identity: 'Личность',
   handle: 'Адрес',
   passport: 'Паспорт',
+  showcase: 'Витрина',
   visibility: 'Видимость',
 } as const
 
@@ -46,9 +48,11 @@ function StatusLine({ result }: { result: ActionResult }) {
 export function UserSettingsClient({
   user,
   theme,
+  authorWorks,
 }: {
   user: SessionUser
   theme: SignatureTheme
+  authorWorks?: { id: string; title: string }[]
 }) {
   const [identity, identityAction] = useActionState(updateIdentity, initial)
   const [handle, handleAction] = useActionState(changeHandle, initial)
@@ -59,6 +63,8 @@ export function UserSettingsClient({
   const [profilePublic, setProfilePublic] = useState(user.profile_is_public)
   const [showReading, setShowReading] = useState(user.show_reading)
   const [, startVisibility] = useTransition()
+  const [showcaseIds, setShowcaseIds] = useState<string[]>(user.showcase_releases ?? [])
+  const [, startShowcase] = useTransition()
 
   async function uploadAvatar(file: File) {
     const fd = new FormData()
@@ -92,6 +98,30 @@ export function UserSettingsClient({
     })
   }
 
+  function toggleShowcase(releaseId: string) {
+    const next = showcaseIds.includes(releaseId)
+      ? showcaseIds.filter(id => id !== releaseId)
+      : [...showcaseIds, releaseId]
+    setShowcaseIds(next)
+    startShowcase(async () => {
+      const result = await updateShowcaseReleases(next)
+      if (result.status === 'error') alert(result.message ?? 'Ошибка')
+    })
+  }
+
+  function moveShowcase(fromIndex: number, direction: -1 | 1) {
+    const toIndex = fromIndex + direction
+    if (toIndex < 0 || toIndex >= showcaseIds.length) return
+    const next = [...showcaseIds]
+    const [moved] = next.splice(fromIndex, 1)
+    next.splice(toIndex, 0, moved)
+    setShowcaseIds(next)
+    startShowcase(async () => {
+      const result = await updateShowcaseReleases(next)
+      if (result.status === 'error') alert(result.message ?? 'Ошибка')
+    })
+  }
+
   return (
     <>
       <section>
@@ -108,7 +138,7 @@ export function UserSettingsClient({
                   <Image src={avatar} alt="" fill sizes="64px" className="object-cover" />
                 ) : (
                   <span className="flex h-full w-full items-center justify-center font-[family-name:var(--font-cormorant)] text-2xl italic text-cf-text-3">
-                    {user.display_name.slice(0, 1).toLowerCase()}
+                    {user.display_name.slice(0, 1)}
                   </span>
                 )}
               </div>
@@ -237,6 +267,58 @@ export function UserSettingsClient({
           })}
         </ul>
       </section>
+
+      {authorWorks && authorWorks.length > 0 && (
+        <section id="showcase">
+          <SectionLabel id="showcase">{LABEL_BY_FIELD.showcase}</SectionLabel>
+          <p className="mt-6 text-sm text-cf-text-3">
+            Какие работы видны на публичной странице. Порядок определяет, как они отображаются.
+          </p>
+          <ul className="mt-4 space-y-2">
+            {authorWorks.map((work, index) => {
+              const selected = showcaseIds.includes(work.id)
+              return (
+                <li key={work.id} className="flex items-center gap-3 border border-cf-text-1/10 bg-cf-bg-2 px-3 py-2">
+                  <button
+                    type="button"
+                    onClick={() => toggleShowcase(work.id)}
+                    className="h-4 w-4 shrink-0 border accent-cf-accent"
+                    style={{
+                      backgroundColor: selected ? theme.color.hex : undefined,
+                      borderColor: selected ? theme.color.hex : undefined,
+                    }}
+                    aria-label={selected ? 'Убрать из витрины' : 'Добавить в витрину'}
+                  />
+                  <span className="flex-1 text-sm text-cf-text-1">{work.title}</span>
+                  <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-cf-text-4">
+                    №{index + 1}
+                  </span>
+                  <span className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => moveShowcase(index, -1)}
+                      disabled={index === 0}
+                      className="h-6 w-6 border border-cf-text-1/10 text-xs text-cf-text-3 hover:border-cf-text-1/30 disabled:opacity-30"
+                      aria-label="Вверх"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveShowcase(index, 1)}
+                      disabled={index === showcaseIds.length - 1}
+                      className="h-6 w-6 border border-cf-text-1/10 text-xs text-cf-text-3 hover:border-cf-text-1/30 disabled:opacity-30"
+                      aria-label="Вниз"
+                    >
+                      ↓
+                    </button>
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+      )}
 
       <section>
         <SectionLabel id="visibility">{LABEL_BY_FIELD.visibility}</SectionLabel>

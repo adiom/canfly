@@ -7,6 +7,8 @@ import { AccountSettingsClient } from '@/components/account-settings-client'
 import { getAccountSettings } from '@/lib/actions/account-settings'
 import { getCurrentUser } from '@/lib/server/session'
 import { signatureTheme } from '@/lib/user-signature'
+import { fetchPublicAuthorWorks } from '@/lib/server/author-profile'
+import type { AuthorWork } from '@/lib/server/author-profile'
 
 import { UserSettingsClient } from './settings-client'
 
@@ -21,7 +23,13 @@ export default async function UserSettingsPage() {
   const session = await getCurrentUser()
   if (!session) redirect('/login?redirect=/user-settings')
 
-  const [account, theme] = await Promise.all([getAccountSettings(), Promise.resolve(signatureTheme(session))])
+  const isAuthor = session.public_role === 'author'
+
+  const [account, theme, authorWorks] = await Promise.all([
+    getAccountSettings(),
+    Promise.resolve(signatureTheme(session)),
+    isAuthor ? fetchPublicAuthorWorks(session.id) : Promise.resolve([] as AuthorWork[]),
+  ])
 
   return (
     <main className="min-h-screen bg-cf-bg text-cf-text-1">
@@ -43,6 +51,7 @@ export default async function UserSettingsPage() {
             <ul className="space-y-3">
               <li><a href="#identity" className="hover:text-cf-accent">Личность</a></li>
               <li><a href="#passport" className="hover:text-cf-accent">Паспорт</a></li>
+              {isAuthor && <li><a href="#showcase" className="hover:text-cf-accent">Витрина</a></li>}
               <li><a href="#visibility" className="hover:text-cf-accent">Видимость</a></li>
               <li><a href="#access" className="hover:text-cf-accent">Доступ</a></li>
               <li className="pt-4"><Link href="/user" className="text-cf-text-4 hover:text-cf-accent">← в профиль</Link></li>
@@ -50,7 +59,7 @@ export default async function UserSettingsPage() {
           </nav>
 
           <div className="space-y-12">
-            <UserSettingsClient user={session} theme={theme} />
+            <UserSettingsClient user={session} theme={theme} authorWorks={authorWorks} />
               <section id="access" className="border-t border-cf-text-1/10 pt-8">
                 <h2 className="font-mono text-[9px] uppercase tracking-[0.2em] text-cf-accent">
                   Доступ · привязки
@@ -81,7 +90,7 @@ export default async function UserSettingsPage() {
                   style={{ backgroundColor: theme.color.hex }}
                 />
                 <p className="mt-6 font-[family-name:var(--font-cormorant)] text-2xl italic leading-tight text-cf-text-heading">
-                  {session.display_name.toLowerCase()}
+                  {session.display_name}
                 </p>
                 <p className="font-mono text-xs text-cf-text-3">@{session.handle ?? session.id}</p>
                 {session.tagline && (

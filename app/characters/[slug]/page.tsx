@@ -15,12 +15,10 @@ import { fetchWallPosts } from '@/lib/server/character-wall'
 import { fetchReleasesByCharacter } from '@/lib/server/releases'
 import { fetchSeriesByCharacter } from '@/lib/server/series'
 import { getCurrentUser } from '@/lib/server/session'
-import { generateCharacterSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
+import { generateCharacterSchema } from '@/lib/seo/schema'
 import { buildMetadata, notFoundMetadata } from '@/lib/seo/metadata'
 import { JsonLd } from '@/components/seo/json-ld'
 import { Breadcrumbs } from '@/components/breadcrumbs'
-
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
 interface CharacterPageProps {
   params: Promise<{ slug: string }>
@@ -77,12 +75,6 @@ export default async function CharacterPage({ params, searchParams }: CharacterP
     redirect(`/characters/${slug}#${LEGACY_TAB_ANCHOR[tab]}`)
   }
 
-  const breadcrumbSchema = generateBreadcrumbSchema([
-    { label: 'canfly', url: `${BASE_URL}/` },
-    { label: 'Персонажи', url: `${BASE_URL}/characters` },
-    { label: data.character.name, url: `${BASE_URL}/characters/${data.character.slug}` },
-  ])
-
   const [stats, friends, posts, wall, currentUser, subjectReleases, subjectSeries] = await Promise.all([
     fetchCharacterStats(data.character.id),
     fetchCharacterFriends(data.character.id, 12),
@@ -114,7 +106,7 @@ export default async function CharacterPage({ params, searchParams }: CharacterP
 
   return (
     <main className="relative mx-auto w-full max-w-3xl px-6 pb-32">
-      <JsonLd schemas={[characterSchema, breadcrumbSchema]} />
+      <JsonLd schemas={[characterSchema]} />
       <div className="pt-4">
         <Breadcrumbs items={[
           { label: 'canfly', url: '/' },

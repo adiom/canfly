@@ -87,7 +87,7 @@ test.describe('user profile: роли', () => {
     const res = await page.goto(`/user/${AUTHOR.handle}`, { waitUntil: 'domcontentloaded' })
     expect(res!.status()).toBe(200)
 
-    await expect(page.getByText('Витрина автора')).toBeVisible()
+    await expect(page.getByText(`Автор · @${AUTHOR.handle}`)).toBeVisible()
     await expect(page.getByText('Книги', { exact: true })).toBeVisible()
 
     const robots = await metaContent(page, 'robots')
@@ -103,7 +103,7 @@ test.describe('user profile: роли', () => {
     const res = await page.goto(`/user/${READER.handle}`, { waitUntil: 'domcontentloaded' })
     expect(res!.status()).toBe(200)
 
-    await expect(page.getByText('Карточка читателя')).toBeVisible()
+    await expect(page.getByText(`Читатель · @${READER.handle}`)).toBeVisible()
 
     const robots = await metaContent(page, 'robots')
     expect(robots).toContain('noindex')
@@ -117,6 +117,6 @@ test.describe('user profile: роли', () => {
     expect(res).not.toBeNull()
 
     await expect(page.getByText('404 · Страница не найдена')).toBeVisible()
-    await expect(page.getByText('Карточка читателя')).toHaveCount(0)
+    await expect(page.locator('[class*="SignatureBand"]')).toHaveCount(0)
   })
 })

@@ -131,7 +131,11 @@ export function organizationNode() {
       '@type': 'ImageObject',
       url: `${BASE_URL}/logo.png`,
     },
-    sameAs: ['https://twitter.com/adiomtimur', 'https://github.com/adiom'],
+    sameAs: [
+      'https://x.com/_canfly',
+      'https://github.com/Canfly',
+      'https://www.linkedin.com/company/canfly/',
+    ],
     founder: ref(ID.author),
     contactPoint: {
       '@type': 'ContactPoint',
@@ -147,7 +151,7 @@ export function authorNode() {
     '@type': 'Person',
     '@id': ID.author,
     name: 'Адиом Тимур',
-    url: `${BASE_URL}/`,
+    url: `${BASE_URL}/user/adiom`,
     sameAs: ['https://twitter.com/adiomtimur', 'https://github.com/adiom'],
   }
 }

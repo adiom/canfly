@@ -71,6 +71,7 @@ export interface UserProfile {
   deleted_at: string | null;
   public_role: PublicRole;
   is_admin: boolean;
+  showcase_releases: string[] | null;
   created_at: string;
   updated_at: string;
 }

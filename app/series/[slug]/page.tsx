@@ -2,11 +2,9 @@ import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { fetchSeriesWithReleases } from '@/lib/server/series'
 import { SeriesPage } from '@/components/series-page'
-import { generateBreadcrumbSchema, generateSeriesSchema } from '@/lib/seo/schema'
+import { generateSeriesSchema } from '@/lib/seo/schema'
 import { buildMetadata, notFoundMetadata } from '@/lib/seo/metadata'
 import { JsonLd } from '@/components/seo/json-ld'
-
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params
@@ -27,15 +25,9 @@ export default async function SeriesPageRoute({ params }: { params: Promise<{ sl
   const series = await fetchSeriesWithReleases(slug)
   if (!series) notFound()
 
-  const breadcrumbSchema = generateBreadcrumbSchema([
-    { label: 'canfly', url: `${BASE_URL}/` },
-    { label: 'Серии', url: `${BASE_URL}/series` },
-    { label: series.title, url: `${BASE_URL}/series/${series.slug}` },
-  ])
-
   return (
     <>
-      <JsonLd schemas={[generateSeriesSchema(series, series.releases), breadcrumbSchema]} />
+      <JsonLd schemas={[generateSeriesSchema(series, series.releases)]} />
       <SeriesPage
         series={series}
         releases={series.releases}

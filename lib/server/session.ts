@@ -16,6 +16,7 @@ export interface SessionUser {
   show_reading: boolean
   public_role: PublicRole
   is_admin: boolean
+  showcase_releases: string[] | null
   created_at: string
 }
 
@@ -24,7 +25,7 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
   if (!session?.user?.id) return null
 
   const users = await dbQuery<UserProfile>(
-    'SELECT id, email, login, handle, display_name, avatar, bio, tagline, signature_color, profile_is_public, show_reading, public_role, is_admin, created_at FROM users WHERE id = $1 LIMIT 1',
+    'SELECT id, email, login, handle, display_name, avatar, bio, tagline, signature_color, profile_is_public, show_reading, public_role, is_admin, showcase_releases, created_at FROM users WHERE id = $1 LIMIT 1',
     [session.user.id],
   )
   const user = users[0]
@@ -44,6 +45,7 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
     show_reading: user.show_reading ?? true,
     public_role: user.public_role ?? 'reader',
     is_admin: user.is_admin ?? false,
+    showcase_releases: user.showcase_releases,
     created_at: user.created_at,
   }
 }

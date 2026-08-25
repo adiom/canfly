@@ -1,4 +1,4 @@
-import { dbQuery } from '@/lib/db'
+import { dbQuery, dbQueryOne } from '@/lib/db'
 import type { NewsPost } from '@/lib/types'
 import type { Release, EditionFormat } from '@/lib/releases-types'
 
@@ -13,19 +13,50 @@ export interface AuthorSeries {
   release_count: number
 }
 
+const AUTHOR_WORK_COLUMNS = `
+  r.id, r.title, r.slug, r.description, r.cover_image, r.genre,
+  r.release_date, r.isbn, r.authors, r.annotation, r.editor_notes,
+  r.view_count, r.status, r.design_config, r.created_at, r.updated_at,
+  COALESCE(
+    json_agg(DISTINCT e.format) FILTER (WHERE e.format IS NOT NULL),
+    '[]'::json
+  ) AS formats
+`
+
 /**
  * Публичные работы автора: опубликованные релизы, где пользователь — owner.
- * Чужие releases (где он только editor/viewer) в витрину не попадают.
+ *
+ * Если `showcase_releases` задан (непустой массив UUID) — возвращаем только
+ * указанные релизы в указанном порядке. Если NULL — fallback: все published
+ * по дате (текущее поведение). Пустой массив = ничего.
  */
 export async function fetchPublicAuthorWorks(userId: string): Promise<AuthorWork[]> {
+  const user = await dbQueryOne<{ showcase_releases: string[] | null }>(
+    'SELECT showcase_releases FROM users WHERE id = $1',
+    [userId],
+  )
+
+  const showcase = user?.showcase_releases
+
+  if (Array.isArray(showcase) && showcase.length > 0) {
+    return dbQuery<AuthorWork>(
+      `SELECT ${AUTHOR_WORK_COLUMNS}
+       FROM releases r
+       JOIN release_collaborators rc ON rc.release_id = r.id AND rc.role = 'owner'
+       LEFT JOIN editions e ON e.release_id = r.id AND e.status = 'published'
+       WHERE rc.user_id = $1 AND r.status = 'published' AND r.id = ANY($2)
+       GROUP BY r.id
+       ORDER BY array_position($2, r.id)`,
+      [userId, showcase],
+    )
+  }
+
+  if (Array.isArray(showcase) && showcase.length === 0) {
+    return []
+  }
+
   return dbQuery<AuthorWork>(
-    `SELECT r.id, r.title, r.slug, r.description, r.cover_image, r.genre,
-            r.release_date, r.isbn, r.authors, r.annotation, r.editor_notes,
-            r.view_count, r.status, r.design_config, r.created_at, r.updated_at,
-            COALESCE(
-              json_agg(DISTINCT e.format) FILTER (WHERE e.format IS NOT NULL),
-              '[]'::json
-            ) AS formats
+    `SELECT ${AUTHOR_WORK_COLUMNS}
      FROM releases r
      JOIN release_collaborators rc ON rc.release_id = r.id AND rc.role = 'owner'
      LEFT JOIN editions e ON e.release_id = r.id AND e.status = 'published'
