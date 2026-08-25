@@ -7,35 +7,78 @@ import { fetchSeriesById, fetchSeriesWithReleases } from '@/lib/server/series'
 import { fetchCharactersList } from '@/lib/server/characters'
 import { fetchPlacesByRelease } from '@/lib/server/places'
 import { fetchPublicHighlightsByRelease } from '@/lib/server/chapter-highlights'
+import { getReleaseViewer } from '@/lib/server/studio-auth'
 import { ReleasePagePublic } from '@/components/release-page'
 import { computeEditionMeta, getPrimaryEdition } from '@/lib/utils/editions'
 import { generateReleaseSchema } from '@/lib/seo/schema'
 import { buildMetadata, notFoundMetadata } from '@/lib/seo/metadata'
 import { JsonLd } from '@/components/seo/json-ld'
 
+/**
+ * Страница читается по сессии: черновик (draft) виден только команде релиза.
+ * Без `force-dynamic` Next статически закэшировал бы рендер по первому запросу
+ * и утёк бы draft публичному посетителю. Каталог (`/releases`) и sitemap на
+ * draft не ссылаются, поэтому дополнительная защита от индексации — `noindex`
+ * в `generateMetadata` ниже.
+ */
+export const dynamic = 'force-dynamic'
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params
   const release = await fetchReleaseBySlug(slug)
-  if (!release || release.status !== 'published') return notFoundMetadata()
+  if (!release) return notFoundMetadata()
 
-  return buildMetadata({
-    title: `${release.title} | canfly`,
-    description: release.description ?? release.annotation ?? `«${release.title}» на canfly`,
-    path: `/release/${release.slug}`,
-    // og:image приходит из opengraph-image.tsx рядом — обложка «как есть» в
-    // 1200×630 обрезалась бы соцсетями.
-    generatedImage: true,
-    ogType: 'book',
-    publishedTime: release.release_date ?? release.created_at,
-    modifiedTime: release.updated_at,
-  })
+  if (release.status === 'published') {
+    return buildMetadata({
+      title: `${release.title} | canfly`,
+      description: release.description ?? release.annotation ?? `«${release.title}» на canfly`,
+      path: `/release/${release.slug}`,
+      // og:image приходит из opengraph-image.tsx рядом — обложка «как есть» в
+      // 1200×630 обрезалась бы соцсетями.
+      generatedImage: true,
+      ogType: 'book',
+      publishedTime: release.release_date ?? release.created_at,
+      modifiedTime: release.updated_at,
+    })
+  }
+
+  if (release.status === 'draft') {
+    const { canViewDraft } = await getReleaseViewer(release.id)
+    if (!canViewDraft) return notFoundMetadata()
+
+    return buildMetadata({
+      title: `${release.title} · черновик | canfly`,
+      description: `Черновик «${release.title}» — предпросмотр для команды релиза.`,
+      path: `/release/${release.slug}`,
+      generatedImage: true,
+      ogType: 'book',
+      noindex: true,
+    })
+  }
+
+  // archived: на сайте публично нет, но в Studio остаётся.
+  return notFoundMetadata()
 }
 
 export default async function ReleasePublicPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
   const release = await fetchReleaseBySlug(slug)
-  if (!release || release.status !== 'published') notFound()
+  if (!release) notFound()
+
+  // published — всем. draft — только команде релиза (owner/editor-коллаборант
+  // или админ). archived — publicly 404, в Studio остаётся.
+  let preview: 'draft' | null = null
+  let viewerCanEdit = false
+  if (release.status !== 'published') {
+    if (release.status === 'archived') notFound()
+    const viewer = await getReleaseViewer(release.id)
+    if (!viewer.canViewDraft) notFound()
+    preview = 'draft'
+    // Кнопку «Открыть в Studio» показываем только тем, кто реально может
+    // открыть `/studio/releases/[id]` (admin или owner коллаборанта).
+    // Editor-коллаборатор черновик видит, но в студию этого релиза не зайдёт.
+    viewerCanEdit = viewer.canEdit
+  }
 
   const editions = await fetchEditionsByRelease(release.id)
   const primaryEdition = getPrimaryEdition(editions)
@@ -123,7 +166,9 @@ export default async function ReleasePublicPage({ params }: { params: Promise<{ 
 
   return (
     <>
-      <JsonLd schemas={[releaseSchema]} />
+      {/* Schema.org нужен только опубликованной странице: draft закрыт от
+          индексации через noindex, лишняя разметка в нём не нужна. */}
+      {preview !== 'draft' && <JsonLd schemas={[releaseSchema]} />}
       <ReleasePagePublic
         release={release}
         editions={editions}
@@ -134,6 +179,8 @@ export default async function ReleasePublicPage({ params }: { params: Promise<{ 
         characters={characters}
         otherSeriesReleases={otherSeriesReleases}
         breadcrumbs={breadcrumbItems}
+        preview={preview}
+        viewerCanEdit={viewerCanEdit}
       />
     </>
   )

@@ -60,6 +60,49 @@ export async function requireReleaseOwnership(releaseId: string): Promise<Owners
 }
 
 /**
+ * Не-бросающая проверка доступа к draft-релизу на публичной странице.
+ *
+ * В отличие от `requireReleaseOwnership`, не редиректит на студию — возвращает
+ * флаги, чтобы `app/release/[slug]/page.tsx` сам вызывал `notFound()`.
+ *
+ *   `canViewDraft` — право увидеть `/release/[slug]` черновика:
+ *     - админ (`is_admin`);
+ *     - коллаборант этого релиза с ролью `owner` или `editor`.
+ *   `canEdit` — право открыть `/studio/releases/[id]` этого релиза
+ *   (повторяет `requireReleaseOwnership`):
+ *     - админ;
+ *     - `owner`. Editor-коллаборатор видит черновик на сайте, но в Studio
+ *       этот релиз открыть не может — значит и кнопка «Открыть в Studio»
+ *       для него не нужна.
+ *
+ * Системная роль `editor` без привязки к релизу НЕ даёт доступа — модель
+ * доступа строится на `release_collaborators`, а не на глобальных модераторах.
+ */
+export async function getReleaseViewer(releaseId: string): Promise<{
+  session: StudioSession | null
+  canViewDraft: boolean
+  canEdit: boolean
+}> {
+  const session = await requireStudioSession()
+  if (!session) return { session: null, canViewDraft: false, canEdit: false }
+  if (session.isAdmin) return { session, canViewDraft: true, canEdit: true }
+
+  const link = await dbQueryOne<{ role: 'owner' | 'editor' | 'viewer' }>(
+    `SELECT role FROM release_collaborators
+     WHERE release_id = $1 AND user_id = $2
+     LIMIT 1`,
+    [releaseId, session.user.id],
+  )
+
+  const role = link?.role ?? null
+  return {
+    session,
+    canViewDraft: role === 'owner' || role === 'editor',
+    canEdit: role === 'owner',
+  }
+}
+
+/**
  * Извлекает release_id из editions.release_id и проверяет владение релизом.
  */
 export async function requireEditionOwnership(editionId: string): Promise<OwnershipContext> {

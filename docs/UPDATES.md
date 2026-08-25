@@ -2,6 +2,69 @@
 
 ---
 
+## [26 августа 2026] Релизы: draft виден команде, archived закрыт публично
+
+### Что изменено
+
+Раньше `/release/[slug]` показывал только `published` — и `draft`, и `archived`
+отдавали 404. Теперь у `release_status` три разных поведения на сайте:
+
+- **`published`** — видят все (без изменений);
+- **`draft`** — видит только команда релиза (админ или коллаборант с ролью
+  `owner`/`editor` в `release_collaborators`) с бейджем «Черновик» и `noindex`;
+  прочим — 404;
+- **`archived`** — публично 404; в Studio остаётся (выборки `listAll*`/
+  `list*ByAuthor` не фильтруют по статусу — изменений студии не требуется).
+
+Бейдж «Черновик» стоит между хлебными крошками и героем и объясняет, что версия
+видна только команде релиза и не попадает в каталог/поиск. При `canEdit` —
+рядом ссылка «Открыть в Studio» в `/studio/releases/[id]` (ее видят только owner
+и admin; editor-коллаборатор черновик видит, но в студию этого релиза не зайдёт).
+JSON-LD (`generateReleaseSchema`) для draft не выводится, метаданные —
+`noindex: true`, заголовок `«Название» · черновик | canfly`.
+
+Каталог `/releases` (`fetchReleasesPage`, `status='published'`), `app/sitemap.ts`
+(`fetchReleasesWithEditions({ status: 'published' })`) и ридер `/vvvvv/[slug]`
+не тронуты — draft там по-прежнему отсутствует. `opengraph-image.tsx` для draft
+ уже отдаёт `ogFallback()`.
+
+### Файлы
+
+- **`lib/server/studio-auth.ts`** — новый `getReleaseViewer(releaseId)`:
+  не-бросающая (без `redirect`) проверка доступа к draft. Возвращает
+  `{ session, canViewDraft, canEdit }`:
+  - `canViewDraft` — admin ИЛИ `release_collaborators.role IN ('owner','editor')`;
+  - `canEdit` — admin ИЛИ `role === 'owner'` (повторяет `requireReleaseOwnership` —
+    editor-коллаборатор черновик видит, но `/studio/releases/[id]` открыт не будет).
+  В отличие от `requireReleaseOwnership`, не редиректит — публичный рендер сам
+  решает `notFound()`.
+- **`app/release/[slug]/page.tsx`** — `export const dynamic = 'force-dynamic'`
+  (критично: без этого Next статически кэшировал бы рендер и утёк бы draft
+  посетителю без прав). В `generateMetadata` — три ветки: `published` (как
+  раньше), `draft` + `canViewDraft` (`noindex`, заголовок с «черновик»), иначе
+  и для `archived` — `notFoundMetadata()`. В `ReleasePublicPage`: `archived`
+  → `notFound()`; `draft` без прав → `notFound()`; иначе рендер с
+  `preview='draft'` + `viewerCanEdit`. `JsonLd` для draft скрыт.
+- **`components/release/types.ts`** — в `ReleasePagePublicProps` добавлены
+  опциональные `preview?: 'draft' | null` и `viewerCanEdit?: boolean`.
+- **`components/release-page.tsx`** — локальный `DraftBanner` между
+  `<Breadcrumbs/>` и `<ReleaseHero/>`; использует `cf-warm`/`cf-bg` из
+  `app/globals.css`. Ссылка в Studio показывается только при `viewerCanEdit`.
+
+### Без миграций и env
+
+`release_status` уже содержит `draft`/`published`/`archived`; переключение
+статуса остаются в Studio. Новых переменных окружения нет.
+
+### Проверки
+
+`pnpm lint` — 0 ошибок (остаются только давние warnings в `.agents/skills/…` и
+`components/header-auth.tsx`/`mobile-nav.tsx`, не связанных с правкой).
+`pnpm build` — зелёный, `/release/[slug]` помечен `ƒ (Dynamic)`, что
+подтверждает срабатывание `force-dynamic`.
+
+---
+
 ## [26 августа 2026] MCP: аудит write-тулов, защита асимметричных типов, try/catch
 
 ### Что изменено

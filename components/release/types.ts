@@ -34,4 +34,12 @@ export type ReleasePagePublicProps = {
   meta: ReleaseMeta
   characters: ReleaseCharacter[]
   otherSeriesReleases: OtherSeriesRelease[]
+  /**
+   * Режим предпросмотра для непубличных релизов. `null` — обычная публикация.
+   * `'draft'` — релиз в черновике: показываем бейдж и скрываем из выдачи по
+   * канонам SEO (метаданные уже с `noindex`).
+   */
+  preview?: 'draft' | null
+  /** Есть ли у текущего зрителя право открыть этот релиз в Studio. */
+  viewerCanEdit?: boolean
 }
