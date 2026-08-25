@@ -9,13 +9,14 @@ import { SpeedInsights } from "@vercel/speed-insights/next"
 import { YandexMetrika } from '@/components/yandex-metrika'
 import './globals.css'
 
-const geistSans = Geist({ subsets: ['latin'], variable: '--font-geist-sans' })
-const geistMono = Geist_Mono({ subsets: ['latin'], variable: '--font-geist-mono' })
+const geistSans = Geist({ subsets: ['latin'], variable: '--font-geist-sans', display: 'swap' })
+const geistMono = Geist_Mono({ subsets: ['latin'], variable: '--font-geist-mono', display: 'swap' })
 const cormorant = Cormorant_Garamond({
   subsets: ['latin', 'cyrillic'],
   weight: ['400', '500', '600', '700'],
   style: ['normal', 'italic'],
   variable: '--font-cormorant',
+  display: 'swap',
 })
 const ebGaramond = EB_Garamond({
   subsets: ['latin', 'cyrillic'],

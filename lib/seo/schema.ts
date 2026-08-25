@@ -12,6 +12,7 @@ import type { EditionMeta } from '@/lib/utils/editions'
 import { stripHtml, truncate } from '@/lib/seo/metadata'
 import {
   BASE_URL,
+  absoluteUrl,
   ID,
   ref,
   imageObject,
@@ -26,7 +27,7 @@ import {
 } from '@/lib/seo/entities'
 
 export { serializeJsonLd } from '@/lib/seo/serialize'
-export { organizationNode, authorNode, websiteNode, BASE_URL, ID } from '@/lib/seo/entities'
+export { organizationNode, authorNode, websiteNode, BASE_URL, absoluteUrl, ID } from '@/lib/seo/entities'
 
 // === Общее ===
 
@@ -60,7 +61,7 @@ export function generateCollectionSchema(opts: {
   /** Общее число элементов, если на странице показана только часть. */
   totalItems?: number
 }) {
-  const url = `${BASE_URL}${opts.path}`
+  const url = absoluteUrl(opts.path)
 
   return {
     '@type': 'CollectionPage',
@@ -718,7 +719,7 @@ export function generateWebPageSchema(opts: {
   description: string
   path: string
 }) {
-  const url = `${BASE_URL}${opts.path}`
+  const url = absoluteUrl(opts.path)
 
   return {
     '@type': 'WebPage',

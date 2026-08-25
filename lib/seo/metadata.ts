@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { BASE_URL } from '@/lib/seo/entities'
+import { absoluteUrl } from '@/lib/seo/entities'
 
 /**
  * Снимает HTML-теги и схлопывает пробелы.
@@ -105,7 +105,7 @@ export function buildMetadata(opts: BuildMetadataOptions): Metadata {
   } = opts
 
   const description = truncateSeoDescription(opts.description)
-  const url = `${BASE_URL}${path.startsWith('/') ? path : `/${path}`}`
+  const url = absoluteUrl(path)
 
   /*
    * Картинку из `opengraph-image.tsx` Next подставляет только сегменту, где

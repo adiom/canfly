@@ -20,6 +20,9 @@ export const metadata = buildMetadata({
   title: 'Места | canfly — культура твоего сознания',
   description: PLACES_DESCRIPTION,
   path: '/places',
+  // Навигационный хаб без уникального контента: не конкурирует с карточками
+  // мест в выдаче и не даёт сигнала «тонкий контент».
+  noindex: true,
 })
 
 async function PlacesContent() {

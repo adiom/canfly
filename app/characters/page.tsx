@@ -18,6 +18,9 @@ export const metadata = buildMetadata({
   title: 'Персонажи | canfly — культура твоего сознания',
   description: CHARACTERS_DESCRIPTION,
   path: '/characters',
+  // Навигационный хаб без уникального контента: не конкурирует с карточками
+  // персонажей в выдаче и не даёт сигнала «тонкий контент».
+  noindex: true,
 })
 
 async function CharactersContent() {

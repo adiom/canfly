@@ -32,7 +32,7 @@ export function ReleaseCardBookmate({ release, priority = false }: ReleaseCardBo
             src={release.cover_image}
             alt={release.title}
             fill
-            sizes="(min-width:1024px) 186px, (min-width:640px) 33vw, 50vw"
+            sizes="(min-width:1024px) 240px, (min-width:640px) 33vw, 50vw"
             className="object-cover"
             priority={priority}
           />

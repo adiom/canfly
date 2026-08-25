@@ -8,6 +8,7 @@ import { fetchAllSeries } from '@/lib/server/series'
 import { fetchPublishedEditionsForSitemap } from '@/lib/server/editions'
 import { CATALOG_PATH, LANDING_PATH } from '@/lib/nav'
 import { getEditionTocUrl } from '@/lib/utils/editions'
+import { absoluteUrl } from '@/lib/seo/entities'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
@@ -85,7 +86,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   return [
     {
-      url: `${BASE_URL}${LANDING_PATH}`,
+      url: absoluteUrl(LANDING_PATH),
       lastModified: new Date(),
       changeFrequency: 'daily',
       priority: 1,
@@ -101,18 +102,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       lastModified: new Date(),
       changeFrequency: 'daily',
       priority: 0.8,
-    },
-    {
-      url: `${BASE_URL}/characters`,
-      lastModified: new Date(),
-      changeFrequency: 'weekly',
-      priority: 0.7,
-    },
-    {
-      url: `${BASE_URL}/places`,
-      lastModified: new Date(),
-      changeFrequency: 'weekly',
-      priority: 0.7,
     },
     {
       url: `${BASE_URL}/colors`,

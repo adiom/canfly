@@ -3,6 +3,18 @@ import type { EditionFormat, QualityTier } from '@/lib/releases-types'
 export const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
 /**
+ * Единая сборка абсолютного URL от корня.
+ *
+ * Корень (`/`) отдаётся без завершающего слэша: canonical в Next.js 16
+ * нормализуется в `https://canfly.org`, и если JSON-LD/sitemap будут со слэшем,
+ * поисковик получит конфликтующие сигналы. Остальные пути сохраняются как есть.
+ */
+export function absoluteUrl(path: string): string {
+  const normalized = path.startsWith('/') ? path : `/${path}`
+  return normalized === '/' ? BASE_URL : `${BASE_URL}${normalized}`
+}
+
+/**
  * Стабильные `@id` сущностей.
  *
  * Без них Google видит на каждой странице новую безымянную Organization/Person

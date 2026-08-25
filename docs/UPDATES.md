@@ -2,6 +2,26 @@
 
 ---
 
+## [25 августа 2026] SEO-фиксы: soft-404, canonical, тонкие листинги, font-display
+
+### Что изменено
+
+**Soft-404 → настоящий HTTP 404.** Корневой `app/loading.tsx` оборачивал все маршруты в Suspense, поэтому стриминг стартовал (HTTP 200) раньше, чем `notFound()` мог сменить статус — несуществующие `/release/…`, `/places/…`, `/news/…`, `/vvvvv/…` и т.д. отдавали 200 с noindex (soft-404). Файл удалён; теперь все динамические маршруты отдают корректный `404` через `not-found.tsx`. Скелетон при навигации утрачен — клиентская навигация продолжает работать.
+
+**Единообразие canonical / og:url / JSON-LD / sitemap.** Next.js 16 нормализует canonical корня в `https://canfly.org` (без слэша), поэтому JSON-LD `WebPage.@id` и sitemap (которые собирались со слэшем) конфликтовали с ним. Добавлена `absoluteUrl()` в `lib/seo/entities.ts` — корень всегда без завершающего слэша, остальные пути как есть. Используется в `buildMetadata`, `generateWebPageSchema`, `generateCollectionSchema` и `app/sitemap.ts`.
+
+**Тонкие листинги закрыты от индекса.** `/characters` и `/places` — навигационные хабы без уникального контента (~300–470 симв. текста). Добавлен `noindex: true` в их metadata и записи убраны из sitemap. Дочерние `/characters/[slug]` и `/places/[slug]` остаются индексируемыми.
+
+**Font-display.** `display: 'swap'` явно добавлен для Geist, Geist_Mono и Cormorant (EB Garamond и Libre Franklin уже имели). Все 147 реальных `@font-face` в сборке теперь с `font-display: swap`.
+
+**Обложки в каталоге.** В `ReleaseCardBookmate` `sizes` поднят с 186px до 240px, чтобы на ретине браузер выбирал 2x-вариант (naturalWidth ≥ отрисованного размера).
+
+### Проверки
+
+`pnpm lint` (0 ошибок), `pnpm build` зелёный. В dev и production: несуществующие роуты отдают 404, canonical/og:url/JSON-LD/@id главной — `https://canfly.org`, sitemap без `/characters` и `/places`, листинги с noindex.
+
+---
+
 ## [25 августа 2026] Markdown-адреса изданий
 
 ### Что изменено
