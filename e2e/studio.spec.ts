@@ -134,9 +134,24 @@ test.describe('smoke: studio routes (admin role)', () => {
   })
 })
 
-test.describe('smoke: download markdown API', () => {
-  test('markdown download returns 400 without params', async ({ page }) => {
-    const res = await page.goto('/api/releases/download/markdown', { waitUntil: 'domcontentloaded' })
-    expect(res!.status()).toBe(400)
+test.describe('smoke: edition markdown', () => {
+  test('published edition markdown endpoint returns text', async ({ page }) => {
+    await page.goto('/releases', { waitUntil: 'domcontentloaded' })
+
+    const editionLink = page.locator('a[href^="/vvvvv/"]').first()
+    try {
+      await editionLink.waitFor({ state: 'attached', timeout: 25_000 })
+    } catch {
+      test.skip(true, 'no published edition listed')
+    }
+
+    const href = await editionLink.getAttribute('href')
+    if (!href) test.skip(true, 'no published edition href')
+
+    const markdownHref = `${href!}.md`
+    const response = await page.request.get(markdownHref)
+    expect(response.status()).toBe(200)
+    expect(response.headers()['content-type']).toContain('text/markdown')
+    expect(await response.text()).toContain('# ')
   })
 })
