@@ -1,5 +1,10 @@
+import { notFound } from 'next/navigation'
+
+import { getAdminHomepageSlide } from '@/lib/homepage-slide-store'
 import { AdminShell } from '@/app/admin/_components/admin-shell'
 import { HomepageSlideForm } from '@/app/admin/_components/homepage-slide-form'
+
+export const dynamic = 'force-dynamic'
 
 interface EditHomepageSlidePageProps {
   params: Promise<{ id: string }>
@@ -7,6 +12,9 @@ interface EditHomepageSlidePageProps {
 
 export default async function EditHomepageSlidePage({ params }: EditHomepageSlidePageProps) {
   const { id } = await params
+  const slide = await getAdminHomepageSlide(id)
+
+  if (!slide) notFound()
 
   return (
     <AdminShell
@@ -14,7 +22,7 @@ export default async function EditHomepageSlidePage({ params }: EditHomepageSlid
       description="Настройте текст, ссылки, тему и порядок показа на главной."
       backHref="/admin/slider"
     >
-      <HomepageSlideForm slideId={id} />
+      <HomepageSlideForm slide={slide} />
     </AdminShell>
   )
 }

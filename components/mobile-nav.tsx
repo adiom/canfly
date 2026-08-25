@@ -8,8 +8,6 @@ import { Menu } from 'lucide-react'
 import { Sheet, SheetClose, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { safeInternalPath } from '@/lib/safe-redirect'
 
-const STUDIO_ROLES = ['editor']
-
 const linkClass =
   'flex h-12 items-center rounded-sm px-4 text-sm font-black uppercase tracking-[0.12em] text-cf-text-2 transition-colors hover:bg-cf-text-1/6 hover:text-cf-text-heading'
 

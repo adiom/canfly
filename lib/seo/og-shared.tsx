@@ -149,8 +149,10 @@ export function ogLayout(opts: OgLayoutOptions) {
           {note ? <OgNote text={note} serif={serifNote} /> : null}
         </div>
         {image ? (
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={image}
+            alt=""
             width={300}
             height={imageRounded ? 300 : 420}
             style={{

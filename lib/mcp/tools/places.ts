@@ -8,8 +8,6 @@ import {
   updatePlace,
   deletePlace,
   fetchPlaceCharacters,
-  fetchPlacesByCharacter,
-  setCharacterPlaces,
 } from '@/lib/server/places'
 import { json, notFound, pick, toolError } from '@/lib/mcp/tool-result'
 

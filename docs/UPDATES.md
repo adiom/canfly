@@ -2,6 +2,53 @@
 
 ---
 
+## [25 августа 2026] Чистка репозитория и рефакторинг /admin на серверную архитектуру
+
+### Что изменено
+
+**Мусор и мёртвый код удалены:**
+- `sonya-profile.png` в корне репо (не использовался), мёртвый маршрут `app/home/`
+  (proxy уже делал 301 `/home → /`), пустая `app/books/`, deprecated-компонент
+  `components/search/search-result-book.tsx`; почищены `.DS_Store`.
+- Убраны неиспользуемые `STUDIO_ROLES` в `header-auth.tsx`/`mobile-nav.tsx`, мёртвые
+  импорты в `lib/mcp/tools/places.ts`, добавлен `alt` + `eslint-disable` для `<img>` в
+  `lib/seo/og-shared.tsx` (satori OG — false-positive `no-img-element`).
+
+**Homepage slides — убран файловый fallback:**
+- `lib/homepage-slide-store.ts` теперь ходит только в БД; удалён dev-fallback через
+  `data/homepage-slides.json` (`readLocalHomepageSlides`/`writeLocalHomepageSlides`/
+  `withLocalSlidesFallback`/`defaultHomepageSlides`). ~330 → ~135 строк. Папка `data/`
+  удалена. Главная (`app/page.tsx`) уже ловит «таблица отсутствует» и рендерит empty-state.
+
+**/admin переведён с клиентского `useEffect`+`fetch('/api/admin/*')` на серверные
+компоненты + server actions:**
+- Удалены дублирующие studio разделы `app/admin/characters/`, `app/admin/news/` и их
+  API-хендлеры `app/api/admin/characters/`, `app/api/admin/news/` (CRUD персонажей и
+  новостей полностью в `/studio` — создание через `lib/actions/studio-create.ts`).
+- `app/admin/page.tsx` (613-строчный `'use client'`-монолит с 3 вкладками) → серверный
+  компонент: пользователи через `listAdminUsers()` + клиент-панель
+  `admin-users-panel.tsx`; мутации — server actions `lib/actions/admin-users.ts`.
+- `app/admin/slider` + `app/admin/homepage-slides/*` → серверные компоненты; мутации —
+  `lib/actions/admin-slides.ts`; форма слайда получает данные через props, без `fetch`.
+- Удалены ставшие лишними route-хендлеры `app/api/admin/users/`,
+  `app/api/admin/homepage-slides/`, мёртвый `app/api/admin/upload/`, и
+  `lib/api/normalizers.ts` (использовался только admin-хендлерами).
+
+### Как использовать
+
+- Управление контентом — в `/studio`. В `/admin` остались: пользователи и роли
+  (`/admin`), слайды главной (`/admin/slider`, `/admin/homepage-slides/new`,
+  `/admin/homepage-slides/[id]/edit`).
+- API `/api/admin/*` больше нет — мутации идут через server actions. Загрузка картинок —
+  через `/api/studio/upload`.
+- E2E `e2e/admin.spec.ts` обновлён под оставшиеся admin-маршруты.
+
+### Проверки
+
+`pnpm lint` (0 ошибок), `pnpm build` (типы и сборка ОК).
+
+---
+
 ## [25 августа 2026] Studio v2: orbital-редактор персонажа (`/studio/characters-v2/[id]`)
 
 ### Что изменено

@@ -16,8 +16,6 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { safeInternalPath } from '@/lib/safe-redirect'
 
-const STUDIO_ROLES = ['editor']
-
 /**
  * Вход/выход в шапке. Раньше выхода из аккаунта в интерфейсе не было вовсе:
  * signOut жил только в legacy-/admin и на /studio-access-denied, то есть
