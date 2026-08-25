@@ -194,6 +194,7 @@ export function createAuthConfig(request?: NextRequest): NextAuthConfig {
           GitHub({
             clientId: process.env.AUTH_GITHUB_CLIENT_ID,
             clientSecret: process.env.AUTH_GITHUB_CLIENT_SECRET,
+            issuer: 'https://github.com/login/oauth',
           }),
         ]
       : []),
