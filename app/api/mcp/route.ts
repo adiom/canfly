@@ -10,6 +10,66 @@ import { registerSearchTools } from '@/lib/mcp/tools/search'
 import { registerPlacesTools } from '@/lib/mcp/tools/places'
 
 /**
+ * Локальная проекция McpEvent — `parameters` типизирован как `unknown`
+ * (mcp-handler не уточняет структуру) и narrowing делается в обработчике.
+ */
+type AuditorEvent = {
+  type: 'REQUEST_RECEIVED' | 'REQUEST_COMPLETED' | 'ERROR'
+  method?: string
+  parameters?: unknown
+  duration?: number
+  status?: 'success' | 'error'
+  error?: Error | string
+  context?: string
+  source?: 'request' | 'system'
+  severity?: 'warning' | 'error' | 'fatal'
+}
+
+/**
+ * Имена тулов, которые что-то меняют в БД. Только их успехи пишем в лог,
+ * чтобы не плодить шум от read-тулов. Источник правды по префиксам имён.
+ */
+const WRITE_TOOL_PREFIXES = ['canfly_create_', 'canfly_update_', 'canfly_delete_', 'canfly_upsert_'] as const
+
+function isWriteTool(name: string | undefined): boolean {
+  if (!name || typeof name !== 'string') return false
+  return WRITE_TOOL_PREFIXES.some((prefix) => name.startsWith(prefix))
+}
+
+/**
+ * Аудит-канал mcp-handler: RequestEvent приходит на каждый tools/call,
+ * ErrorEvent — при падениях ниже handler'a (БД, синтаксис). Успехи read-тулов
+ * не логируем — шум. Успехи write-тулов и все ошибки идут в server logs,
+ * это наш «аудит без БД»: единственный фиксатор того, что кто-то с MCP_TOKEN
+ * действительно модифицировал данные.
+ */
+function onMcpEvent(event: AuditorEvent): void {
+  if (event.type === 'ERROR') {
+    const msg = event.error instanceof Error ? event.error.message : String(event.error ?? '')
+    console.error(
+      `[mcp] ERROR severity=${event.severity ?? '?'} source=${event.source ?? '?'}` +
+        (event.context ? ` context=${event.context}` : '') +
+        ` — ${msg}`,
+    )
+    return
+  }
+
+  if (event.type !== 'REQUEST_COMPLETED' || event.method !== 'tools/call') return
+
+  const params = event.parameters as { name?: string } | undefined
+  const toolName = params?.name
+  if (!isWriteTool(toolName)) return
+
+  const dur = typeof event.duration === 'number' ? `${event.duration}ms` : '?'
+  const line = `[mcp] ${event.method} ${toolName} ${event.status ?? '?'} in ${dur}`
+  if (event.status === 'error') {
+    console.error(line)
+  } else {
+    console.log(line)
+  }
+}
+
+/**
  * Тулы этого сервера ходят в БД напрямую, минуя гварды studio-auth: они пишут
  * релизы, главы и персонажей без проверки владения. Единственный барьер —
  * MCP_TOKEN, поэтому эндпоинт нельзя открывать шире, не добавив авторизацию
@@ -27,6 +87,7 @@ const mcpHandler = createMcpHandler(
   {
     serverInfo: { name: 'canfly', version: '2.0.0' },
     verboseLogs: process.env.NODE_ENV === 'development',
+    onEvent: onMcpEvent,
   },
 )
 

@@ -38,3 +38,29 @@ export function pick<T, K extends keyof T>(row: T, keys: readonly K[]): Pick<T, 
   }
   return result
 }
+
+/**
+ * Обёртка handler'а тулa, ловящая синхронные и асинхронные исключения.
+ * mcp-handler тоже ловит throw и упаковывает в isError, но сообщение
+ * становится generic — agent не понимает, что именно упало. Эта обёртка
+ * возвращает toolError(err.message) с конкретным текстом (например,
+ * «Postgres error: …»), не роняя запрос. Аудит mcp-handler всё равно
+ * получит REQUEST_COMPLETED со status='error' (не ERROR), что onEvent
+ * правильно классифицирует.
+ *
+ * Обёртка сохраняет тип аргумента `Args`: вызов `withToolCatch(handler)`
+ * возвращает ту же сигнатуру, что и переданный handler, mcp-handler видит
+ * корректные типы (instanceof per-tool input).
+ */
+export function withToolCatch<Args>(
+  handler: (args: Args) => Promise<CallToolResult> | CallToolResult,
+): (args: Args) => Promise<CallToolResult> {
+  return async (args) => {
+    try {
+      return await handler(args)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      return toolError(message)
+    }
+  }
+}

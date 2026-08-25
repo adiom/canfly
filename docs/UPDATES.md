@@ -2,6 +2,36 @@
 
 ---
 
+## [26 августа 2026] MCP: аудит write-тулов, защита асимметричных типов, try/catch
+
+### Что изменено
+
+Улучшения на основе spec MCP TypeScript SDK (`CLAUDE.md`) и `mcp-handler ^2.1.0`.
+
+**Аудит write-тулов через `onEvent`.** `mcp-handler` отдаёт `onEvent?: (event: McpEvent) => void` в опциях `createMcpHandler`. Раньше это поле не использовалось; теперь `app/api/mcp/route.ts` подключает `onMcpEvent`, который:
+
+- пишет `[mcp] tools/call <name> success in 234ms` в `console.log` для всех write-тулов (имена с префиксами `canfly_create_`, `canfly_update_`, `canfly_delete_`, `canfly_upsert_`);
+- пишет `[mcp] tools/call <name> error in …` в `console.error` при failure-статусе;
+- пишет `[mcp] ERROR severity=… source=… — …` для всех `McpErrorEvent` (severity `warning`/`error`/`fatal`).
+
+Read-тулы (`canfly_list_*`, `canfly_get_*`, `canfly_search_*`) на успех не логируются — чтобы не плодить шум. Это наш «аудит без БД»: единственный фиксатор того, что кто-то с `MCP_TOKEN` действительно модифицировал данные. Логи видны в Vercel runtime logs и в локальном `pnpm dev` (когда `verboseLogs: true`).
+
+**Защита от `mutual=true` с асимметричным типом.** Дефолтные ключи `mentor`, `subordinate`, `creator` асимметричны: A→B и B→A несут разный смысл. `mutual=true` с таким типом создаст обратную связь с тем же типом (B→A `mentor` значит «B наставник A», а не «B ученик A»). До этого была только оговорка в описании тулы; теперь на уровне zod-v4 `superRefine` (`lib/mcp/tools/character-relationships.ts`) добавлен реджект с конкретным сообщением — AI не сможет случайно сломать семантику. Кастомные типы (`custom=true`) не валидируются.
+
+**`withToolCatch(handler)` — обёртка handler'а.** `lib/mcp/tool-result.ts` получил `withToolCatch<Args>(handler)`, которая ловит синхронные/асинхронные исключения и возвращает `toolError(err.message)` с конкретным текстом (например, «Postgres error: …»). mcp-handler тоже ловит throw и упаковывает в `isError`, но сообщение становится generic — agent не понимает, что именно упало. Обёртка сохраняет тип аргумента `Args`, mcp-handler видит корректные типы. Обёрнуты все 4 handler'а в `lib/mcp/tools/character-relationships.ts`.
+
+### Что НЕ меняется
+
+- Перечень тулов и их behaviour: ни один тула не поменял inputSchema или возвращаемое значение.
+- Существующие read-тулы не обёрнуты в `withToolCatch` — они и так проходят через `mcp-handler` catch. На новой фиче (`character-relationships`) обёрнуты все, на старых (`characters`, `chapters`, `releases`, `places`, `search`) — оставляем как есть, чтобы не плодить diff. Можно обернуть позже отдельным PR.
+- Серверный код регистрации (`registerCharactersTools`/etc.) не тронут.
+
+### Проверки
+
+`pnpm lint` (0 ошибок), `pnpm build` зелёный (`Finished TypeScript in 4.2s`).
+
+---
+
 ## [26 августа 2026] MCP: управление связями персонажей
 
 ### Что изменено

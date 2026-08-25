@@ -7,7 +7,7 @@ import {
   deleteMutualCharacterRelationship,
 } from '@/lib/server/character-relationships'
 import { isDefaultRelationshipKey, RELATIONSHIP_KINDS } from '@/lib/relationships-kinds'
-import { json, pick, toolError } from '@/lib/mcp/tool-result'
+import { json, pick, toolError, withToolCatch } from '@/lib/mcp/tool-result'
 
 const uuid = z.uuid()
 
@@ -25,6 +25,19 @@ const relationshipListFields = [
   'related_avatar',
   'related_type',
 ] as const
+
+/**
+ * Дефолтные типы, где A→B и B→A несут разный смысл. mutual=true с этими
+ * типами создаст обратную связь с тем же типом, что семантически некорректно
+ * (B→A `mentor` означает «B наставник A», а не «B ученик A»). Для
+ * асимметричных пар агент делает два отдельных вызова с разными типами.
+ *
+ * Симметричные дефолтные ключи (ally, rival, family, romantic, comrade,
+ * enemy) сюда не входят — для них mutual=true корректен.
+ *
+ * Кастомные типы (custom=true) не валидируются — семантику знает автор.
+ */
+const ASYMMETRIC_RELATIONSHIP_KEYS = ['mentor', 'subordinate', 'creator'] as const
 
 const RELATIONSHIP_TYPE_NOTES = [
   'Тип связи. Дефолтные ключи: ' +
@@ -50,13 +63,13 @@ export function registerCharacterRelationshipsTools(server: McpServer) {
       }),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async ({ character_id, limit }) => {
+    withToolCatch(async ({ character_id, limit }) => {
       const all = await fetchCharacterRelationships(character_id)
       return json({
         total: all.length,
         items: all.slice(0, limit).map((r) => pick(r, relationshipListFields)),
       })
-    },
+    }),
   )
 
   server.registerTool(
@@ -72,14 +85,14 @@ export function registerCharacterRelationshipsTools(server: McpServer) {
       }),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async ({ exclude_character_id, query, limit }) => {
+    withToolCatch(async ({ exclude_character_id, query, limit }) => {
       const items = await searchCharactersForRelationship({
         excludeCharacterId: exclude_character_id,
         query,
         limit,
       })
       return json({ total: items.length, items })
-    },
+    }),
   )
 
   server.registerTool(
@@ -131,10 +144,26 @@ export function registerCharacterRelationshipsTools(server: McpServer) {
                 RELATIONSHIP_KINDS.map((k) => k.key).join(', '),
             })
           }
+          if (
+            data.mutual &&
+            (ASYMMETRIC_RELATIONSHIP_KEYS as readonly string[]).includes(data.relationship_type)
+          ) {
+            ctx.addIssue({
+              code: 'custom',
+              path: ['relationship_type'],
+              message:
+                `Тип «${data.relationship_type}» асимметричный: A→B и B→A ` +
+                'несут разный смысл. mutual=true создаст обратную связь с тем же ' +
+                'типом (B→A «' + data.relationship_type +
+                '»), что семантически некорректно. Для асимметричной пары сделайте ' +
+                'два отдельных вызова: A→B с этим типом и B→A с подходящим ' +
+                'симметричным или custom-типом (mutual=false в обоих).',
+            })
+          }
         }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     },
-    async ({ character_id, related_character_id, relationship_type, description, mutual }) => {
+    withToolCatch(async ({ character_id, related_character_id, relationship_type, description, mutual }) => {
       const result = await upsertMutualCharacterRelationship({
         characterId: character_id,
         relatedCharacterId: related_character_id,
@@ -143,7 +172,7 @@ export function registerCharacterRelationshipsTools(server: McpServer) {
         mutual,
       })
       return json({ direct: result.direct, inverse: result.inverse })
-    },
+    }),
   )
 
   server.registerTool(
@@ -164,7 +193,7 @@ export function registerCharacterRelationshipsTools(server: McpServer) {
       }),
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     },
-    async ({ character_id, related_character_id, mutual }) => {
+    withToolCatch(async ({ character_id, related_character_id, mutual }) => {
       if (character_id === related_character_id) {
         return toolError('Персонаж не может быть связан сам с собой')
       }
@@ -174,6 +203,6 @@ export function registerCharacterRelationshipsTools(server: McpServer) {
         mutual,
       })
       return json(result)
-    },
+    }),
   )
 }
