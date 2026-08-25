@@ -53,56 +53,46 @@ interface CompletenessInput {
 
 /**
  * Считает life-state по всем секциям дела. Группы полей соответствуют узлам
- * v2-редактора; «лицо» учитывает тип (город — вместо способностей карта).
+ * v2-редактора. Все персонажи — люди (города живут отдельно, в таблице places).
  */
 export function computeCharacterCompleteness(
   character: Character,
   input: CompletenessInput,
 ): CharacterCompleteness {
-  const isCity = character.character_type === 'city'
-
   const faceFields = [
     textState(character.bio),
     textState(character.full_description),
-    isCity ? textState(character.map_image_url) : 'alive', // name+slug всегда есть
+    'alive', // name+slug всегда есть
     character.avatar ? 'alive' : 'born',
   ]
   const faceAlive = faceFields.filter((s) => s === 'alive').length
   const face: LifeState =
     faceAlive >= 2 ? 'alive' : faceFields.some((s) => s !== 'quiet') ? 'born' : 'quiet'
 
-  // Голос и поведение — только для person; у города они отключены.
-  let voice: LifeState = 'quiet'
-  let conduct: LifeState = 'quiet'
-  if (!isCity) {
-    const voiceFields = [
-      textState(character.personality),
-      textState(character.speaking_style),
-      textState(character.system_role),
-    ]
-    const voiceAlive = voiceFields.filter((s) => s === 'alive').length
-    voice =
-      voiceAlive >= 2 ? 'alive' : voiceFields.some((s) => s !== 'quiet') ? 'born' : 'quiet'
+  const voiceFields = [
+    textState(character.personality),
+    textState(character.speaking_style),
+    textState(character.system_role),
+  ]
+  const voiceAlive = voiceFields.filter((s) => s === 'alive').length
+  const voice: LifeState =
+    voiceAlive >= 2 ? 'alive' : voiceFields.some((s) => s !== 'quiet') ? 'born' : 'quiet'
 
-    const conductFields = [
-      textState(character.boundaries),
-      textState(character.knowledge_scope),
-      textState(character.spoiler_policy),
-    ]
-    const conductAlive = conductFields.filter((s) => s === 'alive').length
-    conduct =
-      conductAlive >= 2
-        ? 'alive'
-        : conductFields.some((s) => s !== 'quiet')
-          ? 'born'
-          : 'quiet'
-  }
-
-  const abilities: LifeState = isCity
-    ? 'quiet'
-    : character.abilities && character.abilities.length > 0
+  const conductFields = [
+    textState(character.boundaries),
+    textState(character.knowledge_scope),
+    textState(character.spoiler_policy),
+  ]
+  const conductAlive = conductFields.filter((s) => s === 'alive').length
+  const conduct: LifeState =
+    conductAlive >= 2
       ? 'alive'
-      : 'quiet'
+      : conductFields.some((s) => s !== 'quiet')
+        ? 'born'
+        : 'quiet'
+
+  const abilities: LifeState =
+    character.abilities && character.abilities.length > 0 ? 'alive' : 'quiet'
 
   const passportBase: LifeState = textState(character.passport)
   const passport: LifeState =

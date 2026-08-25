@@ -50,8 +50,6 @@ export default async function CharacterV2Page({
   const character = await getStudioCharacter(id)
   if (!character) notFound()
 
-  const isCity = character.character_type === 'city'
-
   // Параллельная загрузка «жизни» персонажа. Посты/стена — admin-only.
   const [relations, readers, posts, wallPosts, passportHasHistory] = await Promise.all([
     listStudioCharacterRelationships(id),
@@ -93,29 +91,23 @@ export default async function CharacterV2Page({
             isAdmin={isAdmin}
           />
 
-          {!isCity && (
-            <VoiceNode
-              character={character}
-              state={completeness.sections.voice}
-              isAdmin={isAdmin}
-            />
-          )}
+          <VoiceNode
+            character={character}
+            state={completeness.sections.voice}
+            isAdmin={isAdmin}
+          />
 
-          {!isCity && (
-            <ConductNode
-              character={character}
-              state={completeness.sections.conduct}
-              isAdmin={isAdmin}
-            />
-          )}
+          <ConductNode
+            character={character}
+            state={completeness.sections.conduct}
+            isAdmin={isAdmin}
+          />
 
-          {!isCity && (
-            <AbilitiesNode
-              character={character}
-              state={completeness.sections.abilities}
-              isAdmin={isAdmin}
-            />
-          )}
+          <AbilitiesNode
+            character={character}
+            state={completeness.sections.abilities}
+            isAdmin={isAdmin}
+          />
 
           {canEditPassport && (
             <PassportNode

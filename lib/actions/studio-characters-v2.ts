@@ -12,10 +12,9 @@ import {
   restorePassportVersion,
   type CharacterPassportVersion,
 } from '@/lib/server/character-passport-versions'
-import type { Character, CharacterReplyMode, CharacterType } from '@/lib/types'
+import type { Character, CharacterReplyMode } from '@/lib/types'
 
 const VALID_REPLY_MODES: CharacterReplyMode[] = ['ai_auto', 'manual', 'hybrid', 'disabled']
-const VALID_CHARACTER_TYPES: CharacterType[] = ['person', 'city']
 
 async function requireAdmin() {
   const session = await requireStudioAdminSession()
@@ -46,7 +45,6 @@ const faceSchema = z.object({
   avatar: nullableText(2000),
   bio: nullableText(4000),
   full_description: nullableText(20000),
-  map_image_url: nullableText(2000),
 })
 
 const voiceSchema = z.object({
@@ -81,6 +79,9 @@ const passportSchema = z.object({
 })
 
 // ── Character core fields ────────────────────────────────────────────────────
+// Все персонажи — люди (города живут отдельно, в таблице places); переключения
+// типа person|city в v2-редакторе нет. Старое поле map_image_url здесь не
+// редактируется — оно осталось в схеме как артефакт миграции 006.
 
 export async function updateFaceAction(
   id: string,
@@ -132,43 +133,6 @@ export async function updateAbilitiesAction(
   const updated = await charactersDb.updateCharacter(id, {
     abilities: parsed.data.abilities,
   })
-  revalidatePath(`/studio/characters-v2/${id}`)
-  return updated
-}
-
-/**
- * Переключение типа персонажа (person|city). При уходе из person сбрасывает
- * голос, поведение и способности — так же, как createCharacterAction/
- * updateCharacterAction в lib/actions/studio-characters.ts.
- */
-export async function changeCharacterTypeAction(
-  id: string,
-  type: CharacterType,
-): Promise<Character | null> {
-  await requireAdmin()
-  if (!VALID_CHARACTER_TYPES.includes(type)) {
-    throw new Error('Некорректный тип персонажа')
-  }
-
-  const character = await charactersDb.fetchCharacterById(id)
-  if (!character) return null
-
-  if (type === character.character_type) return character
-
-  const data: Record<string, unknown> = { character_type: type }
-  if (type === 'city') {
-    data.abilities = []
-    data.speaking_style = null
-    data.personality = null
-    data.boundaries = null
-    data.knowledge_scope = null
-    data.spoiler_policy = null
-    data.system_role = ''
-    data.reply_mode = 'disabled'
-    data.can_receive_messages = false
-  }
-
-  const updated = await charactersDb.updateCharacter(id, data)
   revalidatePath(`/studio/characters-v2/${id}`)
   return updated
 }

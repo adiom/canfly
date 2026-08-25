@@ -81,75 +81,6 @@ const PASSPORT_TEMPLATE_PERSON = `# ПАСПОРТ: [ИМЯ]
 [Суть персонажа в одном абзаце]
 `
 
-const PASSPORT_TEMPLATE_CITY = `# ПАСПОРТ ГОРОДА: [ИМЯ]
-
-## Базовые параметры
-
-| Параметр | Значение |
-|---|---|
-| Расположение | [описание] |
-| Население | [число] |
-| Принцип | [ключевой принцип] |
-| Характер | [характер города] |
-| Атмосфера | [атмосфера] |
-
----
-
-## Физика города
-
-### Свет и Время
-
-[Как меняется свет, времена года]
-
-### Запахи
-
-[Ключевые запахи разных мест]
-
-### Звуки
-
-[Ключевые звуки]
-
----
-
-## География и маршруты
-
-### Главные оси
-
-[Основные направления, перекрёстки]
-
----
-
-## Транспорт
-
-[Как перемещаются жители]
-
----
-
-## Исторический фундамент
-
-[История места, ключевые события]
-
----
-
-## Оптика персонажей
-
-| Персонаж | Как видит город |
-|---|---|
-| [Имя] | [описание] |
-
----
-
-## Характер города как персонажа
-
-[Город как живое существо]
-
----
-
-## Скрытые связи
-
-[Связи с другими произведениями и мирами]
-`
-
 export function PassportNode({
   character,
   state,
@@ -161,8 +92,7 @@ export function PassportNode({
   canEdit: boolean
 }) {
   const [content, setContent] = useState(character.passport ?? '')
-  const isCity = character.character_type === 'city'
-  const template = isCity ? PASSPORT_TEMPLATE_CITY : PASSPORT_TEMPLATE_PERSON
+  const template = PASSPORT_TEMPLATE_PERSON
 
   const status = useAutosave(
     content,
@@ -173,7 +103,7 @@ export function PassportNode({
   return (
     <CharacterNode
       id="passport"
-      title={isCity ? 'Паспорт города' : 'Паспорт'}
+      title="Паспорт"
       eyebrow="05 · паспорт"
       state={state}
       aside={

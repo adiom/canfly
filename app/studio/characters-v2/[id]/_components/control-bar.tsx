@@ -1,10 +1,8 @@
 'use client'
 
-import { useTransition } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { isRedirectError } from 'next/dist/client/components/redirect-error'
-import { ArrowLeft, ExternalLink, Trash2, Loader2 } from 'lucide-react'
+import { ArrowLeft, ExternalLink, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -20,10 +18,9 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { deleteCharacterAction } from '@/lib/actions/studio-characters'
-import { changeCharacterTypeAction } from '@/lib/actions/studio-characters-v2'
 import { LifeStateDot, LifeStateLabel } from './life-state'
 import type { LifeState } from '@/lib/server/character-completeness'
-import type { Character, CharacterType } from '@/lib/types'
+import type { Character } from '@/lib/types'
 
 interface ControlBarProps {
   character: Character
@@ -38,20 +35,6 @@ export function ControlBar({
   summary,
   isAdmin,
 }: ControlBarProps) {
-  const router = useRouter()
-  const [pendingType, startType] = useTransition()
-
-  function changeType(type: CharacterType) {
-    startType(async () => {
-      try {
-        await changeCharacterTypeAction(character.id, type)
-        router.refresh()
-      } catch (e) {
-        toast.error(e instanceof Error ? e.message : 'Не удалось сменить тип')
-      }
-    })
-  }
-
   async function handleDelete() {
     try {
       await deleteCharacterAction(character.id)
@@ -77,33 +60,9 @@ export function ControlBar({
         </span>
         <span className="font-mono text-[11px] text-neutral-400">@{character.slug}</span>
         <span className="hidden text-[11px] text-neutral-300 sm:inline">·</span>
-        {isAdmin ? (
-          <div className="hidden items-center rounded-full bg-neutral-100/80 p-0.5 sm:flex">
-            {(['person', 'city'] as CharacterType[]).map((t) => {
-              const active = character.character_type === t
-              return (
-                <button
-                  key={t}
-                  type="button"
-                  disabled={pendingType || active}
-                  onClick={() => changeType(t)}
-                  className={`rounded-full px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] transition-colors ${
-                    active
-                      ? 'bg-neutral-900 text-white'
-                      : 'text-neutral-500 hover:text-neutral-900'
-                  } disabled:cursor-not-allowed`}
-                >
-                  {t === 'person' ? 'герой' : 'город'}
-                </button>
-              )
-            })}
-            {pendingType && <Loader2 className="ml-1 h-3 w-3 animate-spin text-neutral-400" />}
-          </div>
-        ) : (
-          <span className="hidden rounded-full bg-neutral-100/80 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-neutral-500 sm:inline">
-            {character.character_type === 'person' ? 'герой' : 'город'}
-          </span>
-        )}
+        <span className="hidden rounded-full bg-neutral-100/80 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-neutral-500 sm:inline">
+          герой
+        </span>
       </div>
 
       {/* Density bar — прогресс оживания дела (orbital density gradient). */}
@@ -124,13 +83,11 @@ export function ControlBar({
       </div>
 
       <div className="flex items-center gap-1">
-        {character.character_type === 'person' && (
-          <Button asChild variant="ghost" size="sm" className="rounded-full">
-            <Link href={`/characters/${character.slug}`} target="_blank">
-              <ExternalLink className="h-3.5 w-3.5" />
-            </Link>
-          </Button>
-        )}
+        <Button asChild variant="ghost" size="sm" className="rounded-full">
+          <Link href={`/characters/${character.slug}`} target="_blank">
+            <ExternalLink className="h-3.5 w-3.5" />
+          </Link>
+        </Button>
         {isAdmin && (
           <AlertDialog>
             <AlertDialogTrigger asChild>
@@ -145,7 +102,7 @@ export function ControlBar({
             </AlertDialogTrigger>
             <AlertDialogContent className="rounded-2xl border-neutral-200 bg-white shadow-xl">
               <AlertDialogHeader>
-                <AlertDialogTitle>Удалить {character.character_type === 'city' ? 'город' : 'персонажа'}?</AlertDialogTitle>
+                <AlertDialogTitle>Удалить персонажа?</AlertDialogTitle>
                 <AlertDialogDescription>
                   Это необратимо: связи, посты, стена и версии паспорта будут удалены.
                 </AlertDialogDescription>

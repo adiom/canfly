@@ -17,7 +17,6 @@ interface FaceData {
   avatar: string
   bio: string
   full_description: string
-  map_image_url: string
 }
 
 function fromCharacter(c: Character): FaceData {
@@ -27,11 +26,8 @@ function fromCharacter(c: Character): FaceData {
     avatar: c.avatar ?? '',
     bio: c.bio ?? '',
     full_description: c.full_description ?? '',
-    map_image_url: c.map_image_url ?? '',
   }
 }
-
-
 
 export function FaceNode({
   character,
@@ -43,7 +39,6 @@ export function FaceNode({
   isAdmin: boolean
 }) {
   const [data, setData] = useState<FaceData>(() => fromCharacter(character))
-  const isCity = character.character_type === 'city'
 
   const status = useAutosave(
     data,
@@ -57,7 +52,7 @@ export function FaceNode({
   return (
     <CharacterNode
       id="face"
-      title={isCity ? 'Лицо города' : 'Лицо'}
+      title="Лицо"
       eyebrow="01 · лицо"
       state={state}
       aside={<StatusBadge status={status} />}
@@ -111,18 +106,6 @@ export function FaceNode({
             className={inputClass}
           />
         </Field>
-
-        {isCity && (
-          <Field label="Карта (URL)">
-            <Input
-              value={data.map_image_url}
-              disabled={!isAdmin}
-              onChange={(e) => set('map_image_url', e.target.value)}
-              placeholder="https://..."
-              className={inputClass}
-            />
-          </Field>
-        )}
       </div>
     </CharacterNode>
   )
