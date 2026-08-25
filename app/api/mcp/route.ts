@@ -6,6 +6,7 @@ import { registerCharactersTools } from '@/lib/mcp/tools/characters'
 import { registerChaptersTools } from '@/lib/mcp/tools/chapters'
 import { registerReleasesTools } from '@/lib/mcp/tools/releases'
 import { registerSearchTools } from '@/lib/mcp/tools/search'
+import { registerPlacesTools } from '@/lib/mcp/tools/places'
 
 /**
  * Тулы этого сервера ходят в БД напрямую, минуя гварды studio-auth: они пишут
@@ -19,6 +20,7 @@ const mcpHandler = createMcpHandler(
     registerChaptersTools(server)
     registerReleasesTools(server)
     registerSearchTools(server)
+    registerPlacesTools(server)
   },
   {
     serverInfo: { name: 'canfly', version: '2.0.0' },

@@ -12,11 +12,10 @@ import { json, notFound, pick, toolError } from '@/lib/mcp/tool-result'
 
 const uuid = z.uuid()
 
-const characterType = z.enum(['person', 'city'])
 const replyMode = z.enum(['ai_auto', 'manual', 'hybrid', 'disabled'])
 
 /** Карточка персонажа в списке — без full_description/passport/system_role. */
-const characterListFields = ['id', 'name', 'slug', 'avatar', 'bio', 'character_type'] as const
+const characterListFields = ['id', 'name', 'slug', 'avatar', 'bio'] as const
 
 export function registerCharactersTools(server: McpServer) {
   server.registerTool(
@@ -24,19 +23,16 @@ export function registerCharactersTools(server: McpServer) {
     {
       title: 'Список персонажей',
       description:
-        'Персонажи и города вселенной canfly. Возвращает укороченные карточки: id, name, slug, avatar, bio, character_type. Полные данные (full_description, passport, abilities) — через canfly_get_character.',
+        'Персонажи вселенной canfly. Возвращает укороченные карточки: id, name, slug, avatar, bio. Города вынесены в canfly_list_places. Полные данные (full_description, passport, abilities) — через canfly_get_character.',
       inputSchema: z.object({
-        character_type: characterType.optional().describe('Фильтр по типу'),
         limit: z.number().int().min(1).max(200).default(100).describe('Сколько вернуть'),
         offset: z.number().int().min(0).default(0).describe('Сдвиг для постраничного обхода'),
       }),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async ({ character_type, limit, offset }) => {
+    async ({ limit, offset }) => {
       const all = await fetchAllCharactersList()
-      const filtered = character_type
-        ? all.filter((c) => c.character_type === character_type)
-        : all
+      const filtered = all.filter((c) => c.character_type === 'person')
       return json({
         total: filtered.length,
         items: filtered.slice(offset, offset + limit).map((c) => pick(c, characterListFields)),
@@ -74,13 +70,12 @@ export function registerCharactersTools(server: McpServer) {
     {
       title: 'Создать персонажа',
       description:
-        'Создать нового персонажа. Обязательны name и slug. character_type: person (по умолчанию) или city.',
+        'Создать нового персонажа. Обязательны name и slug. Города создаются через canfly_create_place.',
       inputSchema: z.object({
         name: z.string().describe('Имя персонажа'),
         slug: z.string().describe('URL-friendly slug (уникальный)'),
         bio: z.string().optional().describe('Краткое описание (одна строка)'),
         full_description: z.string().optional().describe('Полное описание персонажа'),
-        character_type: characterType.optional().describe('Тип: person или city'),
         abilities: z.array(z.string()).optional().describe('Список способностей'),
         speaking_style: z.string().optional().describe('Стиль речи'),
         personality: z.string().optional().describe('Характер'),
@@ -90,7 +85,6 @@ export function registerCharactersTools(server: McpServer) {
         system_role: z.string().optional().describe('Системная инструкция для чат-бота'),
         passport: z.string().optional().describe('Паспорт персонажа'),
         avatar: z.string().optional().describe('URL аватара'),
-        map_image_url: z.string().optional().describe('URL карты'),
         reply_mode: replyMode.optional().describe('Режим ответов'),
         can_receive_messages: z.boolean().optional().describe('Принимает сообщения'),
       }),
@@ -111,7 +105,6 @@ export function registerCharactersTools(server: McpServer) {
         slug: z.string().optional().describe('Slug'),
         bio: z.string().nullable().optional().describe('Краткое описание'),
         full_description: z.string().nullable().optional().describe('Полное описание'),
-        character_type: characterType.optional().describe('Тип персонажа'),
         abilities: z.array(z.string()).optional().describe('Способности'),
         speaking_style: z.string().nullable().optional().describe('Стиль речи'),
         personality: z.string().nullable().optional().describe('Характер'),
@@ -121,7 +114,6 @@ export function registerCharactersTools(server: McpServer) {
         system_role: z.string().optional().describe('Системная инструкция для чат-бота'),
         passport: z.string().nullable().optional().describe('Паспорт'),
         avatar: z.string().nullable().optional().describe('URL аватара'),
-        map_image_url: z.string().nullable().optional().describe('URL карты'),
         reply_mode: replyMode.optional().describe('Режим ответов'),
         can_receive_messages: z.boolean().optional().describe('Принимает сообщения'),
       }),
