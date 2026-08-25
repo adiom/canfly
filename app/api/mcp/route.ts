@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { createMcpHandler } from 'mcp-handler'
 import { checkRateLimit, rateLimitResponse } from '@/lib/server/rate-limit'
 import { registerCharactersTools } from '@/lib/mcp/tools/characters'
+import { registerCharacterRelationshipsTools } from '@/lib/mcp/tools/character-relationships'
 import { registerChaptersTools } from '@/lib/mcp/tools/chapters'
 import { registerReleasesTools } from '@/lib/mcp/tools/releases'
 import { registerSearchTools } from '@/lib/mcp/tools/search'
@@ -17,6 +18,7 @@ import { registerPlacesTools } from '@/lib/mcp/tools/places'
 const mcpHandler = createMcpHandler(
   (server) => {
     registerCharactersTools(server)
+    registerCharacterRelationshipsTools(server)
     registerChaptersTools(server)
     registerReleasesTools(server)
     registerSearchTools(server)

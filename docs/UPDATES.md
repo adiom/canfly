@@ -2,6 +2,70 @@
 
 ---
 
+## [26 августа 2026] MCP: управление связями персонажей
+
+### Что изменено
+
+Добавлены 4 MCP-тула для работы с `character_relationships` (направленные
+связи A→B; взаимность — отдельная строка B→A):
+
+| Тул | Hint | Назначение |
+|---|---|---|
+| `canfly_list_character_relationships` | `readOnlyHint` | Все исходящие связи персонажа с mutual-флагом и inverse_type |
+| `canfly_search_characters_for_relationship` | `readOnlyHint` | Поиск цели связи по имени/slug (исключая самого персонажа) |
+| `canfly_upsert_character_relationship` | `idempotentHint`, не destructive | Upsert связи по паре `(character_id, related_character_id)`; опция `mutual=true` атомарно создаёт обратную |
+| `canfly_delete_character_relationship` | `idempotentHint`, `destructiveHint` | Удаление по паре (list-then-delete не нужен); `mutual=true` (default) — атомарно удаляет и обратную |
+
+Write-тулы идут под тем же `MCP_TOKEN`-гвардом, что и существующие
+`canfly_create_character`/`canfly_update_character`. Правило AGENTS.md
+о расширении write-тулов осознано: новый write-доступ к `character_relationships`
+открывается через Bearer MCP_TOKEN, без studio-auth. Аудит-лог отсутствует
+(как и у других write-тулов MCP).
+
+### ВАЖНО про `mutual=true` и асимметричные типы
+
+При `mutual=true` обратная связь B→A создаётся с тем же `relationship_type`,
+что и A→B. Это **семантически корректно** для симметричных ключей
+(`ally`, `rival`, `family`, `romantic`, `comrade`, `enemy`).
+
+Для **асимметричных** (`mentor`, `subordinate`, `creator`) — некорректно:
+B→A получит тип `mentor`, что означает «B наставник A», а не «B ученик A».
+Для асимметричных агент обязан делать два отдельных вызова с разными типами.
+Описание тула и inline-заметка в `relationship_type` явно оговаривают это.
+
+### Валидация `relationship_type`
+
+Повторяет `characterRelationshipSchema` из `lib/schemas/character-relationships.ts`:
+- 9 дефолтных ключей из `lib/relationships-kinds.ts` принимаются как есть;
+- нестандартный тип требует явного `custom=true` (защита от опечаток и мусора);
+- `<60` символов для типа, `≤600` для описания;
+- `character_id !== related_character_id` через `superRefine` в zod-v4.
+
+### Ход реализации
+
+- `lib/server/character-relationships.ts`: 3 новых функции репозитория —
+  `deleteCharacterRelationshipByPair` (по паре), `upsertMutualCharacterRelationship`
+  (с транзакцией при mutual), `deleteMutualCharacterRelationship` (с транзакцией
+  при mutual). Существующие `upsertCharacterRelationship`/`deleteCharacterRelationship`
+  не тронуты — обёртки поверх.
+- `lib/mcp/tools/character-relationships.ts`: новый модуль с
+  `registerCharacterRelationshipsTools(server)` (zod-v4, UUID, правильные
+  annotations, `limit`/`offset` на списках).
+- `app/api/mcp/route.ts`: импорт + регистрация модуля сразу после
+  `registerCharactersTools`.
+
+### Миграции
+
+Нет. Таблица `character_relationships` уже существует (`postgres/schema.sql:84-92`,
+UNIQUE на `(character_id, related_character_id)`). Новых столбцов не требуется.
+
+### Проверки
+
+`pnpm lint` (0 ошибок), `pnpm build` зелёный. e2e для MCP-тулов не заложен —
+harness отсутствует; ручная проверка через MCP Inspector/curl с `MCP_TOKEN`.
+
+---
+
 ## [26 августа 2026] Каталог /characters: дефолт — только главные + URL-фильтры
 
 ### Что изменено

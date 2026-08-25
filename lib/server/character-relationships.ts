@@ -170,6 +170,158 @@ export async function deleteCharacterRelationship(
 }
 
 /**
+ * Удалить связь по паре (character_id, related_character_id), без
+ * предварительного SELECT за id строки. Удобно для AI-агента: ему не нужно
+ * делать list-then-delete. Идемпотентно: если строки нет — false.
+ */
+export async function deleteCharacterRelationshipByPair(
+  characterId: string,
+  relatedCharacterId: string,
+): Promise<boolean> {
+  const result = await dbQueryOne<{ id: string }>(
+    `DELETE FROM character_relationships
+     WHERE character_id = $1 AND related_character_id = $2
+     RETURNING id`,
+    [characterId, relatedCharacterId],
+  )
+  return Boolean(result)
+}
+
+/**
+ * Upsert связи с опциональной взаимностью. При `mutual=true` одной транзакцией
+ * создаём/обновляем и обратную B→A с тем же типом и описанием.
+ *
+ * ВАЖНО для симметричных типов (ally/rival/family/romantic/comrade/enemy):
+ * обратная связь семантически корректна. Для асимметричных (mentor,
+ * subordinate, creator) — atomic-mutual создаёт B→A с тем же типом, что
+ * означает «B наставник A», а не «B ученик A». Для асимметричных агент
+ * обязан делать два отдельных вызова; mutual=true используйте осознанно.
+ *
+ * Возвращает {direct, inverse}: прямая строка всегда, inverse — только
+ * при mutual=true.
+ */
+export async function upsertMutualCharacterRelationship(input: {
+  characterId: string
+  relatedCharacterId: string
+  relationshipType: string
+  description: string | null
+  mutual: boolean
+}): Promise<{ direct: CharacterRelationshipRow; inverse: CharacterRelationshipRow | null }> {
+  if (!input.mutual) {
+    return {
+      direct: await upsertCharacterRelationship({
+        characterId: input.characterId,
+        relatedCharacterId: input.relatedCharacterId,
+        relationshipType: input.relationshipType,
+        description: input.description,
+      }),
+      inverse: null,
+    }
+  }
+
+  return withTransaction(async (client) => {
+    const direct = await upsertWithinTransaction(client, {
+      characterId: input.characterId,
+      relatedCharacterId: input.relatedCharacterId,
+      relationshipType: input.relationshipType,
+      description: input.description,
+    })
+    const inverse = await upsertWithinTransaction(client, {
+      characterId: input.relatedCharacterId,
+      relatedCharacterId: input.characterId,
+      relationshipType: input.relationshipType,
+      description: input.description,
+    })
+    return { direct, inverse }
+  })
+}
+
+/** Внутри-транзакционный upsert — выделен, чтобы mutual шёл одним BEGIN/COMMIT. */
+async function upsertWithinTransaction(
+  client: import('pg').PoolClient,
+  input: {
+    characterId: string
+    relatedCharacterId: string
+    relationshipType: string
+    description: string | null
+  },
+): Promise<CharacterRelationshipRow> {
+  const existing = await client.query<CharacterRelationshipRow>(
+    `SELECT id, character_id, related_character_id, relationship_type, description, created_at
+     FROM character_relationships
+     WHERE character_id = $1 AND related_character_id = $2
+     FOR UPDATE`,
+    [input.characterId, input.relatedCharacterId],
+  )
+
+  if (existing.rows[0]) {
+    const row = existing.rows[0]
+    if (
+      row.relationship_type === input.relationshipType &&
+      (row.description ?? null) === input.description
+    ) {
+      return row
+    }
+    const updated = await client.query<CharacterRelationshipRow>(
+      `UPDATE character_relationships
+       SET relationship_type = $3, description = $4
+       WHERE id = $1 AND character_id = $2
+       RETURNING id, character_id, related_character_id, relationship_type, description, created_at`,
+      [row.id, input.characterId, input.relationshipType, input.description],
+    )
+    return updated.rows[0]
+  }
+
+  const inserted = await client.query<CharacterRelationshipRow>(
+    `INSERT INTO character_relationships (character_id, related_character_id, relationship_type, description)
+     VALUES ($1, $2, $3, $4)
+     RETURNING id, character_id, related_character_id, relationship_type, description, created_at`,
+    [input.characterId, input.relatedCharacterId, input.relationshipType, input.description],
+  )
+  return inserted.rows[0]
+}
+
+/**
+ * Удалить связь по паре; при `mutual=true` — атомарно и обратную.
+ * Идемпотентно: отсутствующая строка → deleted=false. Возвращает флаги
+ * для прямой и (если mutual=true) обратной.
+ */
+export async function deleteMutualCharacterRelationship(input: {
+  characterId: string
+  relatedCharacterId: string
+  mutual: boolean
+}): Promise<{ deleted: boolean; inverse_deleted: boolean }> {
+  if (!input.mutual) {
+    return {
+      deleted: await deleteCharacterRelationshipByPair(
+        input.characterId,
+        input.relatedCharacterId,
+      ),
+      inverse_deleted: false,
+    }
+  }
+
+  return withTransaction(async (client) => {
+    const direct = await client.query<{ id: string }>(
+      `DELETE FROM character_relationships
+       WHERE character_id = $1 AND related_character_id = $2
+       RETURNING id`,
+      [input.characterId, input.relatedCharacterId],
+    )
+    const inverse = await client.query<{ id: string }>(
+      `DELETE FROM character_relationships
+       WHERE character_id = $1 AND related_character_id = $2
+       RETURNING id`,
+      [input.relatedCharacterId, input.characterId],
+    )
+    return {
+      deleted: Boolean(direct.rows[0]),
+      inverse_deleted: Boolean(inverse.rows[0]),
+    }
+  })
+}
+
+/**
  * Поиск персонажей по имени/слагу для формы «выберите цель связи».
  * Простой ILIKE — список обычно маленький, индекса не требуется.
  */
