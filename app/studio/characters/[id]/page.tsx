@@ -58,7 +58,7 @@ export default async function StudioCharacterPage({
   if (!session) notFound()
 
   const showPassport = isAuthorOrAdmin(session)
-  const isAdmin = session.roles.includes('admin')
+  const isAdmin = session.isAdmin
 
   const character = await getStudioCharacter(id)
   if (!character) notFound()

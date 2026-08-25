@@ -3,7 +3,7 @@ import { revalidatePath } from 'next/cache'
 
 import { deleteWallPost, fetchWallPostById } from '@/lib/server/character-wall'
 import { fetchCharacterById } from '@/lib/server/characters'
-import { getCurrentUser, getUserRoles } from '@/lib/server/session'
+import { getCurrentUser } from '@/lib/server/session'
 import { apiHandler } from '@/lib/api-handler'
 
 export const dynamic = 'force-dynamic'
@@ -29,8 +29,7 @@ async function deleteWallPostHandler(
     return NextResponse.json({ error: 'Персонаж не найден' }, { status: 404 })
   }
 
-  const roles = await getUserRoles(user.id)
-  const isAdmin = roles.includes('admin')
+  const isAdmin = user.is_admin
   if (post.user_id !== user.id && !isAdmin) {
     return NextResponse.json({ error: 'Нет доступа' }, { status: 403 })
   }

@@ -81,13 +81,6 @@ export async function validateAndConsumeMagicToken(
     )
     if (!created) return null
     existing = created
-
-    await dbQueryOne(
-      `INSERT INTO user_roles (user_id, role)
-       VALUES ($1, 'reader')
-       ON CONFLICT DO NOTHING`,
-      [existing.id],
-    )
   }
 
   return { email, userId: existing.id }

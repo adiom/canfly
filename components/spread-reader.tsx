@@ -21,7 +21,8 @@ import { HighlightArtifact } from '@/components/highlight-artifact'
 import { useReaderPreferences, READER_THEMES, READER_FONTS } from '@/lib/reader/reader-preferences'
 import type { ReaderThemeId } from '@/lib/reader/reader-preferences'
 import type { Release, Edition, Chapter, ChapterHighlight, ChapterEditorialNote } from '@/lib/releases-types'
-import type { UserRole } from '@/lib/types'
+
+export type ReaderUserRole = 'reader' | 'author' | 'editor' | 'admin'
 
 // ─── Типы ─────────────────────────────────────────────────────────────────────
 
@@ -41,7 +42,7 @@ export interface SpreadReaderProps {
   chapters: Chapter[]
   currentUserId: string | null
   initialHighlights: ChapterHighlight[]
-  userRole: UserRole | null
+  userRole: ReaderUserRole | null
   userName: string | null
   initialChapterIndex?: number
 }

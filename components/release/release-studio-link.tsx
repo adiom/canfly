@@ -6,7 +6,7 @@ import { useSession } from 'next-auth/react'
 
 export function ReleaseStudioLink({ releaseId }: { releaseId: string }) {
   const { data: session } = useSession()
-  if (!session?.user?.roles?.includes('admin')) return null
+  if (session?.user?.isAdmin !== true) return null
 
   return (
     <div className="mt-4">

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUser, getUserRoles } from '@/lib/server/session'
+import { getCurrentUser } from '@/lib/server/session'
 import { updateEditorialNoteStatus, canManageChapterEditorialNotes, fetchEditorialNoteChapterId } from '@/lib/server/chapter-highlights'
 import { apiHandler } from '@/lib/api-handler'
 import { editorialStatusSchema } from '@/lib/schemas/highlights'
@@ -13,10 +13,9 @@ async function updateEditorialNoteStatusHandler(
   const user = await getCurrentUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const roles = await getUserRoles(user.id)
   const chapterId = await fetchEditorialNoteChapterId(id)
   if (!chapterId) return NextResponse.json({ error: 'Not Found' }, { status: 404 })
-  const allowed = await canManageChapterEditorialNotes(chapterId, user.id, roles.includes('admin'))
+  const allowed = await canManageChapterEditorialNotes(chapterId, user.id, user.is_admin)
   if (!allowed) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const limit = await checkRateLimit({ bucket: 'editorial:update', subject: user.id, limit: 120, windowSeconds: 3600 })
   if (!limit.allowed) return rateLimitResponse(limit)

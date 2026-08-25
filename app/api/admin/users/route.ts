@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireStudioAdminSession } from '@/lib/server/studio-auth'
 import { createPasswordUser, listAdminUsers, normalizeLogin } from '@/lib/server/users'
 import { apiHandler } from '@/lib/api-handler'
-import { normalizeRoles } from '@/lib/api/normalizers'
+import { normalizePublicRole, normalizeRoles } from '@/lib/api/normalizers'
 
 export const dynamic = 'force-dynamic'
 
@@ -43,6 +43,8 @@ async function createAdminUser(request: NextRequest) {
     login,
     password,
     displayName,
+    publicRole: normalizePublicRole(body.public_role),
+    isAdmin: body.is_admin === true,
     roles: normalizeRoles(body.roles),
   })
 

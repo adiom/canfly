@@ -64,8 +64,10 @@ export function FeedbackWidget() {
   if (status !== 'authenticated') return null
 
   const roles: string[] = session?.user?.roles ?? []
-  const hasStudio = roles.some(r => ['author', 'editor', 'admin'].includes(r))
-  const isAdmin = roles.includes('admin')
+  const isAdmin = session?.user?.isAdmin === true
+  const isAuthor = session?.user?.publicRole === 'author'
+  const hasEditorRole = roles.includes('editor')
+  const hasStudio = isAdmin || isAuthor || hasEditorRole
   const displayName = session?.user?.name ?? session?.user?.email ?? '—'
   const handle = session?.user?.handle
   const avatar = session?.user?.image
@@ -79,9 +81,9 @@ export function FeedbackWidget() {
 
   const primaryRole = isAdmin
     ? 'admin'
-    : roles.includes('editor')
+    : hasEditorRole
     ? 'editor'
-    : roles.includes('author')
+    : isAuthor
     ? 'author'
     : 'reader'
 

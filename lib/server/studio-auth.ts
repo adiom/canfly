@@ -1,12 +1,14 @@
-import { getCurrentUser, getUserRoles } from '@/lib/server/session'
+import { getCurrentUser, getSystemRoles } from '@/lib/server/session'
 import { dbQueryOne } from '@/lib/db'
 import { redirect } from 'next/navigation'
-import type { UserRole } from '@/lib/types'
+import type { PublicRole, SystemRole } from '@/lib/types'
 import type { SessionUser } from '@/lib/server/session'
 
 export interface StudioSession {
   user: SessionUser
-  roles: UserRole[]
+  publicRole: PublicRole
+  isAdmin: boolean
+  systemRoles: SystemRole[]
 }
 
 /** Результат проверки владения: сессия + release_id, к которому привязан ресурс. */
@@ -15,17 +17,17 @@ export interface OwnershipContext {
   releaseId: string
 }
 
-const STUDIO_ROLES: UserRole[] = ['author', 'editor', 'admin']
-const AUTHOR_OR_ADMIN_ROLES: UserRole[] = ['author', 'admin']
-
 export async function requireStudioSession(): Promise<StudioSession | null> {
   const user = await getCurrentUser()
   if (!user) return null
 
-  const roles = await getUserRoles(user.id)
-  if (!roles.some(r => STUDIO_ROLES.includes(r))) return null
+  // Доступ к Studio: admin (флаг), автор (public_role) или системная роль editor.
+  const systemRoles = await getSystemRoles(user.id)
+  if (!user.is_admin && user.public_role !== 'author' && systemRoles.length === 0) {
+    return null
+  }
 
-  return { user, roles }
+  return { user, publicRole: user.public_role, isAdmin: user.is_admin, systemRoles }
 }
 
 /**
@@ -41,7 +43,7 @@ export async function requireReleaseOwnership(releaseId: string): Promise<Owners
   if (!session) redirect('/login')
 
   // admin всегда имеет доступ
-  if (session.roles.includes('admin')) {
+  if (session.isAdmin) {
     return { session, releaseId }
   }
 
@@ -88,21 +90,21 @@ export async function requireChapterOwnership(chapterId: string): Promise<Owners
 export async function requireStudioAdminSession(): Promise<StudioSession | null> {
   const session = await requireStudioSession()
   if (!session) return null
-  if (!session.roles.includes('admin')) return null
+  if (!session.isAdmin) return null
   return session
 }
 
 export async function requireAuthorOrAdminSession(): Promise<StudioSession | null> {
   const session = await requireStudioSession()
   if (!session) return null
-  if (!session.roles.some(r => AUTHOR_OR_ADMIN_ROLES.includes(r))) return null
+  if (!session.isAdmin && session.publicRole !== 'author') return null
   return session
 }
 
 export function isStudioAdmin(session: StudioSession | null | undefined) {
-  return !!session?.roles.includes('admin')
+  return !!session?.isAdmin
 }
 
 export function isAuthorOrAdmin(session: StudioSession | null | undefined) {
-  return !!session?.roles.some(r => AUTHOR_OR_ADMIN_ROLES.includes(r))
+  return !!session && (session.isAdmin || session.publicRole === 'author')
 }

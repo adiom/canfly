@@ -65,14 +65,13 @@ export default async function ProfilePage() {
 
           {summary ? (
             <div className="flex flex-wrap gap-2">
-              {summary.roles.map((role) => (
+              {summary.publicRole === 'author' && (
                 <span
-                  key={role}
                   className="border border-cf-text-1/10 px-3 py-2 text-xs font-black uppercase tracking-[0.18em] text-cf-warm"
                 >
-                  {role}
+                  Автор
                 </span>
-              ))}
+              )}
             </div>
           ) : null}
         </div>

@@ -120,7 +120,7 @@ export default async function PublicProfilePage({ params }: PublicPageProps) {
             created_at: user.created_at,
           }}
           theme={theme}
-          roles={isOwner ? [] : []}
+          publicRole={user.public_role}
           actions={
             isOwner ? (
               <Link href="/user">

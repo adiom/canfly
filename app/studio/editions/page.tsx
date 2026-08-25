@@ -9,7 +9,7 @@ import { EditionsPageClient } from '@/components/studio/editions-page-client'
  */
 export default async function StudioEditionsPage() {
   const session = await requireStudioSession()
-  const isAdmin = session?.roles.includes('admin') ?? false
+  const isAdmin = session?.isAdmin ?? false
   const editions = await getMyEditions()
 
   return <EditionsPageClient editions={editions} isAdmin={isAdmin} />

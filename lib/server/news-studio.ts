@@ -28,7 +28,7 @@ export async function listAllNews(): Promise<NewsPost[]> {
 }
 
 export async function listMyNews(session: StudioSession): Promise<NewsPost[]> {
-  if (session.roles.includes('admin')) {
+  if (session.isAdmin) {
     return listAllNews()
   }
   return listNewsByAuthor(session.user.id)
@@ -54,7 +54,7 @@ export async function requireNewsOwnership(newsId: string): Promise<NewsOwnershi
   const session = await requireStudioSession()
   if (!session) redirect('/login')
 
-  if (session.roles.includes('admin')) {
+  if (session.isAdmin) {
     return { session, newsId }
   }
 

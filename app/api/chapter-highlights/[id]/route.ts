@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUser, getUserRoles } from '@/lib/server/session'
+import { getCurrentUser } from '@/lib/server/session'
 import { updateChapterHighlight, deleteChapterHighlight, fetchChapterHighlightById } from '@/lib/server/chapter-highlights'
 import { apiHandler } from '@/lib/api-handler'
 import { updateHighlightSchema } from '@/lib/schemas/highlights'
@@ -24,8 +24,7 @@ async function updateChapterHighlightById(
   const user = await getCurrentUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const roles = await getUserRoles(user.id)
-  const isAdmin = roles.includes('admin')
+  const isAdmin = user.is_admin
 
   const limit = await checkRateLimit({ bucket: 'highlights:update', subject: user.id, limit: 120, windowSeconds: 3600 })
   if (!limit.allowed) return rateLimitResponse(limit)
@@ -49,8 +48,7 @@ async function deleteChapterHighlightById(
   const user = await getCurrentUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const roles = await getUserRoles(user.id)
-  const isAdmin = roles.includes('admin')
+  const isAdmin = user.is_admin
 
   const limit = await checkRateLimit({ bucket: 'highlights:update', subject: user.id, limit: 120, windowSeconds: 3600 })
   if (!limit.allowed) return rateLimitResponse(limit)

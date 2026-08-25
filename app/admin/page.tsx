@@ -4,10 +4,15 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { signOut } from 'next-auth/react';
 import { Button } from '@/components/ui/button';
-import { AdminUserProfile, Character, NewsPost, UserRole } from '@/lib/types';
+import { AdminUserProfile, Character, NewsPost, PublicRole, SystemRole } from '@/lib/types';
 import Link from 'next/link';
 
-const userRoles: UserRole[] = ['reader', 'author', 'editor', 'admin'];
+const publicRoles: PublicRole[] = ['reader', 'author'];
+
+const PUBLIC_ROLE_LABELS: Record<PublicRole, string> = {
+  reader: 'Читатель',
+  author: 'Автор',
+};
 
 export default function AdminPage() {
   const router = useRouter();
@@ -132,7 +137,8 @@ export default function AdminPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ...newUser,
-        roles: ['reader'],
+        public_role: 'reader',
+        is_admin: false,
       }),
     });
 
@@ -151,10 +157,58 @@ export default function AdminPage() {
     await reloadUsers();
   };
 
-  const toggleUserRole = async (user: AdminUserProfile, role: UserRole) => {
-    const roles = user.roles.includes(role)
-      ? user.roles.filter((item) => item !== role)
-      : [...user.roles, role];
+  const setUserPublicRole = async (user: AdminUserProfile, publicRole: PublicRole) => {
+    const response = await fetch(`/api/admin/users/${user.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ public_role: publicRole }),
+    });
+
+    if (response.status === 401) {
+      router.push('/admin/login');
+      return;
+    }
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      setError(data.error || 'Не удалось обновить публичную роль');
+      return;
+    }
+
+    setUsers((current) =>
+      current.map((item) => (item.id === user.id ? { ...item, public_role: publicRole } : item)),
+    );
+  };
+
+  const toggleIsAdmin = async (user: AdminUserProfile) => {
+    const isAdmin = !user.is_admin;
+
+    const response = await fetch(`/api/admin/users/${user.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_admin: isAdmin }),
+    });
+
+    if (response.status === 401) {
+      router.push('/admin/login');
+      return;
+    }
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      setError(data.error || 'Не удалось обновить статус администратора');
+      return;
+    }
+
+    setUsers((current) =>
+      current.map((item) => (item.id === user.id ? { ...item, is_admin: isAdmin } : item)),
+    );
+  };
+
+  const toggleEditorRole = async (user: AdminUserProfile) => {
+    const roles: SystemRole[] = user.system_roles.includes('editor')
+      ? user.system_roles.filter((item) => item !== 'editor')
+      : [...user.system_roles, 'editor'];
 
     const response = await fetch(`/api/admin/users/${user.id}`, {
       method: 'PATCH',
@@ -168,12 +222,12 @@ export default function AdminPage() {
     }
 
     if (!response.ok) {
-      setError('Не удалось обновить роли');
+      setError('Не удалось обновить системные роли');
       return;
     }
 
     setUsers((current) =>
-      current.map((item) => (item.id === user.id ? { ...item, roles } : item)),
+      current.map((item) => (item.id === user.id ? { ...item, system_roles: roles } : item)),
     );
   };
 
@@ -464,21 +518,47 @@ export default function AdminPage() {
                       </p>
                     </div>
 
-                    <div className="mb-5 flex flex-wrap gap-2">
-                      {userRoles.map((role) => (
-                        <button
-                          key={role}
-                          type="button"
-                          onClick={() => toggleUserRole(user, role)}
-                          className={`rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] transition-colors ${
-                            user.roles.includes(role)
-                              ? 'border-purple-400 bg-purple-950/50 text-purple-200'
-                              : 'border-slate-700 bg-slate-950 text-slate-400 hover:text-white'
-                          }`}
-                        >
-                          {role}
-                        </button>
-                      ))}
+                    <div className="mb-5 flex flex-wrap items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2 rounded-full border border-slate-700 bg-slate-950 p-1">
+                        {publicRoles.map((role) => (
+                          <button
+                            key={role}
+                            type="button"
+                            onClick={() => setUserPublicRole(user, role)}
+                            className={`rounded-full px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] transition-colors ${
+                              user.public_role === role
+                                ? 'border border-purple-400 bg-purple-950/50 text-purple-200'
+                                : 'border border-transparent text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            {PUBLIC_ROLE_LABELS[role]}
+                          </button>
+                        ))}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => toggleIsAdmin(user)}
+                        className={`rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] transition-colors ${
+                          user.is_admin
+                            ? 'border-red-400 bg-red-950/50 text-red-200'
+                            : 'border-slate-700 bg-slate-950 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        admin
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => toggleEditorRole(user)}
+                        className={`rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] transition-colors ${
+                          user.system_roles.includes('editor')
+                            ? 'border-purple-400 bg-purple-950/50 text-purple-200'
+                            : 'border-slate-700 bg-slate-950 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        editor
+                      </button>
                     </div>
 
                     <div className="flex flex-col gap-3 border-t border-slate-700 pt-4 md:flex-row md:items-center">

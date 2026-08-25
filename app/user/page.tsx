@@ -6,7 +6,7 @@ import { SiteHeader } from '@/components/site-header'
 import { SiteFooter } from '@/components/site-footer'
 import { Button } from '@/components/ui/button'
 import { fetchReaderProfileSummary } from '@/lib/server/users'
-import { getUserRoles, getCurrentUser } from '@/lib/server/session'
+import { getCurrentUser } from '@/lib/server/session'
 import {
   fetchCoreWeeks,
   fetchShelf,
@@ -33,11 +33,10 @@ export default async function UserDashboardPage() {
   if (!session) redirect('/login?redirect=/user')
 
   const theme = signatureTheme(session)
-  const [summary, shelf, weeks, roles, publicQuotes] = await Promise.all([
+  const [summary, shelf, weeks, publicQuotes] = await Promise.all([
     fetchReaderProfileSummary(session.id),
     fetchShelf(session.id, 6),
     fetchCoreWeeks(session.id),
-    getUserRoles(session.id),
     fetchPublicQuotes(session.id, 8),
   ])
 
@@ -60,7 +59,7 @@ export default async function UserDashboardPage() {
             created_at: memberSince,
           }}
           theme={theme}
-          roles={roles}
+          publicRole={session.public_role}
           actions={
             <>
               <Link href={`/user/${session.handle ?? session.id}`}>

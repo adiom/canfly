@@ -16,15 +16,15 @@ const JOINED = new Intl.DateTimeFormat('ru-RU', {
 export function ProfileIdentity({
   user,
   theme,
-  roles,
+  publicRole,
   actions,
 }: {
   user: Pick<UserProfile, 'display_name' | 'handle' | 'tagline' | 'bio' | 'avatar' | 'created_at'>
   theme: SignatureTheme
-  roles: string[]
+  publicRole: string
   actions?: React.ReactNode
 }) {
-  const badges = roles.filter(role => role !== 'reader')
+  const badge = publicRole === 'author' ? 'Автор' : ''
 
   return (
     <section className="mx-auto max-w-7xl px-4 md:px-8">
@@ -48,7 +48,7 @@ export function ProfileIdentity({
         <div className="min-w-0 flex-1 pb-1">
           <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-cf-text-4">
             Читатель · с {JOINED.format(new Date(user.created_at))}
-            {badges.length > 0 && ` · ${badges.join(' ')}`}
+            {badge && ` · ${badge}`}
           </p>
           <h1 className="mt-1 font-[family-name:var(--font-cormorant)] text-[clamp(2.25rem,7vw,4rem)] font-light italic leading-[1.05] text-cf-text-heading">
             {user.display_name.toLowerCase()}

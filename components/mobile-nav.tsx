@@ -8,7 +8,7 @@ import { Menu } from 'lucide-react'
 import { Sheet, SheetClose, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { safeInternalPath } from '@/lib/safe-redirect'
 
-const STUDIO_ROLES = ['author', 'editor', 'admin']
+const STUDIO_ROLES = ['editor']
 
 const linkClass =
   'flex h-12 items-center rounded-sm px-4 text-sm font-black uppercase tracking-[0.12em] text-cf-text-2 transition-colors hover:bg-cf-text-1/6 hover:text-cf-text-heading'
@@ -27,7 +27,10 @@ export function MobileNav({ items }: MobileNavProps) {
   const pathname = usePathname()
 
   const user = status === 'authenticated' ? session?.user : null
-  const showStudio = (user?.roles ?? []).some((role) => STUDIO_ROLES.includes(role))
+  const isAdmin = user?.isAdmin === true
+  const isAuthor = user?.publicRole === 'author'
+  const hasEditorRole = (user?.roles ?? []).includes('editor')
+  const showStudio = isAdmin || isAuthor || hasEditorRole
 
   return (
     <Sheet>

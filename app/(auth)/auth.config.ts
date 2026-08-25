@@ -29,6 +29,8 @@ declare module 'next-auth' {
       type: UserType
       login?: string | null
       handle?: string | null
+      publicRole?: string
+      isAdmin?: boolean
       roles?: string[]
     } & DefaultSession['user']
   }
@@ -48,6 +50,8 @@ declare module 'next-auth/jwt' {
     type: UserType
     login?: string | null
     handle?: string | null
+    publicRole?: string
+    isAdmin?: boolean
     roles?: string[]
   }
 }
@@ -61,23 +65,12 @@ function findUserByEmail(email: string): Promise<UserProfile | null> {
 
 async function createUserWithReaderRole(email: string, name?: string | null): Promise<UserProfile | null> {
   const handle = `user-${crypto.randomUUID().slice(0, 8)}`
-  const created = await dbQueryOne<UserProfile>(
+  return dbQueryOne<UserProfile>(
     `INSERT INTO users (email, handle, display_name)
      VALUES ($1, $2, $3)
      RETURNING *`,
     [email, handle, name ?? handle],
   )
-
-  if (created) {
-    await dbQueryOne(
-      `INSERT INTO user_roles (user_id, role)
-       VALUES ($1, 'reader')
-       ON CONFLICT DO NOTHING`,
-      [created.id],
-    )
-  }
-
-  return created
 }
 
 function linkOAuthAccount(
@@ -350,7 +343,16 @@ export function createAuthConfig(request?: NextRequest): NextAuthConfig {
             'SELECT role FROM user_roles WHERE user_id = $1',
             [uid],
           )
-          token.roles = rows.map(r => r.role)
+          token.roles = rows
+            .map(r => r.role)
+            .filter((role): role is string => role === 'editor')
+
+          const profile = await dbQueryOne<{ public_role: string; is_admin: boolean }>(
+            'SELECT public_role, is_admin FROM users WHERE id = $1 LIMIT 1',
+            [uid],
+          )
+          token.publicRole = profile?.public_role ?? 'reader'
+          token.isAdmin = profile?.is_admin ?? false
         } catch (error) {
           console.error('[auth] jwt role fetch failed', {
             error: error instanceof Error ? error.message : String(error),
@@ -359,6 +361,8 @@ export function createAuthConfig(request?: NextRequest): NextAuthConfig {
       }
 
       if (!token.roles) token.roles = []
+      token.publicRole = token.publicRole ?? 'reader'
+      token.isAdmin = token.isAdmin ?? false
 
       return token
     },
@@ -369,6 +373,8 @@ export function createAuthConfig(request?: NextRequest): NextAuthConfig {
         session.user.type = (token.type as UserType) ?? 'regular'
         session.user.handle = token.handle ?? null
         session.user.login = token.login ?? null
+        session.user.publicRole = token.publicRole ?? 'reader'
+        session.user.isAdmin = token.isAdmin ?? false
         session.user.roles = token.roles as string[] ?? []
       }
 

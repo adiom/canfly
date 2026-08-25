@@ -1,6 +1,6 @@
 import { auth } from '@/app/(auth)/auth'
 import { dbQuery } from '@/lib/db'
-import type { UserProfile, UserRole } from '@/lib/types'
+import type { PublicRole, SystemRole, UserProfile } from '@/lib/types'
 
 export interface SessionUser {
   id: string
@@ -14,6 +14,8 @@ export interface SessionUser {
   signature_color: string | null
   profile_is_public: boolean
   show_reading: boolean
+  public_role: PublicRole
+  is_admin: boolean
   created_at: string
 }
 
@@ -22,7 +24,7 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
   if (!session?.user?.id) return null
 
   const users = await dbQuery<UserProfile>(
-    'SELECT id, email, login, handle, display_name, avatar, bio, tagline, signature_color, profile_is_public, show_reading, created_at FROM users WHERE id = $1 LIMIT 1',
+    'SELECT id, email, login, handle, display_name, avatar, bio, tagline, signature_color, profile_is_public, show_reading, public_role, is_admin, created_at FROM users WHERE id = $1 LIMIT 1',
     [session.user.id],
   )
   const user = users[0]
@@ -40,14 +42,19 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
     signature_color: user.signature_color,
     profile_is_public: user.profile_is_public ?? true,
     show_reading: user.show_reading ?? true,
+    public_role: user.public_role ?? 'reader',
+    is_admin: user.is_admin ?? false,
     created_at: user.created_at,
   }
 }
 
-export async function getUserRoles(userId: string): Promise<UserRole[]> {
+/** Системные роли из user_roles — на текущий момент только editor. */
+export async function getSystemRoles(userId: string): Promise<SystemRole[]> {
   const rows = await dbQuery<{ role: string }>(
     'SELECT role FROM user_roles WHERE user_id = $1',
     [userId],
   )
-  return rows.map(r => r.role as UserRole)
+  return rows
+    .map(r => r.role as SystemRole)
+    .filter((role): role is SystemRole => role === 'editor')
 }

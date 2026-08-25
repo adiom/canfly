@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { safeInternalPath } from '@/lib/safe-redirect'
 
-const STUDIO_ROLES = ['author', 'editor', 'admin']
+const STUDIO_ROLES = ['editor']
 
 /**
  * Вход/выход в шапке. Раньше выхода из аккаунта в интерфейсе не было вовсе:
@@ -50,7 +50,10 @@ export function HeaderAuth() {
   const name = user.name || (user.handle ? `@${user.handle}` : 'Профиль')
   // Роли берутся из JWT и могут быть устаревшими — это подсказка в меню,
   // а не право доступа: Studio всё равно перепроверяет роль по БД в layout.
-  const showStudio = (user.roles ?? []).some((role) => STUDIO_ROLES.includes(role))
+  const isAdmin = user.isAdmin === true
+  const isAuthor = user.publicRole === 'author'
+  const hasEditorRole = (user.roles ?? []).includes('editor')
+  const showStudio = isAdmin || isAuthor || hasEditorRole
 
   return (
     <DropdownMenu>

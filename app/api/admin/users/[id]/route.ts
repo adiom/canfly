@@ -3,13 +3,15 @@ import { requireStudioAdminSession } from '@/lib/server/studio-auth'
 import {
   countActiveAdmins,
   fetchUserById,
-  setUserRoles,
+  setAdminStatus,
+  setPublicRole,
+  setSystemRoles,
   softDeleteUser,
   updateUserPassword,
 } from '@/lib/server/users'
-import { getUserRoles } from '@/lib/server/session'
+import { getSystemRoles } from '@/lib/server/session'
 import { apiHandler } from '@/lib/api-handler'
-import { normalizeRolesUpdate } from '@/lib/api/normalizers'
+import { normalizePublicRole, normalizeRolesUpdate } from '@/lib/api/normalizers'
 
 export const dynamic = 'force-dynamic'
 
@@ -35,10 +37,26 @@ async function updateAdminUser(
     return NextResponse.json({ error: 'User is deleted' }, { status: 410 })
   }
 
-  const roles = normalizeRolesUpdate(body.roles)
+  if (typeof body.public_role !== 'undefined') {
+    await setPublicRole(id, normalizePublicRole(body.public_role))
+  }
 
-  if (roles) {
-    await setUserRoles(id, roles)
+  if (typeof body.is_admin === 'boolean') {
+    if (!body.is_admin && user.is_admin && id !== session.user.id) {
+      const remaining = await countActiveAdmins(id)
+      if (remaining === 0) {
+        return NextResponse.json(
+          { error: 'Нельзя убрать последнего администратора' },
+          { status: 400 },
+        )
+      }
+    }
+    await setAdminStatus(id, body.is_admin)
+  }
+
+  const systemRoles = normalizeRolesUpdate(body.roles)
+  if (systemRoles) {
+    await setSystemRoles(id, systemRoles)
   }
 
   if (typeof body.password === 'string' && body.password.length > 0) {
@@ -80,8 +98,7 @@ async function deleteAdminUser(
     return NextResponse.json({ error: 'User already deleted' }, { status: 410 })
   }
 
-  const targetRoles = await getUserRoles(id)
-  if (targetRoles.includes('admin')) {
+  if (user.is_admin) {
     const remaining = await countActiveAdmins(id)
     if (remaining === 0) {
       return NextResponse.json(

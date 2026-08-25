@@ -14,7 +14,7 @@ import { listVisibleCharacterPosts } from '@/lib/server/character-posts'
 import { fetchWallPosts } from '@/lib/server/character-wall'
 import { fetchReleasesByCharacter } from '@/lib/server/releases'
 import { fetchSeriesByCharacter } from '@/lib/server/series'
-import { getCurrentUser, getUserRoles } from '@/lib/server/session'
+import { getCurrentUser } from '@/lib/server/session'
 import { generateCharacterSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
 import { buildMetadata, notFoundMetadata } from '@/lib/seo/metadata'
 import { JsonLd } from '@/components/seo/json-ld'
@@ -93,9 +93,7 @@ export default async function CharacterPage({ params, searchParams }: CharacterP
     fetchSeriesByCharacter(data.character.id),
   ])
 
-  const isAdmin = currentUser
-    ? (await getUserRoles(currentUser.id)).includes('admin')
-    : false
+  const isAdmin = currentUser?.is_admin ?? false
 
   // subjectOf — все опубликованные релизы с участием персонажа + серии,
   // где у него role = 'main'. Дублей по @id не будет: уникальность по slug.

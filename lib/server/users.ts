@@ -1,7 +1,15 @@
 import { randomBytes, pbkdf2 } from 'crypto'
 import { dbQuery, dbQueryOne } from '@/lib/db'
-import { getUserRoles } from '@/lib/server/session'
-
+import {
+  AdminUserProfile,
+  CharacterConversation,
+  CharacterFriendship,
+  CharacterMessage,
+  PublicRole,
+  SystemRole,
+  UserProfile,
+} from '@/lib/types'
+import { fetchUserHighlights } from './chapter-highlights'
 function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16)
   return new Promise((resolve, reject) => {
@@ -11,15 +19,6 @@ function hashPassword(password: string): Promise<string> {
     })
   })
 }
-import {
-  AdminUserProfile,
-  CharacterConversation,
-  CharacterFriendship,
-  CharacterMessage,
-  UserProfile,
-  UserRole,
-} from '@/lib/types'
-import { fetchUserHighlights } from './chapter-highlights'
 
 export function normalizeLogin(value: unknown) {
   return typeof value === 'string'
@@ -41,32 +40,42 @@ export async function createPasswordUser(data: {
   login: string
   password: string
   displayName?: string
-  roles?: UserRole[]
+  publicRole?: PublicRole
+  isAdmin?: boolean
+  roles?: SystemRole[]
 }) {
   const handle = data.login
   const passwordHash = await hashPassword(data.password)
   const user = await dbQueryOne<UserProfile>(
     `
-      INSERT INTO users (login, password_hash, handle, display_name)
-      VALUES ($1, $2, $3, $4)
+      INSERT INTO users (login, password_hash, handle, display_name, public_role, is_admin)
+      VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING *
     `,
-    [data.login, passwordHash, handle, data.displayName || data.login],
+    [
+      data.login,
+      passwordHash,
+      handle,
+      data.displayName || data.login,
+      data.publicRole ?? 'reader',
+      data.isAdmin ?? false,
+    ],
   )
 
   if (!user) {
     throw new Error('Failed to create user')
   }
 
-  const roles: UserRole[] = data.roles?.length ? data.roles : ['reader']
-  await setUserRoles(user.id, roles)
+  if (data.roles?.length) {
+    await setSystemRoles(user.id, data.roles)
+  }
 
   return user
 }
 
-export async function setUserRoles(userId: string, roles: UserRole[]) {
-  const normalizedRoles = Array.from(new Set(roles)).filter((role): role is UserRole =>
-    ['reader', 'author', 'editor', 'admin'].includes(role),
+export async function setSystemRoles(userId: string, roles: SystemRole[]) {
+  const normalizedRoles = Array.from(new Set(roles)).filter(
+    (role): role is SystemRole => role === 'editor',
   )
 
   await dbQuery('DELETE FROM user_roles WHERE user_id = $1', [userId])
@@ -82,6 +91,20 @@ export async function setUserRoles(userId: string, roles: UserRole[]) {
       ON CONFLICT DO NOTHING
     `,
     [userId, normalizedRoles],
+  )
+}
+
+export async function setPublicRole(userId: string, publicRole: PublicRole) {
+  return dbQueryOne<UserProfile>(
+    'UPDATE users SET public_role = $2 WHERE id = $1 RETURNING *',
+    [userId, publicRole],
+  )
+}
+
+export async function setAdminStatus(userId: string, isAdmin: boolean) {
+  return dbQueryOne<UserProfile>(
+    'UPDATE users SET is_admin = $2 WHERE id = $1 RETURNING *',
+    [userId, isAdmin],
   )
 }
 
@@ -109,6 +132,8 @@ export async function listAdminUsers() {
         u.display_name,
         u.avatar,
         u.bio,
+        u.public_role,
+        u.is_admin,
         u.is_deleted,
         u.deleted_at,
         u.created_at,
@@ -116,7 +141,7 @@ export async function listAdminUsers() {
         COALESCE(
           array_agg(ur.role::text ORDER BY ur.role) FILTER (WHERE ur.role IS NOT NULL),
           ARRAY[]::text[]
-        ) AS roles,
+        ) AS system_roles,
         COUNT(DISTINCT cf.id)::int AS friends_count,
         COUNT(DISTINCT cc.id)::int AS conversations_count
       FROM users u
@@ -145,14 +170,14 @@ export async function softDeleteUser(userId: string) {
 
 export async function countActiveAdmins(excludeUserId?: string) {
   const params: unknown[] = []
-  let where = `WHERE role = 'admin'`
+  let where = `COALESCE(is_admin, FALSE) = TRUE`
   if (excludeUserId) {
     params.push(excludeUserId)
-    where += ` AND user_id <> $1::uuid`
+    where += ` AND id <> $1::uuid`
   }
 
   const row = await dbQueryOne<{ count: number }>(
-    `SELECT COUNT(DISTINCT user_id)::int AS count FROM user_roles ${where}`,
+    `SELECT COUNT(*)::int AS count FROM users WHERE ${where}`,
     params,
   )
 
@@ -317,8 +342,11 @@ export async function addCharacterMessage(
 }
 
 export async function fetchReaderProfileSummary(userId: string) {
-  const [roles, friendships, conversations, highlights] = await Promise.all([
-    getUserRoles(userId),
+  const [publicRole, friendships, conversations, highlights] = await Promise.all([
+    dbQueryOne<{ public_role: PublicRole }>(
+      'SELECT public_role FROM users WHERE id = $1 LIMIT 1',
+      [userId],
+    ).then(row => row?.public_role ?? 'reader'),
     dbQuery<{
       id: string
       character_id: string
@@ -381,5 +409,5 @@ export async function fetchReaderProfileSummary(userId: string) {
     fetchUserHighlights(userId, 50),
   ])
 
-  return { roles, friendships, conversations, highlights }
+  return { publicRole, friendships, conversations, highlights }
 }

@@ -8,10 +8,11 @@ import {
   fetchChapterHighlightById,
 } from '@/lib/server/chapter-highlights'
 import type { ChapterHighlight } from '@/lib/releases-types'
-import { getCurrentUser, getUserRoles } from '@/lib/server/session'
+import { getCurrentUser, getSystemRoles } from '@/lib/server/session'
 import { fetchEditionById, fetchEditionsByRelease } from '@/lib/server/editions'
 import { getPrimaryEdition } from '@/lib/utils/editions'
 import { ReleaseBookReader } from '@/components/release-book-reader'
+import type { ReaderUserRole } from '@/components/spread-reader'
 import { HighlightScroller } from '@/components/highlight-scroller'
 import { fetchPublishedChaptersByEdition } from '@/lib/server/chapters'
 import { generateQuotationSchema, generateBreadcrumbSchema } from '@/lib/seo/schema'
@@ -19,7 +20,6 @@ import { buildMetadata, notFoundMetadata } from '@/lib/seo/metadata'
 import { JsonLd } from '@/components/seo/json-ld'
 import { Breadcrumbs } from '@/components/breadcrumbs'
 import { fetchSeriesById } from '@/lib/server/series'
-import type { UserRole } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 
@@ -73,8 +73,16 @@ export default async function HighlightSharePage({ params }: PageProps) {
 
   const { release, highlight, chapter } = ctx
   const user = await getCurrentUser()
-  const roles: UserRole[] = user ? await getUserRoles(user.id) : []
-  const userRole = roles.find(r => ['editor', 'admin', 'author'].includes(r)) ?? (roles[0] ?? null)
+  const systemRoles = user ? await getSystemRoles(user.id) : []
+  const userRole: ReaderUserRole | null = user
+    ? user.is_admin
+      ? 'admin'
+      : systemRoles.includes('editor')
+        ? 'editor'
+        : user.public_role === 'author'
+          ? 'author'
+          : 'reader'
+    : null
   const userName = user?.display_name ?? null
   const editions = await fetchEditionsByRelease(release.id)
   const primaryEdition = getPrimaryEdition(editions)

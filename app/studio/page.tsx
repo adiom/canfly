@@ -6,7 +6,7 @@ import { Plus, Newspaper } from 'lucide-react'
 
 export default async function StudioDashboard() {
   const session = await requireStudioSession()
-  const isAdmin = session?.roles.includes('admin') ?? false
+  const isAdmin = session?.isAdmin ?? false
   const releases = await getMyReleasesWithEditions()
 
   const published = releases.filter((r) => r.status === 'published')

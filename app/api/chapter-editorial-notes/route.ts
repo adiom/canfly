@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUser, getUserRoles } from '@/lib/server/session'
+import { getCurrentUser } from '@/lib/server/session'
 import { fetchChapterEditorialNotes, createEditorialNote, canManageChapterEditorialNotes } from '@/lib/server/chapter-highlights'
 import { apiHandler } from '@/lib/api-handler'
 import { createEditorialNoteSchema } from '@/lib/schemas/highlights'
@@ -13,8 +13,7 @@ async function getChapterEditorialNotes(request: NextRequest) {
   const user = await getCurrentUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const roles = await getUserRoles(user.id)
-  const allowed = await canManageChapterEditorialNotes(chapterId, user.id, roles.includes('admin'))
+  const allowed = await canManageChapterEditorialNotes(chapterId, user.id, user.is_admin)
   if (!allowed) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const notes = await fetchChapterEditorialNotes(chapterId)
@@ -25,13 +24,12 @@ async function createEditorialNoteHandler(request: NextRequest) {
   const user = await getCurrentUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const roles = await getUserRoles(user.id)
   const limit = await checkRateLimit({ bucket: 'editorial:create', subject: user.id, limit: 60, windowSeconds: 3600 })
   if (!limit.allowed) return rateLimitResponse(limit)
   const parsed = createEditorialNoteSchema.safeParse(await request.json())
   if (!parsed.success) return NextResponse.json({ error: 'Invalid editorial note', details: parsed.error.flatten() }, { status: 400 })
   const body = parsed.data
-  const allowed = await canManageChapterEditorialNotes(body.chapter_id, user.id, roles.includes('admin'))
+  const allowed = await canManageChapterEditorialNotes(body.chapter_id, user.id, user.is_admin)
   if (!allowed) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const created = await createEditorialNote(user.id, {

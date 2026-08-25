@@ -4,10 +4,11 @@ import type { Metadata } from 'next'
 import { fetchEditionByIdOrSlug } from '@/lib/server/editions'
 import { fetchReleaseById, fetchReleaseSeries } from '@/lib/server/releases'
 import { fetchPublishedChaptersByEdition } from '@/lib/server/chapters'
-import { getCurrentUser, getUserRoles } from '@/lib/server/session'
+import { getCurrentUser, getSystemRoles } from '@/lib/server/session'
 import { fetchChapterHighlights } from '@/lib/server/chapter-highlights'
 import { fetchReadingProgress } from '@/lib/server/reading-progress'
 import { SpreadReader } from '@/components/spread-reader'
+import type { ReaderUserRole } from '@/components/spread-reader'
 import { ReleaseComicReader } from '@/components/release-comic-reader'
 import { ReleaseAudioPlayer } from '@/components/release-audio-player'
 import { JsonLd } from '@/components/seo/json-ld'
@@ -16,7 +17,6 @@ import { generateEditionSchema, generateBreadcrumbSchema } from '@/lib/seo/schem
 import { buildMetadata, notFoundMetadata } from '@/lib/seo/metadata'
 import { computeEditionMeta, EDITION_FORMAT_LABELS, isAudioFormat } from '@/lib/utils/editions'
 import { fetchSeriesById } from '@/lib/server/series'
-import type { UserRole } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 
@@ -155,15 +155,22 @@ export default async function VvvvvReaderPage({
 
   if (edition.format !== 'book' && edition.format !== 'magazine') notFound()
 
-  // Роли и прогресс чтения зависят только от user — тоже параллельно.
+  // Системные роли и прогресс чтения зависят только от user — тоже параллельно.
   const readerContext = user
-    ? await Promise.all([getUserRoles(user.id), fetchReadingProgress(edition.id, user.id)])
+    ? await Promise.all([getSystemRoles(user.id), fetchReadingProgress(edition.id, user.id)])
     : null
-  const roles: UserRole[] = readerContext?.[0] ?? []
+  const systemRoles = readerContext?.[0] ?? []
   const progress = readerContext?.[1] ?? null
 
-  const userRole: UserRole | null =
-    (roles.find(role => ['editor', 'admin', 'author'].includes(role)) ?? roles[0] ?? null) as UserRole | null
+  const userRole: ReaderUserRole | null = user
+    ? user.is_admin
+      ? 'admin'
+      : systemRoles.includes('editor')
+        ? 'editor'
+        : user.public_role === 'author'
+          ? 'author'
+          : 'reader'
+    : null
 
   const progressChapterIndex = progress
     ? chapters.findIndex(chapter => chapter.id === progress.chapter_id)

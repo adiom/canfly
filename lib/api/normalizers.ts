@@ -1,4 +1,4 @@
-import type { HomepageSlideTheme, UserRole } from '@/lib/types'
+import type { HomepageSlideTheme, PublicRole, SystemRole } from '@/lib/types'
 
 /** Normalize a string array — filter non-strings, trim, remove empties */
 export function normalizeStringArray(value: unknown): string[] {
@@ -147,30 +147,21 @@ export function normalizeNewsPayload(
   }
 }
 
-/** Normalize roles for user creation — defaults to ['reader'] */
-export function normalizeRoles(value: unknown): UserRole[] {
-  if (!Array.isArray(value)) return ['reader']
-  const roles = value.filter(
-    (role): role is UserRole =>
-      role === 'reader' ||
-      role === 'author' ||
-      role === 'editor' ||
-      role === 'admin',
-  )
-  return roles.length > 0 ? roles : ['reader']
+/** Normalize public role — reader/author; defaults to 'reader'. */
+export function normalizePublicRole(value: unknown): PublicRole {
+  return value === 'author' ? 'author' : 'reader'
 }
 
-/** Normalize roles for user update — returns null if invalid */
-export function normalizeRolesUpdate(value: unknown): UserRole[] | null {
+/** Normalize system roles — currently only editor. */
+export function normalizeRoles(value: unknown): SystemRole[] {
+  if (!Array.isArray(value)) return []
+  return value.filter((role): role is SystemRole => role === 'editor')
+}
+
+/** Normalize system roles for user update — returns null if invalid */
+export function normalizeRolesUpdate(value: unknown): SystemRole[] | null {
   if (!Array.isArray(value)) return null
-  const roles = value.filter(
-    (role): role is UserRole =>
-      role === 'reader' ||
-      role === 'author' ||
-      role === 'editor' ||
-      role === 'admin',
-  )
-  return roles
+  return value.filter((role): role is SystemRole => role === 'editor')
 }
 
 export const SLIDE_THEMES: HomepageSlideTheme[] = [

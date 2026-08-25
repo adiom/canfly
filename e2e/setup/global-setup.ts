@@ -62,9 +62,9 @@ export default async function globalSetup() {
 
     await client.query(
       `
-        INSERT INTO user_roles (user_id, role)
-        VALUES ($1, 'admin')
-        ON CONFLICT (user_id, role) DO NOTHING
+        UPDATE users
+        SET is_admin = TRUE, public_role = 'author'
+        WHERE id = $1
       `,
       [userId],
     )

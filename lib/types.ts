@@ -46,7 +46,8 @@ export interface Character {
   updated_at: string;
 }
 
-export type UserRole = 'reader' | 'author' | 'editor' | 'admin';
+export type PublicRole = 'reader' | 'author';
+export type SystemRole = 'editor';
 export type CharacterType = 'person' | 'city';
 export type CharacterReplyMode = 'ai_auto' | 'manual' | 'hybrid' | 'disabled';
 export type CharacterFriendshipStatus = 'pending' | 'accepted' | 'blocked';
@@ -68,12 +69,14 @@ export interface UserProfile {
   handle_changed_at: string | null;
   is_deleted: boolean;
   deleted_at: string | null;
+  public_role: PublicRole;
+  is_admin: boolean;
   created_at: string;
   updated_at: string;
 }
 
 export interface AdminUserProfile extends UserProfile {
-  roles: UserRole[];
+  system_roles: SystemRole[];
   friends_count: number;
   conversations_count: number;
 }

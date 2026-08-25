@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getCurrentUser, getUserRoles } from '@/lib/server/session'
+import { getCurrentUser } from '@/lib/server/session'
 import { deleteEditorialNote, canManageChapterEditorialNotes, fetchEditorialNoteChapterId } from '@/lib/server/chapter-highlights'
 import { apiHandler } from '@/lib/api-handler'
 import { checkRateLimit, rateLimitResponse } from '@/lib/server/rate-limit'
@@ -12,8 +12,7 @@ async function deleteEditorialNoteHandler(
   const user = await getCurrentUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const roles = await getUserRoles(user.id)
-  const isAdmin = roles.includes('admin')
+  const isAdmin = user.is_admin
   const chapterId = await fetchEditorialNoteChapterId(id)
   if (!chapterId) return NextResponse.json({ error: 'Not Found' }, { status: 404 })
   const allowed = await canManageChapterEditorialNotes(chapterId, user.id, isAdmin)

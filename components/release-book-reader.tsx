@@ -7,7 +7,7 @@ import { getEditionLabel } from '@/lib/utils/editions'
 import { ChevronLeft, ChevronRight, X, AlignJustify, Heart, MessageCircle, Check, Bookmark, BookmarkPlus, Trash2, List, Type, Sun, Moon, Palette } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Release, Edition, Chapter, ChapterHighlight, ChapterEditorialNote } from '@/lib/releases-types'
-import type { UserRole } from '@/lib/types'
+import type { ReaderUserRole } from '@/components/spread-reader'
 import { useEditorialNotes } from '@/lib/reader/use-editorial-notes'
 import { BookmarksPanel } from '@/components/bookmarks-panel'
 import { HighlightArtifact } from '@/components/highlight-artifact'
@@ -22,7 +22,7 @@ interface ReleaseBookReaderProps {
   chapters: Chapter[]
   currentUserId: string | null
   initialHighlights: ChapterHighlight[]
-  userRole: UserRole | null
+  userRole: ReaderUserRole | null
   userName: string | null
   initialChapterIndex?: number
   otherBookEditions?: Edition[]

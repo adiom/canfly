@@ -3,17 +3,8 @@
 import { useSession, signOut } from 'next-auth/react'
 import Link from 'next/link'
 
-const ROLE_LABELS: Record<string, string> = {
-  reader: 'Читатель',
-  author: 'Автор',
-  editor: 'Редактор',
-  admin: 'Администратор',
-}
-
 export default function StudioAccessDeniedPage() {
-  const { data: session, status } = useSession()
-  const roles = (session?.user as { roles?: string[] } | undefined)?.roles ?? []
-  const roleLabels = roles.map((r) => ROLE_LABELS[r] ?? r).join(', ')
+  const { status } = useSession()
 
   if (status === 'loading') {
     return (
@@ -42,12 +33,6 @@ export default function StudioAccessDeniedPage() {
             <p className="text-[#ded7cc] leading-7">
               Studio предназначена для авторов, редакторов и администраторов.
             </p>
-            {roles.length > 0 && (
-              <div className="bg-[#1b1c19] border border-[#f4efe5]/10 rounded px-4 py-3">
-                <span className="text-[#f4efe5]/50 text-xs uppercase tracking-[0.18em]">Ваша роль </span>
-                <span className="text-[#f6d6a8] font-semibold">{roleLabels}</span>
-              </div>
-            )}
             <p className="text-[#f4efe5]/40 text-xs leading-6">
               Чтобы получить доступ, обратитесь к администратору — он может изменить вашу роль.
             </p>

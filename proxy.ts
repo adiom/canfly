@@ -72,7 +72,7 @@ export async function proxy(request: NextRequest) {
     const token = await readToken(request)
     if (!token) return toLogin(request, pathname)
 
-    if (!(token.roles ?? []).includes('admin')) {
+    if (token.isAdmin !== true) {
       // Авторизован, но не админ — показываем страницу с объяснением, а не
       // тихий редирект на логин.
       const url = request.nextUrl.clone()

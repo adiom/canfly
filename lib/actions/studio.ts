@@ -89,7 +89,7 @@ function validateForm<T>(
 
 export async function getMyReleases() {
   const session = await requireAuth()
-  if (session.roles.includes('admin')) {
+  if (session.isAdmin) {
     return releasesDb.listAllReleases()
   }
   return releasesDb.listReleasesByAuthor(session.user.id)
@@ -97,7 +97,7 @@ export async function getMyReleases() {
 
 export async function getMyReleasesWithEditions() {
   const session = await requireAuth()
-  if (session.roles.includes('admin')) {
+  if (session.isAdmin) {
     return releasesDb.listAllReleasesWithEditions()
   }
   return releasesDb.listReleasesByAuthorWithEditions(session.user.id)
@@ -229,7 +229,7 @@ export async function getEditions(releaseId: string) {
  */
 export async function getMyEditions() {
   const session = await requireAuth()
-  if (session.roles.includes('admin')) {
+  if (session.isAdmin) {
     return editionsDb.listAllEditionsWithRelease()
   }
   return editionsDb.listEditionsByAuthorWithRelease(session.user.id)
