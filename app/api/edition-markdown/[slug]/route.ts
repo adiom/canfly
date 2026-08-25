@@ -37,7 +37,7 @@ async function getEditionMarkdown(
   return new NextResponse(markdown, {
     status: 200,
     headers: {
-      'Content-Type': 'text/markdown; charset=utf-8',
+      'Content-Type': 'text/plain; charset=utf-8',
       'Content-Disposition': `inline; filename="${filename}"`,
       'Cache-Control': 'public, max-age=60, s-maxage=300',
     },

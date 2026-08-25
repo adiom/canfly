@@ -38,6 +38,19 @@ const nextConfig = {
   logging: {
     serverFunctions: false,
   },
+  async rewrites() {
+    // Динамический сегмент с суффиксом ([slug].md) в Next.js 16 теряет суффикс
+    // при построении regex маршрута, поэтому /vvvvv/[slug].md перестал
+    // работать. Публичный адрес сохраняется через rewrite на внутренний
+    // route handler без суффикса.
+    return [
+      {
+        source: '/vvvvv/:slug.md',
+        destination: '/api/edition-markdown/:slug',
+      },
+    ]
+  },
+
   async headers() {
     // CSP не даёт случайно просочившемуся HTML превратиться в захват сессии.
     // 'unsafe-inline'/'unsafe-eval' в script-src нужны Next.js для инлайн-

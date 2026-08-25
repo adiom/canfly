@@ -32,6 +32,8 @@
 
 Ответ открывается inline как `text/markdown`; старый API удалён.
 
+**Фикс маршрутизации.** Next.js 16 теряет суффикс у динамического сегмента `[slug].md` при построении regex маршрута (см. `node_modules/next/dist/shared/lib/router/utils/route-regex.js`), из-за чего `/vvvvv/{slug}.md` матчился на `/vvvvv/[slug]` и отдавал soft-404. Папка `app/vvvvv/[slug].md/` удалена; логика переехала в `app/api/edition-markdown/[slug]/route.ts`, а публичный адрес сохранён через rewrite в `next.config.mjs`: `/vvvvv/:slug.md` → `/api/edition-markdown/:slug`.
+
 ---
 
 ## [25 августа 2026] Redesign профиля, витрина автора, JSON-LD фиксы

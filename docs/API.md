@@ -22,7 +22,7 @@
 |-------|-----|----------|
 | GET | `/api/search?q=...&limit=6` | Autocomplete-поиск |
 | GET | `/api/homepage-slides` | Слайды главной страницы |
-| GET | `/vvvvv/{editionSlug}.md` | Книжное издание как Markdown; для остальных форматов возвращается placeholder |
+| GET | `/vvvvv/{editionSlug}.md` | Книжное издание как Markdown; для остальных форматов возвращается placeholder. Rewrite на `/api/edition-markdown/{editionSlug}` |
 
 ## Characters
 
