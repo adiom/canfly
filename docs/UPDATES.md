@@ -2,6 +2,92 @@
 
 ---
 
+## [25 августа 2026] Studio v2: orbital-редактор персонажа (`/studio/characters-v2/[id]`)
+
+### Что изменено
+
+Новый редактор персонажа в стиле orbital (`~/Canfly/2026/orbital/DESIGN.md`) —
+**полностью отдельный маршрут**. Старый редактор `/studio/characters/[id]` и
+всё, что с ним связано, **не изменены**.
+
+- **Единая страница-«дело»**: аспекты персонажа — glass-карточки orbital
+  (`rounded-[28px] bg-white/72 backdrop-blur-2xl ring-1 ring-white/70`,
+  мягкая тень) в одном вертикальном потоке. Сверху — floating control-bar pill
+  (имя, `@позывной`, переключатель `person|city`, density bar, удаление).
+- **Life-state как прогресс оживания дела** (signature): каждая секция несёт
+  точку+glow+caps-label по реальной заполненности — `тихо` / `родилось` /
+  `живёт` / `созревает`. В control-bar — density bar
+  (`linear-gradient(#38BDF8, #34D399, #A78BFA)`) и сводный лейбл. Считается
+  в `computeCharacterCompleteness` из данных персонажа.
+- **Inline autosave по узлам** вместо мегаформы-сабмита: каждое поле
+  сохраняется с debounce через `dbUpdatePartial` (репозиторий уже поддерживал),
+  индикатор «сохраняю / сохранено / ошибка» в шапке узла.
+- **Узлы**: Лицо · Голос · Поведение · Способности (только `person`) ·
+  Паспорт · Связи · Посты · Стена · Читатели. Голос/Поведение/Способности
+  автоматически скрываются для `city`; для города в «Лице» — поле карты.
+- **Паспорт = markdown split-pane + версионность** (по образцу глав):
+  markdown-редактор слева + живой предпросмотр (`MarkdownRenderer`) справа,
+  шаблоны person/city. Версии — в новой таблице
+  `character_passport_versions` (миграция `025`): перед перезаписью паспорта
+  старое содержимое уходит в историю; восстановление — кнопкой «Версии» (Sheet).
+  Сам паспорт остаётся markdown в `characters.passport` — текущий общий для
+  старого и v2 редактора, поэтому они не расходятся.
+- **Связи и Читатели** — переиспользуют существующие редакторы
+  (`RelationshipsEditor`, `ReadersList`): их мутации не делают redirect, только
+  `revalidatePath` + `router.refresh`, поэтому корректно обновляют v2-страницу.
+- **Посты и Стена** — обзорные узлы (список + ссылка «Управление/Модерация»
+  на старый редактор): composer постов и модерация стены редиректят на старый
+  путь, поэтому их глубокий CRUD не дублировался — перенос в v2 отдельной
+  итерацией.
+- **Доступ** как в старом редакторе: мутации полей — admin-only; паспорт —
+  author+admin; чтение страницы — requireStudioSession. Гварды переиспользованы.
+
+### Зачем
+
+Старый редактор — безликая колонка секций с мегаформой-сабмитом, без обзора
+заполненности и без проверки, чего не хватает. v2 делает «дело, которое
+оживает»: писатель видит прогресс и редактирует по частям, не теряя контекст.
+
+### Как использовать
+
+Прямой URL `/studio/characters-v2/{id}` (входа-списка нет — старый список не
+меняется). Миграция `025` применяет `character_passport_versions`. Жизненные
+узлы (посты/стена) ссылаются на старый `/studio/characters/{id}#...`.
+
+### Файлы
+
+- **`app/studio/characters-v2/[id]/page.tsx`** — серверная страница: грузит
+  персонажа и «жизнь», считает completeness, рендерит поток узлов на orbital-канвасе.
+- **`app/studio/characters-v2/[id]/_components/`** — `control-bar`,
+  `character-node` (glass-обёртка), `life-state` (точка+glow+caps), `use-autosave`,
+  `shared` (StatusBadge/Field/inputClass), узлы `face/voice/conduct/abilities/
+  passport/passport-version-history/relations/posts/wall/readers`.
+- **`lib/actions/studio-characters-v2.ts`** — server actions частичных апдейтов
+  (`updateFaceAction`, `updateVoiceAction`, `updateConductAction`,
+  `updateAbilitiesAction`, `changeCharacterTypeAction`) + паспорт с версионностью
+  (`savePassportAction`, `listPassportVersionsAction`,
+  `restorePassportVersionAction`). Zod-валидация, гварды из `studio-auth`.
+- **`lib/server/character-passport-versions.ts`** — репозиторий версий паспорта
+  (по образцу `lib/server/chapters.ts`): `createPassportVersion`,
+  `fetchPassportVersions`, `fetchPassportVersion`, `restorePassportVersion`,
+  `hasPassportHistory`.
+- **`lib/server/character-completeness.ts`** — `computeCharacterCompleteness`:
+  life-state по секциям + density.
+- **`postgres/025_character_passport_versions.sql`** — таблица версий паспорта
+  (`id, character_id, content, version_number, created_at`), CASCADE, индексы.
+- **`e2e/studio-characters-v2.spec.ts`** — smoke: рендер v2-страницы без
+  runtime-ошибок и 404 на несуществующем id.
+
+### Не тронуто
+
+`app/studio/characters/**`, `lib/actions/studio-characters.ts`,
+`lib/server/characters.ts`, `components/studio/character-form.tsx`,
+`passport-editor.tsx`, `character-post-composer.tsx`, `relationships-editor.tsx`,
+`readers-list.tsx`, `app/studio/layout.tsx`, `proxy.ts`, схема `characters` —
+старый редактор работает идентично.
+
+---
+
 ## [26 августа 2026] Релизы: draft виден команде, archived закрыт публично
 
 ### Что изменено
