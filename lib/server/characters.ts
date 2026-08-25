@@ -7,6 +7,7 @@ import {
   CharacterRelationshipWithTarget,
   CharacterStats,
 } from '@/lib/types'
+import type { CharacterListRole } from '@/lib/releases-types'
 
 export async function fetchCharactersList(): Promise<Character[]> {
   return dbQuery<Character>(
@@ -227,4 +228,107 @@ export async function updatePassport(id: string, passport: string | null) {
 
 export async function deleteCharacter(id: string) {
   await dbQuery('DELETE FROM characters WHERE id = $1', [id])
+}
+
+// === Выборки с фильтром по релизу/серии/роли ===
+//
+// Дефолт /characters = только главные герои опубликованных релизов
+// (role = 'main'). Чисто supporting/cameo — через ?role=… или ?release=…&role=….
+// Все JOIN'ы отсекают r.status != 'published', чтобы draft-релизы автора
+// не проталкивали персонажей в публичный каталог.
+
+const MAIN_CHARACTERS_SQL = `
+  SELECT DISTINCT c.*
+  FROM characters c
+  JOIN release_characters rc ON rc.character_id = c.id
+  JOIN releases r ON r.id = rc.release_id
+  WHERE c.character_type = 'person'
+    AND rc.role = 'main'
+    AND r.status = 'published'
+  ORDER BY c.created_at DESC
+`
+
+/** Главные герои опубликованных релизов — дефолтная выдача /characters. */
+export async function fetchMainCharacters(): Promise<Character[]> {
+  return dbQuery<Character>(MAIN_CHARACTERS_SQL)
+}
+
+/**
+ * Персонажи с любой ролью в опубликованном релизе; фильтр по роли опционален.
+ * 'all' — без фильтра по роли, но персонаж без связей в release_characters
+ * сюда не попадёт (см. соглашение в плане: «без выпуска» не показываем).
+ */
+export async function fetchCharactersByRole(role: CharacterListRole): Promise<Character[]> {
+  if (role === 'all') {
+    return dbQuery<Character>(`
+      SELECT DISTINCT c.*
+      FROM characters c
+      JOIN release_characters rc ON rc.character_id = c.id
+      JOIN releases r ON r.id = rc.release_id
+      WHERE c.character_type = 'person'
+        AND r.status = 'published'
+      ORDER BY c.created_at DESC
+    `)
+  }
+  return dbQuery<Character>(
+    `
+      SELECT DISTINCT c.*
+      FROM characters c
+      JOIN release_characters rc ON rc.character_id = c.id
+      JOIN releases r ON r.id = rc.release_id
+      WHERE c.character_type = 'person'
+        AND r.status = 'published'
+        AND rc.role = $1::release_character_role
+      ORDER BY c.created_at DESC
+    `,
+    [role],
+  )
+}
+
+/** Персонажи конкретного релиза (по slug), опционально с фильтром по роли. */
+export async function fetchCharactersByReleaseSlug(
+  slug: string,
+  role: CharacterListRole = 'all',
+): Promise<Character[]> {
+  const params: unknown[] = [slug]
+  const roleClause = role === 'all' ? '' : 'AND rc.role = $2::release_character_role'
+  if (role !== 'all') params.push(role)
+  return dbQuery<Character>(
+    `
+      SELECT DISTINCT c.*
+      FROM characters c
+      JOIN release_characters rc ON rc.character_id = c.id
+      JOIN releases r ON r.id = rc.release_id
+      WHERE r.slug = $1
+        AND r.status = 'published'
+        ${roleClause}
+      ORDER BY c.name
+    `,
+    params,
+  )
+}
+
+/** Персонажи серии (по slug серии), опционально с фильтром по роли. */
+export async function fetchCharactersBySeriesSlug(
+  slug: string,
+  role: CharacterListRole = 'all',
+): Promise<Character[]> {
+  const params: unknown[] = [slug]
+  const roleClause = role === 'all' ? '' : 'AND rc.role = $2::release_character_role'
+  if (role !== 'all') params.push(role)
+  return dbQuery<Character>(
+    `
+      SELECT DISTINCT c.*
+      FROM characters c
+      JOIN release_characters rc ON rc.character_id = c.id
+      JOIN releases r ON r.id = rc.release_id
+      JOIN release_series rs ON rs.release_id = r.id
+      JOIN series s ON s.id = rs.series_id
+      WHERE s.slug = $1
+        AND r.status = 'published'
+        ${roleClause}
+      ORDER BY c.name
+    `,
+    params,
+  )
 }

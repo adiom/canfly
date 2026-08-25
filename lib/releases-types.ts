@@ -6,6 +6,9 @@ export type MediaType = 'trailer' | 'podcast' | 'review' | 'other'
 export type CollaboratorRole = 'owner' | 'editor' | 'viewer'
 export type ChapterStatus = 'draft' | 'published'
 export type ReleaseCharacterRole = 'main' | 'supporting' | 'cameo'
+
+/** Фильтр персонажа по роли в релизе. 'all' — любая роль (главные/второстепенные/камео вместе). */
+export type CharacterListRole = ReleaseCharacterRole | 'all'
 export type CommentStatus = 'pending' | 'approved' | 'spam'
 export type HeroStyle = 'full' | 'centered' | 'minimal'
 export type HeroOverlay = 'dark' | 'gradient' | 'none'

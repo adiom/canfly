@@ -2,6 +2,72 @@
 
 ---
 
+## [26 августа 2026] Каталог /characters: дефолт — только главные + URL-фильтры
+
+### Что изменено
+
+**Дефолт `/characters` — только главные герои опубликованных релизов.** Раньше
+страница показывала всех персонажей с `character_type = 'person'`, включая
+тех, у кого нет ни одной главной роли (только `supporting`/`cameo` или даже
+никаких связей в `release_characters`). Теперь по умолчанию на страницу
+попадают только персонажи с `role = 'main'` хотя бы в одном опубликованном
+релизе (`r.status = 'published'`, чтобы draft-релизы не проталкивали
+героев в публичный каталог).
+
+**URL-фильтры для каталога.** Чипы под заголовком (server-side `<Link>`,
+без `'use client'`):
+
+| URL | Что показывает |
+|---|---|
+| `/characters` | только `role='main'` (дефолт) |
+| `/characters?role=all` | любых героев хотя бы одного опубликованного релиза |
+| `/characters?role=supporting` | только `supporting`-герои |
+| `/characters?role=cameo` | только камео |
+| `/characters?release=<slug>` | героев конкретного релиза |
+| `/characters?series=<slug>` | героев серии (все тома через `release_series`) |
+| `/characters?release=<slug>&role=main` | главные конкретного релиза |
+
+При активном `?release=` / `?series=` чипы ролей аккуратно доклеивают этот
+параметр — можно переключать роли в контексте одного релиза. Недопустимые
+значения `?role=…` молча проваливаются на `main`.
+
+**Миграция `024_release_characters_main_index.sql`.** Частичный индекс
+`idx_release_characters_main` на `(character_id) WHERE role = 'main'`.
+Покрывает дефолтный запрос без сканирования всей `release_characters`. Идемпотентен.
+
+### Серверный слой
+
+В `lib/server/characters.ts` добавлены:
+- `fetchMainCharacters()` — дефолт;
+- `fetchCharactersByRole(role)` — фильтр-чип без релиза/серии;
+- `fetchCharactersByReleaseSlug(slug, role?)` — прямая навигация «герои релиза»;
+- `fetchCharactersBySeriesSlug(slug, role?)` — то же для серии.
+
+Тип `CharacterListRole = ReleaseCharacterRole | 'all'` добавлен в
+`lib/releases-types.ts`.
+
+### Что НЕ меняется
+
+- `app/sitemap.ts` продолжает отдавать карточки всех персонажей — sitemap
+  остаётся «широким», чтобы индексировались профили второстепенных героев.
+- `metadata.noindex = true` на хабе сохраняется: ?role / ?release / ?series
+  создают дубли URL для поисковиков, хабовой выдаче туда незачем попадать.
+- Логика страницы релиза `app/release/[slug]/page.tsx` (отдельный блок
+  «Герои релиза») не затронута.
+
+### Миграции и окружение
+
+- Применить `postgres/024_release_characters_main_index.sql` — новых
+  переменных окружения нет.
+
+### Проверки
+
+`pnpm lint` (0 ошибок), `pnpm build` зелёный, `e2e/characters-filter.spec.ts`
+зелёный на локальной БД. `pnpm db:structure` показывает
+`idx_release_characters_main` в списке индексов `release_characters`.
+
+---
+
 ## [25 августа 2026] SEO-фиксы: soft-404, canonical, тонкие листинги, font-display
 
 ### Что изменено
