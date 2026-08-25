@@ -2,6 +2,47 @@
 
 ---
 
+## [25 августа 2026] Публичный профиль автора, соцсети через OAuth, удаление мульти-email, провайдер X
+
+### Что изменено
+
+**Профиль разделён по `public_role`** (`app/user/[slug]/page.tsx`). Теперь три разных публичных страницы:
+
+| Роль | Страница | SEO |
+|---|---|---|
+| `reader` | как раньше: identity → «Читает» → «Керн» → «Вынесено на свет» | noindex |
+| `author` | витрина: книги-библиография → серии → последнее → цитаты | индексируется, Person + Book/CreativeWork |
+| `editor` | публичного профиля нет — чужим 404 | noindex |
+
+**Витрина автора** (`components/user/author-showcase.tsx`, `lib/server/author-profile.ts`): опубликованные релизы, где пользователь owner (`release_collaborators.role = 'owner'`), в виде хронологической библиографии (корешок-полоса в signature-цвете, номер 01/02, обложка, колофон, аннотация); серии (`release_series` join) и последние новости автора. Пустые секции скрываются, автор без работ получает приглашение.
+
+**Соцсети автора.** `linked_accounts.url` — публичный URL профиля провайдера. Показывается строкой под био (`ProfileIdentity`) и уходит в `Person.sameAs` в JSON-LD. Сейчас URL умеют github и X; yandex/google — только способ входа.
+
+**Провайдер X (Twitter)** (`app/(auth)/auth.config.ts`, `.env.example`): вход и привязка без обязательного email (OAuth 2.0 может не отдать адрес — пользователь создаётся без него и входит этим провайдером); `userinfo` запрашивает `user.fields=profile_image_url,email`; url = `x.com/{username}`. У github url = `github.com/{login}`.
+
+**Удалён мульти-email.** Таблицы `user_emails`, `email_verifications` и весь их код (`account-settings.ts`, UI-блок) удалены. `users.email` — единственный ключ входа (magic-токены, OAuth-сопоставление, админка). Перед дропом primary-адреса перенесены в `users.email` тем, у кого его не было (OAuth-пользователи).
+
+**Миграция `postgres/021_auth_cleanup.sql`**: дроп `user_emails`, `email_verifications`, архивных `books`, `book_characters`, `orders` и легаси-`admins`; `linked_accounts.url TEXT`; бэкфилл email. `postgres/schema.sql` обновлён под чистую БД.
+
+**Sitemap**: добавлены публичные профили авторов (`/user/{handle}`).
+
+**e2e**: новая регрессия `e2e/user-profile.spec.ts` (author/reader/editor) — серийный режим, чистка БД до/после; общий `e2e/setup/pg.ts` (SSL только для удалённых хостов — локальный Postgres.app не говорит по SSL); удалён некорректный `e2e/legacy.spec.ts` (ожидал несуществующий редирект `/releases → 307 → /`).
+
+### Зачем
+
+Публичная страница должна описывать человека и его творчество, а не всех одинаково: Reader = «что человек читает», Author = «кто человек и что создал». Соцсети на странице автора берутся из реально привязанных аккаунтов (нельзя вписать чужой профиль руками), а мульти-email дублировал ключ входа и поддерживался вручную в четырёх местах.
+
+### Как использовать
+
+1. Применить `postgres/021_auth_cleanup.sql` (и `020_public_role.sql`, если ещё не применён). **Применено к `canfly_copy2` и `neondb` 25.08.2026.**
+2. Провайдер X: добавить `AUTH_TWITTER_CLIENT_ID/SECRET` + `NEXT_PUBLIC_AUTH_TWITTER_ENABLED=true`; в dev-портале X включить «Request email address from users».
+3. Авторская витрина включается переводом пользователя в `public_role='author'` (в `/admin`).
+4. Соцсети появляются после привязки X или GitHub в `/profile/settings`.
+
+**Осознанно не сделано:** Instagram/Facebook — Meta закрыла OAuth-вход без business-аккаунта; ссылки «вручную» (без привязки) не добавлялись — только реальные аккаунты.
+
+---
+
 ## [21 августа 2026] Слой изданий: тираж, is_primary, слаги + раздел «Издания»
 
 ### Что изменено
