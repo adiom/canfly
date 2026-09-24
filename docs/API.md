@@ -23,6 +23,7 @@
 | GET | `/api/search?q=...&limit=6` | Autocomplete-поиск |
 | GET | `/api/homepage-slides` | Слайды главной страницы |
 | GET | `/vvvvv/{editionSlug}.md` | Книжное издание как Markdown; для остальных форматов возвращается placeholder. Rewrite на `/api/edition-markdown/{editionSlug}` |
+| GET | `/vvvvv/{editionSlug}.docx` | Книжное издание как документ Word (`attachment`, форматирование: заголовки, списки, цитаты, код, таблицы); для остальных форматов — placeholder. Rewrite на `/api/edition-docx/{editionSlug}` |
 
 ## Characters
 

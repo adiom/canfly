@@ -4,6 +4,7 @@ import { Client } from 'pg'
 import { loadTestCredentials, type TestCredentials } from './setup/credentials'
 import { loginViaMagicLink } from './setup/login-helper'
 import { loadEnvLocal, pgConfig } from './setup/pg'
+import mammoth from 'mammoth'
 
 const STUDIO_ROUTES = ['/studio', '/studio/characters'] as const
 
@@ -337,24 +338,103 @@ test.describe('smoke: chapter nav (стрелки между главами)', (
   })
 })
 
-test.describe('smoke: edition markdown', () => {
-  test('published edition markdown endpoint returns text', async ({ page }) => {
-    await page.goto('/releases', { waitUntil: 'domcontentloaded' })
+test.describe('smoke: edition exports', () => {
+  // Витрина `/releases` ведёт на `/release/[slug]`, ссылок на `/vvvvv/` там нет,
+  // поэтому данные для экспорта создаём напрямую в БД: опубликованный релиз,
+  // книжное издание и две опубликованные главы с разметкой.
+  let releaseId = ''
+  let editionSlug = ''
+  let releaseTitle = ''
 
-    const editionLink = page.locator('a[href^="/vvvvv/"]').first()
-    try {
-      await editionLink.waitFor({ state: 'attached', timeout: 25_000 })
-    } catch {
-      test.skip(true, 'no published edition listed')
+  const SCENE_HTML = [
+    '<h2>Сцена первая</h2>',
+    '<p>Абзац с <strong>жирным</strong> и <em>курсивом</em>.</p>',
+    '<ul><li><p>Пункт списка</p></li></ul>',
+    '<blockquote><p>Цитата для проверки отступа.</p></blockquote>',
+  ].join('')
+
+  test.beforeAll(async () => {
+    const created = await withDb(async (client) => {
+      const stamp = Date.now()
+      const title = `E2E экспорт ${stamp}`
+      const release = await client.query<{ id: string }>(
+        `INSERT INTO releases (title, slug, status)
+         VALUES ($1, $2, 'published') RETURNING id`,
+        [title, `e2e-export-release-${stamp}`],
+      )
+      const slug = `e2e-export-edition-${stamp}`
+      const edition = await client.query<{ id: string }>(
+        `INSERT INTO editions (release_id, format, slug, status)
+         VALUES ($1, 'book', $2, 'published') RETURNING id`,
+        [release.rows[0].id, slug],
+      )
+      await client.query(
+        `INSERT INTO chapters (edition_id, title, content, status, chapter_index)
+         VALUES ($1, 'Глава первая', $2, 'published', 0),
+                ($1, 'Глава вторая', $3, 'published', 1)`,
+        [edition.rows[0].id, SCENE_HTML, SCENE_HTML],
+      )
+
+      return { releaseId: release.rows[0].id, editionSlug: slug, releaseTitle: title }
+    })
+
+    if (!created) {
+      test.skip(true, 'DATABASE_URL не настроен — экспорт не на чем проверять')
+      return
     }
 
-    const href = await editionLink.getAttribute('href')
-    if (!href) test.skip(true, 'no published edition href')
+    releaseId = created.releaseId
+    editionSlug = created.editionSlug
+    releaseTitle = created.releaseTitle
+  })
 
-    const markdownHref = `${href!}.md`
-    const response = await page.request.get(markdownHref)
+  test.afterAll(async () => {
+    if (!releaseId) return
+    await withDb(async (client) => {
+      // Издание и главы уезжают каскадом по FK.
+      await client.query('DELETE FROM releases WHERE id = $1', [releaseId])
+    })
+  })
+
+  test('published edition markdown endpoint returns text', async ({ request }) => {
+    const response = await request.get(`/vvvvv/${editionSlug}.md`)
     expect(response.status()).toBe(200)
-    expect(response.headers()['content-type']).toContain('text/markdown')
-    expect(await response.text()).toContain('# ')
+    // Адрес открывается в браузере как обычный текст, поэтому text/plain:
+    // text/markdown браузеры либо скачивают, либо показывают тем же текстом.
+    expect(response.headers()['content-type']).toContain('text/plain')
+
+    const markdown = await response.text()
+    expect(markdown).toContain(`# ${releaseTitle}`)
+    expect(markdown).toContain('## Глава первая')
+    expect(markdown).toContain('**жирным**')
+  })
+
+  test('published edition docx downloads as Word document', async ({ request }) => {
+    const response = await request.get(`/vvvvv/${editionSlug}.docx`)
+    expect(response.status()).toBe(200)
+    expect(response.headers()['content-type']).toContain(
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    )
+    expect(response.headers()['content-disposition']).toContain('attachment')
+    expect(response.headers()['content-disposition']).toContain('.docx')
+
+    const buffer = await response.body()
+    expect(buffer.subarray(0, 2).toString('latin1')).toBe('PK') // ZIP-контейнер
+
+    // Разбор mammoth проверяет, что это читаемый Word-документ, а не просто
+    // корректный архив: он падает на нарушении схемы OOXML в `word/document.xml`
+    // и теряет форматирование, если стили или нумерация собраны неверно.
+    const { value } = await mammoth.convertToHtml({ buffer })
+    expect(value).toContain(`<p>${releaseTitle}</p>`)
+    expect(value).toContain('<h2>Глава первая</h2>')
+    expect(value).toContain('<h2>Сцена первая</h2>')
+    expect(value).toContain('<strong>жирным</strong>')
+    expect(value).toContain('<em>курсивом</em>')
+    expect(value).toContain('<ul><li>Пункт списка</li></ul>')
+  })
+
+  test('unknown edition returns 404', async ({ request }) => {
+    const response = await request.get('/vvvvv/e2e-no-such-edition.docx')
+    expect(response.status()).toBe(404)
   })
 })

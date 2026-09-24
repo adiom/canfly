@@ -47,14 +47,18 @@ const nextConfig = {
     serverFunctions: false,
   },
   async rewrites() {
-    // Динамический сегмент с суффиксом ([slug].md) в Next.js 16 теряет суффикс
-    // при построении regex маршрута, поэтому /vvvvv/[slug].md перестал
-    // работать. Публичный адрес сохраняется через rewrite на внутренний
-    // route handler без суффикса.
+    // Динамический сегмент с суффиксом ([slug].md, [slug].docx) в Next.js 16
+    // теряет суффикс при построении regex маршрута, поэтому такие адреса не
+    // работают как папки. Публичные адреса сохраняются через rewrite на
+    // внутренние route handlers без суффикса.
     return [
       {
         source: '/vvvvv/:slug.md',
         destination: '/api/edition-markdown/:slug',
+      },
+      {
+        source: '/vvvvv/:slug.docx',
+        destination: '/api/edition-docx/:slug',
       },
     ]
   },
