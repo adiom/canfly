@@ -62,7 +62,7 @@ async function GamesContent() {
 function GameCard({ game, priority }: { game: Game; priority?: boolean }) {
   return (
     <Link href={`/games/${game.slug}`} className="group block">
-      <div className="relative aspect-[16/9] overflow-hidden rounded-2xl bg-gradient-to-br from-violet-100/80 via-rose-50/60 to-amber-50/40">
+      <div className="relative aspect-[16/9] overflow-hidden rounded-2xl border border-cf-text-1/10 bg-cf-bg-2">
         {game.cover_image ? (
           <Image
             src={game.cover_image}
@@ -74,11 +74,11 @@ function GameCard({ game, priority }: { game: Game; priority?: boolean }) {
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center">
-            <Gamepad2 className="h-12 w-12 text-violet-300" />
+            <Gamepad2 aria-hidden className="h-12 w-12 text-cf-text-4" />
           </div>
         )}
       </div>
-      <h3 className="mt-3 text-[15px] font-medium text-cf-text-heading transition-colors group-hover:text-violet-700">
+      <h3 className="mt-3 text-[15px] font-medium text-cf-text-heading transition-colors group-hover:text-cf-air-accent-ink">
         {game.title}
       </h3>
       {game.tagline ? (
