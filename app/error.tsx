@@ -35,8 +35,14 @@ export default function Error({ error, reset }: ErrorProps) {
 
         <div className="flex flex-wrap gap-3">
           <button
-            onClick={reset}
+            onClick={() => window.location.reload()}
             className="h-12 px-5 bg-cf-accent text-white font-black uppercase text-sm tracking-[0.1em] hover:bg-[#b81e1e] transition-colors"
+          >
+            Обновить страницу
+          </button>
+          <button
+            onClick={reset}
+            className="h-12 px-5 border border-cf-text-1/18 text-cf-text-1 font-bold uppercase text-sm tracking-[0.1em] hover:bg-cf-text-1/8 transition-colors"
           >
             Попробовать снова
           </button>

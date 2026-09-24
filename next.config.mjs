@@ -1,5 +1,13 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Version skew protection: клиент из старого билда получает hard navigation
+  // вместо «Failed to find Server Action» после редеплоя. Сначала читаем
+  // NEXT_DEPLOYMENT_ID (так значение гарантированно совпадает с env-переменной,
+  // иначе next build падает с E971), затем VERCEL_DEPLOYMENT_ID.
+  deploymentId:
+    process.env.NEXT_DEPLOYMENT_ID ||
+    process.env.VERCEL_DEPLOYMENT_ID ||
+    undefined,
   htmlLimitedBots: /.*/,
   devIndicators: false,
   experimental: {

@@ -36,8 +36,14 @@ export default function GlobalError({ error, reset }: GlobalErrorProps) {
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>
               <button
+                onClick={() => window.location.reload()}
+                style={{ height: '3rem', padding: '0 1.25rem', background: '#d25252', color: '#fff', fontWeight: 900, fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.1em', border: 'none', cursor: 'pointer' }}
+              >
+                Обновить страницу
+              </button>
+              <button
                 onClick={reset}
-                style={{ height: '3rem', padding: '0 1.25rem', background: '#d52525', color: '#fff', fontWeight: 900, fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.1em', border: 'none', cursor: 'pointer' }}
+                style={{ height: '3rem', padding: '0 1.25rem', border: '1px solid rgba(244,239,229,0.18)', color: '#f4efe5', fontWeight: 700, fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.1em', background: 'transparent', cursor: 'pointer' }}
               >
                 Попробовать снова
               </button>

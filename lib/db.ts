@@ -55,6 +55,15 @@ export function getPool() {
       ssl: isLocal ? false : { rejectUnauthorized: false },
       max: 3,
       idleTimeoutMillis: 10000,
+      // Обрыв TCP к Neon на простоявшем соединении пула раньше падал как
+      // uncaught exception и ронял процесс (exit 129): pg кидает 'error'
+      // на idle-клиенте, слушателя не было. Без обработчика — крэш.
+      connectionTimeoutMillis: 5000,
+      keepAlive: true,
+    })
+
+    cachedPool.on('error', (error) => {
+      console.error('[db] idle pool client error', error)
     })
   }
 

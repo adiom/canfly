@@ -2,6 +2,47 @@
 
 ---
 
+## [24 сентября 2026] Стабильность деплоя: version skew, шум пула Postgres
+
+### Что изменено
+
+- `next.config.mjs` — добавлен `deploymentId` (`NEXT_DEPLOYMENT_ID` →
+  `VERCEL_DEPLOYMENT_ID` → `undefined`): клиент из старого билда получает
+  hard navigation вместо `Failed to find Server Action` (500 на POST `/`).
+- `lib/db.ts` — у `Pool` добавлены `connectionTimeoutMillis: 5000` и
+  `keepAlive: true`, обработчик `pool.on('error')`: обрыв TCP к Neon на
+  idle-клиенте раньше падал как uncaught exception и ронял процесс
+  (exit 129). Ретраев в `dbQuery` нет — сознательно, чтобы не выполнять
+  запись дважды при обрыве после отправки.
+- `app/error.tsx`, `app/global-error.tsx` — кнопка «Обновить страницу»
+  (`location.reload()`): `reset()` не подтягивает новый билд, а ошибка
+  Server Action в production приходит только с `digest` — опознать её
+  по сообщению нельзя.
+- `.env.example` — документирован `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`:
+  без него Next генерирует новый ключ на каждый билд и клиенты старого
+  деплоя ловят ту же ошибку.
+
+### Почему
+
+В логах Vercel за 2 недели: пачка из 7 × `Failed to find Server Action`
+(один пользователь со старой вкладкой), uncaught `Connection terminated
+unexpectedly` с exit 129. Остальные ошибки (`UnknownAction /api/auth/guest`
+— внешний сканер, одиночный `fetch failed` на Blob) правок не требуют.
+
+### Что сделать вручную
+
+- Задать `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` (одинаковый на всех
+  билдах/инстансах): `openssl rand -base64 32`.
+- Проверить в настройках Vercel-проекта, что Skew Protection включён
+  (для проектов старше 19.11.2024 включается вручную: Settings →
+  Advanced → Skew Protection).
+
+### Проверки
+
+`pnpm lint`, `pnpm build`.
+
+---
+
 ## [24 сентября 2026] WebSite переехал в layout
 
 ### Что изменено
