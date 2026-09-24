@@ -19,7 +19,7 @@ export function absoluteUrl(path: string): string {
  *
  * Без них Google видит на каждой странице новую безымянную Organization/Person
  * и не склеивает их в одну сущность. Полный узел отдаётся ровно один раз
- * (Organization — из layout, WebSite — с корня), остальные страницы ссылаются
+ * (Organization, Person и WebSite — из layout), остальные страницы ссылаются
  * на него `{ '@id': ... }`.
  */
 export const ID = {

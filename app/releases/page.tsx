@@ -5,7 +5,6 @@ import type { EditionFormat } from '@/lib/releases-types'
 import { ReleasesPageBookmate } from '@/components/releases-page-bookmate'
 import { JsonLd } from '@/components/seo/json-ld'
 import { generateCollectionSchema } from '@/lib/seo/schema'
-import { websiteNode } from '@/lib/seo/entities'
 import { buildMetadata } from '@/lib/seo/metadata'
 
 export const dynamic = 'force-dynamic'
@@ -122,12 +121,7 @@ export default async function HomeCatalogPage({ searchParams }: ReleasesPageProp
 
   return (
     <>
-      <JsonLd
-        schemas={[
-          websiteNode(),
-          collectionSchema,
-        ]}
-      />
+      <JsonLd schemas={[collectionSchema]} />
       <ReleasesPageBookmate
         data={data}
         category={category}

@@ -2,6 +2,38 @@
 
 ---
 
+## [24 сентября 2026] WebSite переехал в layout
+
+### Что изменено
+
+- `app/layout.tsx` — в `siteSchemas` добавлен `websiteNode()`: полные узлы
+  `Organization`, `Person` и `WebSite` теперь отдаются **ровно один раз** из
+  layout на каждой странице (вместо только Organization/Person).
+- `app/releases/page.tsx` — убран дублирующий `websiteNode()` из графа каталога;
+  остался только `CollectionPage`.
+- `lib/seo/entities.ts`, `lib/seo/schema.ts` — комментарии: WebSite отдаётся из
+  layout, а не «с корня».
+- `e2e/seo.spec.ts` — тесты: на `/` ожидаются `WebSite + WebPage`, на `/releases` —
+  `WebSite + CollectionPage`; старый тест «лендинг не дублирует WebSite» заменён
+  на проверку одного узла `WebSite` с одинаковым `@id` (склейка по `@id`, как у
+  Organization/Person); `gotoWithJsonLd` ждёт **минимум** 2 тега, а не ровно 2 —
+  `Breadcrumbs` отдаёт третий `<JsonLd>` с `BreadcrumbList` (это ломало тесты и
+  до правок); убраны устаревшие комментарии про `/releases`-307.
+- `docs/SEO.md` — `@id`-граф и таблица layout обновлены.
+
+### Почему
+
+`WebSite` жил только на `/releases`, из-за чего лендинг `/` не отдавал узел, на
+который ссылаются `isPartOf: ref(ID.website)` со страниц. В layout `WebSite`
+всегда в одном `@graph` с Organization/Person — ссылки резолвятся на любой
+странице, а Google склеивает сущность по стабильному `@id`.
+
+### Проверки
+
+`pnpm exec playwright test e2e/seo.spec.ts`, `pnpm lint`, `pnpm build`.
+
+---
+
 ## [25 августа 2026] Чистка репозитория и рефакторинг /admin на серверную архитектуру
 
 ### Что изменено

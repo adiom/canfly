@@ -733,7 +733,7 @@ export function generateWebPageSchema(opts: {
   }
 }
 
-/** Совместимость: корень отдаёт полный узел WebSite через `websiteNode()`. */
+/** Совместимость: полный узел WebSite отдаётся из layout через `websiteNode()`. */
 export function generateWebSiteSchema() {
   return websiteNode()
 }

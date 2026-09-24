@@ -81,16 +81,24 @@ function deepFind(value: unknown, predicate: (node: Graph) => boolean): Graph[] 
 }
 
 /**
- * Страница + гарантия, что оба JSON-LD доехали: layout отдаёт свой тег в
+ * Страница + гарантия, что JSON-LD доехали: layout отдаёт свой тег в
  * шелле, а тег страницы приходит позже — на `domcontentloaded` его ещё нет,
  * и проверки читали разметку одного layout.
+ *
+ * Ждём минимум `EXPECTED_SCRIPTS`, а не точное число: `Breadcrumbs` —
+ * отдельный `<JsonLd>` с `BreadcrumbList`, и на страницах с крошками
+ * тегов три (layout + страница + крошки).
  */
 async function gotoWithJsonLd(page: Page, url: string): Promise<void> {
   await page.goto(url, { waitUntil: 'domcontentloaded' })
-  await expect(page.locator('script[type="application/ld+json"]')).toHaveCount(EXPECTED_SCRIPTS)
+  await expect
+    .poll(() => page.locator('script[type="application/ld+json"]').count(), {
+      message: `на ${url} нет JSON-LD от layout и страницы`,
+    })
+    .toBeGreaterThanOrEqual(EXPECTED_SCRIPTS)
 }
 
-/** Layout (Organization + Person) плюс собственный граф страницы. */
+/** Минимум: layout (Organization + Person + WebSite) плюс граф страницы. */
 const EXPECTED_SCRIPTS = 2
 
 /** Первая ссылка нужного вида со страницы-списка; null — в базе пусто. */
@@ -119,13 +127,20 @@ async function metaContent(page: Page, property: string): Promise<string | null>
 
 test.describe('JSON-LD', () => {
   test('по одному @graph от layout и от страницы', async ({ page }) => {
-    // Два тега, а не гроздь: layout отдаёт узлы издательства и автора один
-    // раз на весь сайт, страница — только свои. Больше двух означает, что
-    // кто-то снова вставил <script> напрямую, минуя <JsonLd>.
+    // layout отдаёт свои узлы один раз на весь сайт, страница — только свои;
+    // третий тег — Breadcrumbs (BreadcrumbList) через тот же <JsonLd>.
+    // Прямая вставка <script> минуя <JsonLd> ломает склейку @id — ниже
+    // проверяется состав узлов, а не только их наличие.
     await gotoWithJsonLd(page, '/')
 
     const nodes = await readJsonLd(page)
-    expect(types(nodes)).toEqual(expect.arrayContaining(['WebSite', 'CollectionPage']))
+    expect(types(nodes)).toEqual(expect.arrayContaining(['WebSite', 'WebPage']))
+    expect(types(nodes).filter(t => t === 'WebSite')).toHaveLength(1)
+
+    await gotoWithJsonLd(page, '/releases')
+    const catalog = await readJsonLd(page)
+    expect(types(catalog)).toEqual(expect.arrayContaining(['WebSite', 'CollectionPage']))
+    expect(types(catalog).filter(t => t === 'WebSite')).toHaveLength(1)
   })
 
   test('корень отдаёт SearchAction для sitelinks searchbox', async ({ page }) => {
@@ -135,12 +150,17 @@ test.describe('JSON-LD', () => {
     expect(site?.potentialAction, 'у WebSite нет potentialAction').toBeTruthy()
   })
 
-  test('лендинг больше не дублирует WebSite', async ({ page }) => {
+  test('WebSite отдаётся из layout один раз с одинаковым @id', async ({ page }) => {
+    // WebSite живёт в layout (вместе с Organization и Person), поэтому на
+    // каждой странице ровно один полный узел с одинаковым `@id` — Google
+    // склеивает их в одну сущность, а не плодит безымянные копии.
     await gotoWithJsonLd(page, '/home')
     const nodes = await readJsonLd(page)
-    // WebSite объявляется один раз — на корне; дубль путает Google.
-    expect(types(nodes)).not.toContain('WebSite')
-    expect(types(nodes)).toContain('WebPage')
+    expect(types(nodes)).toContain('WebSite')
+
+    const ids = nodes.filter(node => node['@type'] === 'WebSite').map(node => node['@id'])
+    expect(ids).toHaveLength(1)
+    expect(ids[0]).toBeTruthy()
   })
 
   test('релиз — CreativeWork с изданиями в workExample', async ({ page }) => {
@@ -308,8 +328,8 @@ test.describe('XSS в JSON-LD', () => {
 })
 
 test.describe('OG и Twitter', () => {
-  // `/releases` здесь нет: это 307-редирект на корень, своих метатегов у него
-  // и не должно быть.
+  // `/releases` здесь нет: у каталога свои метатеги проверяются в JSON-LD-блоке,
+  // а OG-карточка по умолчанию приходит из layout/buildMetadata.
   const STATIC_PAGES = ['/', '/home', '/news', '/characters', '/colors'] as const
 
   for (const url of STATIC_PAGES) {
@@ -362,9 +382,8 @@ test.describe('OG и Twitter', () => {
 })
 
 test.describe('матрица noindex', () => {
-  // `/search` закрывается через robots.txt (плюс layout: index:false),
-  // а `/releases` — 307-редирект на корень. Метатегом проверяется
-  // только `/login`.
+  // `/search` закрывается через robots.txt (плюс layout: index:false).
+  // Метатегом проверяется только `/login`.
   const CLOSED = ['/login'] as const
 
   for (const url of CLOSED) {

@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { Geist, Geist_Mono, Cormorant_Garamond, EB_Garamond, Libre_Franklin } from 'next/font/google'
 import { SessionProvider } from 'next-auth/react'
 import { ThemeProvider } from '@/components/theme-provider'
-import { organizationNode, authorNode } from '@/lib/seo/entities'
+import { organizationNode, authorNode, websiteNode } from '@/lib/seo/entities'
 import { JsonLd } from '@/components/seo/json-ld'
 import { Analytics } from '@vercel/analytics/next'
 import { SpeedInsights } from "@vercel/speed-insights/next"
@@ -57,11 +57,13 @@ export const metadata: Metadata = {
   },
 }
 /**
- * Полные узлы Organization и Person отдаются ровно один раз — из layout.
+ * Полные узлы Organization, Person и WebSite отдаются ровно один раз — из layout.
  * Остальные страницы ссылаются на них по `@id`, поэтому Google склеивает
- * издательство и автора в одну сущность вместо безымянной копии на страницу.
+ * издательство, автора и сайт в одну сущность вместо безымянной копии на страницу.
+ * WebSite в layout также гарантирует, что `isPartOf`/`publisher`-ссылки на него
+ * резолвятся в одном `@graph` с Organization/Person на любой странице.
  */
-const siteSchemas = [organizationNode(), authorNode()]
+const siteSchemas = [organizationNode(), authorNode(), websiteNode()]
 
 export default function RootLayout({
   children,

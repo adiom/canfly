@@ -15,7 +15,7 @@
 | `lib/seo/og-shared.tsx` | Вёрстка OG-картинок: `ogResponse()`, `ogLayout()`, `ogFallback()`, `ogClamp()`. |
 | `lib/seo/og-fonts.ts` | Чтение `.ttf` из `assets/og/` с кэшем на уровне модуля. |
 | `components/seo/json-ld.tsx` | `<JsonLd schemas={[...]} />` — один `<script>` с `@graph`. Все узлы страницы в одном графе, чтобы `{ '@id': ... }` резолвились. |
-| `app/layout.tsx` | Отдаёт полные узлы `Organization` и `Person` (автор) **ровно один раз**. Остальные страницы ссылаются по `@id`. |
+| `app/layout.tsx` | Отдаёт полные узлы `Organization`, `Person` (автор) и `WebSite` **ровно один раз**. Остальные страницы ссылаются по `@id`. |
 | `app/robots.ts` | Правила индексации (см. матрицу ниже). |
 | `app/sitemap.ts` | Карта сайта: корень, каталог, новости, персонажи, серии, цвета, `/vvvvv`, все релизы, все издания (на `/vvvvv/[slug]`), все публичные персонажи, все серии. |
 
@@ -27,7 +27,7 @@
 
 ```
 ${BASE_URL}/#organization      — издательство (Organization)
-${BASE_URL}/#website           — сайт (WebSite, только на корне, с SearchAction)
+${BASE_URL}/#website           — сайт (WebSite, из layout, с SearchAction)
 ${BASE_URL}/#author            — Адиом Тимур (Person)
 ${BASE_URL}/release/{slug}#work        — произведение (CreativeWork)
 ${BASE_URL}/vvvvv/{slug}#edition       — издание (Book/ComicIssue/Audiobook/…)
@@ -38,7 +38,7 @@ ${BASE_URL}/user/{handle}#person       — читатель (Person)
 ${BASE_URL}/highlight/{id}#quote       — цитата (Quotation)
 ```
 
-**Два `<script type="application/ld+json">` на странице — это норма:** один от `layout` (Organization + Person), один от самой страницы (через `<JsonLd>`). Больше двух означает, что кто-то вставил тег напрямую, минуя `<JsonLd>`.
+**Два и более `<script type="application/ld+json">` на странице — это норма:** один от `layout` (Organization + Person + WebSite), один от самой страницы (через `<JsonLd>`), третий — от `Breadcrumbs` (`BreadcrumbList`, тоже через `<JsonLd>`). Вставка тега напрямую в JSX, минуя `<JsonLd>`, ломает склейку `@id` и XSS-экранирование.
 
 ---
 
