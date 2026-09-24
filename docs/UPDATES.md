@@ -2,6 +2,47 @@
 
 ---
 
+## [24 сентября 2026] Studio: навигация «предыдущая/следующая глава» в редакторе
+
+### Что изменено
+
+- **Шапка редактора главы** (`components/studio/chapter-editor-page.tsx`):
+  рядом с переключателем HTML/WYSIWYG и кнопкой «Версии» появились две
+  стрелки — быстрый переход к соседним главам издания без возврата в
+  оглавление. Стрелка без соседа остаётся на месте, но выключена, поэтому
+  ширина шапки не скачет; в подсказке — название соседней главы.
+- **`fetchChapterNeighbors`** (`lib/server/chapters.ts`) одним оконным
+  запросом (`LAG`/`LEAD`) отдаёт id и заголовки соседей по `chapter_index`
+  внутри издания. Порядок берётся из индекса, а не из `created_at`: главы
+  переставляются вручную в Studio.
+- **`getChapterNeighbors`** (`lib/actions/studio.ts`) оборачивает запрос
+  гвардом `requireEditionOwnership` — навигация доступна только владельцу
+  релиза или админу.
+- **`key={chapterId}` на `ChapterEditorPage`** в
+  `app/studio/editions/[id]/chapters/[chapterId]/page.tsx`: переход по
+  стрелке — это soft navigation, и без ключа React переиспользовал бы
+  состояние, а Tiptap остался бы с текстом предыдущей главы. Автосейв тогда
+  записал бы чужой текст в открытую главу.
+- **E2E**: `e2e/studio.spec.ts`, блок `smoke: chapter nav` — релиз, книга и
+  три главы создаются напрямую в БД, тест проверяет выключенные стрелки на
+  краях, переходы вперёд/назад и что заголовок редактора меняется вместе с
+  адресом.
+
+### Как использовать
+
+- Studio → издание → глава: стрелки `‹` и `›` в шапке переключают главы по
+  порядку издания; наведение показывает название соседней главы.
+
+### Проверка
+
+- `pnpm exec tsc --noEmit`
+- `pnpm exec eslint components/studio/chapter-editor-page.tsx lib/server/chapters.ts lib/actions/studio.ts "app/studio/editions/[id]/chapters/[chapterId]/page.tsx"`
+- новый блок e2e (папка `e2e/` вне ESLint) запускается командой
+  `pnpm exec playwright test e2e/studio.spec.ts --grep "chapter nav" --workers=1`
+  — нужны `DATABASE_URL` и dev-сервер.
+
+---
+
 ## [24 сентября 2026] Studio: черновик новости падал с 500 из-за обязательного slug
 
 ### Что изменено

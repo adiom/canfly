@@ -303,6 +303,19 @@ export async function getChapter(id: string) {
   return chaptersDb.fetchChapterById(id)
 }
 
+/**
+ * Соседние главы по порядку для навигации в редакторе. Гвард — по изданию:
+ * сама глава уже проверена `getChapter`.
+ */
+export async function getChapterNeighbors(editionId: string, chapterId: string) {
+  await requireEditionOwnership(editionId)
+  const row = await chaptersDb.fetchChapterNeighbors(editionId, chapterId)
+  return {
+    prev: row?.prev_id ? { id: row.prev_id, title: row.prev_title ?? '' } : null,
+    next: row?.next_id ? { id: row.next_id, title: row.next_title ?? '' } : null,
+  }
+}
+
 export async function createChapterAction(formData: FormData) {
   const data = validateForm(chapterFormSchema, formData)
   await requireEditionOwnership(data.edition_id)

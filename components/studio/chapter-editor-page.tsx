@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { isRedirectError } from 'next/dist/client/components/redirect-error'
 import Link from 'next/link'
@@ -29,9 +29,41 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
-import { ArrowLeft, Globe, Trash2, Check, Loader2, AlertCircle, Code2 } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Globe, Trash2, Check, Loader2, AlertCircle, Code2 } from 'lucide-react'
 
 const audioFormats = new Set<EditionFormat>(['audiobook', 'audiorelease', 'album'])
+
+type ChapterNavTarget = { id: string; title: string }
+
+/** Стрелка «предыдущая/следующая глава»: без соседа кнопка остаётся, но неактивна. */
+function ChapterNavButton({
+  target,
+  editionId,
+  label,
+  children,
+}: {
+  target: ChapterNavTarget | null
+  editionId: string
+  label: string
+  children: ReactNode
+}) {
+  if (!target) {
+    return (
+      <Button variant="ghost" size="icon-sm" disabled aria-label={label} title={label} className="rounded-xl text-cf-text-4 disabled:opacity-40">
+        {children}
+      </Button>
+    )
+  }
+
+  const title = `${label}: ${target.title}`
+  return (
+    <Button asChild variant="ghost" size="icon-sm" className="rounded-xl text-cf-text-3 hover:text-cf-accent hover:bg-cf-accent/10">
+      <Link href={`/studio/editions/${editionId}/chapters/${target.id}`} aria-label={title} title={title}>
+        {children}
+      </Link>
+    </Button>
+  )
+}
 
 function parseComicPages(content: string | null): string[] {
   if (!content) return []
@@ -42,7 +74,19 @@ function parseComicPages(content: string | null): string[] {
   return []
 }
 
-export function ChapterEditorPage({ chapter, editionId, editionFormat }: { chapter: Chapter; editionId: string; editionFormat: EditionFormat }) {
+export function ChapterEditorPage({
+  chapter,
+  editionId,
+  editionFormat,
+  prevChapter,
+  nextChapter,
+}: {
+  chapter: Chapter
+  editionId: string
+  editionFormat: EditionFormat
+  prevChapter: ChapterNavTarget | null
+  nextChapter: ChapterNavTarget | null
+}) {
   const router = useRouter()
   const isAudioEditor = audioFormats.has(editionFormat)
   const isComic = editionFormat === 'comic'
@@ -183,6 +227,17 @@ export function ChapterEditorPage({ chapter, editionId, editionFormat }: { chapt
               {saveStatus === 'error' && ' Ошибка'}
             </span>
           </div>
+
+          {(prevChapter || nextChapter) && (
+            <div className="flex items-center gap-1">
+              <ChapterNavButton target={prevChapter} editionId={editionId} label="Предыдущая глава">
+                <ChevronLeft className="h-4 w-4" />
+              </ChapterNavButton>
+              <ChapterNavButton target={nextChapter} editionId={editionId} label="Следующая глава">
+                <ChevronRight className="h-4 w-4" />
+              </ChapterNavButton>
+            </div>
+          )}
 
           {!isAudioEditor && !isComic && (
             <Button

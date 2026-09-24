@@ -233,6 +233,110 @@ test.describe('smoke: studio news draft', () => {
   })
 })
 
+test.describe('smoke: chapter nav (стрелки между главами)', () => {
+  test.skip(
+    !CREDENTIALS,
+    'Test admin не создан — DATABASE_URL не настроен или globalSetup упал',
+  )
+
+  let credentials: TestCredentials
+  let releaseId = ''
+  let editionId = ''
+  const chapters: { id: string; title: string }[] = []
+
+  // Данные создаются напрямую в БД: релиз-черновик админа, одна книга и три
+  // главы. Через UI это стоило бы десяток шагов и не относилось к навигации.
+  test.beforeAll(async () => {
+    credentials = CREDENTIALS!
+
+    const created = await withDb(async (client) => {
+      const stamp = Date.now()
+      const release = await client.query<{ id: string }>(
+        `INSERT INTO releases (title, slug, status)
+         VALUES ($1, $2, 'draft') RETURNING id`,
+        ['E2E навигация по главам', `e2e-chapter-nav-release-${stamp}`],
+      )
+      const edition = await client.query<{ id: string }>(
+        `INSERT INTO editions (release_id, format, slug, status)
+         VALUES ($1, 'book', $2, 'draft') RETURNING id`,
+        [release.rows[0].id, `e2e-chapter-nav-edition-${stamp}`],
+      )
+
+      const titles = ['Глава первая', 'Глава вторая', 'Глава третья']
+      const inserted = await client.query<{ id: string; title: string }>(
+        `INSERT INTO chapters (edition_id, title, chapter_index)
+         SELECT $1, title, ordinality
+         FROM unnest($2::text[]) WITH ORDINALITY AS t(title, ordinality)
+         RETURNING id, title`,
+        [edition.rows[0].id, titles],
+      )
+
+      return {
+        releaseId: release.rows[0].id,
+        editionId: edition.rows[0].id,
+        // ORDER BY в INSERT … RETURNING не гарантирован — раскладываем по title.
+        chapters: titles.map((title) => ({
+          id: inserted.rows.find((row) => row.title === title)!.id,
+          title,
+        })),
+      }
+    })
+
+    releaseId = created?.releaseId ?? ''
+    editionId = created?.editionId ?? ''
+    chapters.push(...(created?.chapters ?? []))
+  })
+
+  test.afterAll(async () => {
+    await withDb(async (client) => {
+      if (releaseId) {
+        // Издания и главы уезжают каскадом по FK.
+        await client.query('DELETE FROM releases WHERE id = $1', [releaseId])
+      }
+      await client.query('DELETE FROM magic_tokens WHERE email = $1', [credentials.email])
+    })
+  })
+
+  test('переход вперёд/назад не подменяет контент главы', async ({ page }) => {
+    test.setTimeout(120_000)
+    const errors = attachErrorCollectors(page)
+    await loginTestAdminByMagicLink(page, credentials)
+
+    const chapterUrl = (index: number) => `/studio/editions/${editionId}/chapters/${chapters[index].id}`
+    const titleInput = page.locator('input[placeholder="Заголовок главы"]')
+    const prevArrow = () => page.locator('[aria-label^="Предыдущая глава"]')
+    const nextArrow = () => page.locator('[aria-label^="Следующая глава"]')
+    const urlPattern = (index: number) => new RegExp(`${chapterUrl(index)}$`)
+
+    await page.goto(chapterUrl(0), { waitUntil: 'domcontentloaded' })
+    await expect(titleInput).toHaveValue(chapters[0].title, { timeout: 30_000 })
+
+    // У первой главы назад идти некуда: стрелка на месте, но выключена.
+    await expect(page.locator('button[aria-label^="Предыдущая глава"][disabled]')).toBeVisible()
+    await expect(nextArrow()).toHaveAttribute('href', chapterUrl(1))
+    // Соседи стоят рядом с кнопками формата и версий.
+    await expect(page.getByRole('button', { name: 'HTML', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Версии' })).toBeVisible()
+
+    await nextArrow().click()
+    await expect(page).toHaveURL(urlPattern(1), { timeout: 30_000 })
+    // Ключ `key` на редакторе обязателен: без него состояние Tiptap
+    // осталось бы от предыдущей главы и автосейв затёр бы чужой текст.
+    await expect(titleInput).toHaveValue(chapters[1].title, { timeout: 30_000 })
+
+    await nextArrow().click()
+    await expect(page).toHaveURL(urlPattern(2), { timeout: 30_000 })
+    await expect(titleInput).toHaveValue(chapters[2].title, { timeout: 30_000 })
+    await expect(page.locator('button[aria-label^="Следующая глава"][disabled]')).toBeVisible()
+
+    await prevArrow().click()
+    await expect(page).toHaveURL(urlPattern(1), { timeout: 30_000 })
+    await expect(titleInput).toHaveValue(chapters[1].title, { timeout: 30_000 })
+
+    expect(errors, `runtime errors:\n${errors.join('\n')}`).toEqual([])
+  })
+})
+
 test.describe('smoke: edition markdown', () => {
   test('published edition markdown endpoint returns text', async ({ page }) => {
     await page.goto('/releases', { waitUntil: 'domcontentloaded' })

@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation'
-import { getChapter } from '@/lib/actions/studio'
+import { getChapter, getChapterNeighbors } from '@/lib/actions/studio'
 import { fetchEditionById } from '@/lib/server/editions'
 import { ChapterEditorPage } from '@/components/studio/chapter-editor-page'
 
@@ -16,5 +16,16 @@ export default async function ChapterEditPage({
   const edition = await fetchEditionById(editionId)
   if (!edition) notFound()
 
-  return <ChapterEditorPage chapter={chapter} editionId={editionId} editionFormat={edition.format} />
+  const neighbors = await getChapterNeighbors(editionId, chapterId)
+
+  return (
+    <ChapterEditorPage
+      key={chapterId}
+      chapter={chapter}
+      editionId={editionId}
+      editionFormat={edition.format}
+      prevChapter={neighbors.prev}
+      nextChapter={neighbors.next}
+    />
+  )
 }

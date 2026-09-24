@@ -77,6 +77,35 @@ export async function fetchChapterByEditionAndIndex(editionId: string, chapterIn
   return row ? withSafeContent(row) : row
 }
 
+/**
+ * Соседи главы по порядку `chapter_index` — для кнопок «предыдущая/следующая»
+ * в редакторе. Ориентир — индекс, а не `created_at`: порядок глав задаётся
+ * вручную в Studio. Одно окно закрывает обе стороны сразу, `id` в сортировке
+ * нужен как детерминированный тайбрейкер при совпадающих индексах.
+ */
+export async function fetchChapterNeighbors(editionId: string, chapterId: string) {
+  return dbQueryOne<{
+    prev_id: string | null
+    prev_title: string | null
+    next_id: string | null
+    next_title: string | null
+  }>(
+    `SELECT prev_id, prev_title, next_id, next_title
+     FROM (
+       SELECT id, title,
+         LAG(id) OVER w AS prev_id,
+         LAG(title) OVER w AS prev_title,
+         LEAD(id) OVER w AS next_id,
+         LEAD(title) OVER w AS next_title
+       FROM chapters
+       WHERE edition_id = $1
+       WINDOW w AS (ORDER BY chapter_index ASC, id ASC)
+     ) neighbors
+     WHERE id = $2`,
+    [editionId, chapterId],
+  )
+}
+
 export async function createChapter(data: Record<string, unknown>) {
   return dbQueryOne<Chapter>(
     `INSERT INTO chapters (
