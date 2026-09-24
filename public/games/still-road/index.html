@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>STILL ROAD — スティルロード — MVP</title>
+<script>
+/* app=1 включает desktop-режим (используется нативной обёрткой WKWebView) */
+if((location.search+location.hash).indexOf('app=1')>=0) document.documentElement.className='app';
+</script>
+<link rel="stylesheet" href="fonts/fonts.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="dev">
+    <div class="top">
+      <h1>STILL ROAD</h1>
+      <div class="jp">スティルロード · MVP · процедурная музыка · GBC 160×144</div>
+    </div>
+
+    <div class="screen">
+      <div id="boot">ЗАГРУЗКА ДОРОГИ...</div>
+      <canvas id="game" width="160" height="144"></canvas>
+    </div>
+
+    <div class="legend">
+      <div><b>МУЗЫКА:</b> 11 живых треков — у каждой локации свой, ночью всё звучит ниже и реже. Стартует после первого нажатия клавиши.</div>
+      <div><b>M</b> — звук вкл/выкл</div>
+    </div>
+    <div class="keys">
+      <span>← ↑ ↓ → / WASD — идти</span><span>Z / ENTER — говорить, выбирать</span>
+      <span>X / SHIFT — меню</span><span>T — время суток</span><span>M — музыка и звук</span>
+      <span>СТОЯТЬ 3 сек — тихое событие</span>
+    </div>
+
+    <div class="pad">
+      <div class="dpad">
+        <button class="u" data-k="up">▲</button>
+        <button class="l" data-k="left">◀</button>
+        <button class="r" data-k="right">▶</button>
+        <button class="d" data-k="down">▼</button>
+      </div>
+      <div class="ab">
+        <button data-k="b">B</button>
+        <button data-k="a">A</button>
+      </div>
+    </div>
+    <div class="sysrow">
+      <button data-k="t">ВРЕМЯ (T)</button>
+      <button data-k="m">ЗВУК (M)</button>
+    </div>
+
+    <div class="foot">
+      Маршрут: город → поле (2 экрана) → лес → пещера / мост → Рейн.<br>
+      В меню: ДНЕВНИК · ПРЕДМЕТЫ · ДРУЗЬЯ · СТАТУС · ВРЕМЯ · СПРАВКА · СОХРАНИТЬ. На титуле — ДОКУМЕНТАЦИЯ для GB Studio 4.0.
+    </div>
+  </div>
+  <script src="js/000-store.js"></script>
+  <script src="js/00-base.js"></script>
+  <script src="js/01-palettes.js"></script>
+  <script src="js/02-font.js"></script>
+  <script src="js/03-sfx.js"></script>
+  <script src="js/035-music.js"></script>
+  <script src="js/04-tiles.js"></script>
+  <script src="js/05-sprites.js"></script>
+  <script src="js/06-maps.js"></script>
+  <script src="js/07-state.js"></script>
+  <script src="js/17-npc.js"></script>
+  <script src="js/08-scenes.js"></script>
+  <script src="js/09-input.js"></script>
+  <script src="js/10-dialogue.js"></script>
+  <script src="js/11-time.js"></script>
+  <script src="js/12-fade.js"></script>
+  <script src="js/13-movement.js"></script>
+  <script src="js/14-memory.js"></script>
+  <script src="js/15-journal.js"></script>
+  <script src="js/16-still.js"></script>
+  <script src="js/18-save.js"></script>
+  <script src="js/19-battle.js"></script>
+  <script src="js/20-menu.js"></script>
+  <script src="js/21-world-render.js"></script>
+  <script src="js/22-title-docs.js"></script>
+  <script src="js/23-main-loop.js"></script>
+</body>
+</html>
+

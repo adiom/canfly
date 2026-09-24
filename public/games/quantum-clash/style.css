@@ -1,0 +1,1583 @@
+/* ========================================
+   QUANTUM CLASH - Card Game Styles
+   Standard Model Quantum Physics Theme
+======================================== */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+:root {
+    /* Main colors */
+    --bg-deep: #0B0C10;
+    --bg-dark: #1F2833;
+    --bg-card: #2D3748;
+    --accent-cyan: #45A29E;
+    --accent-green: #66FCF1;
+    --accent-red: #FF2E63;
+    --accent-gold: #F08A5D;
+    --accent-purple: #A742F5;
+    --accent-silver: #EAEAEA;
+    --text-primary: #EAEAEA;
+    --text-secondary: #A0AEC0;
+    --border-glow: 0 0 10px rgba(102, 252, 241, 0.5);
+
+    /* Card family colors */
+    --quark-color: #FF2E63;
+    --lepton-color: #66FCF1;
+    --boson-color: #F08A5D;
+}
+
+body {
+    font-family: 'Roboto', sans-serif;
+    background: var(--bg-deep);
+    color: var(--text-primary);
+    min-height: 100vh;
+    overflow: hidden;
+    user-select: none;
+}
+
+#game-container {
+    width: 100vw;
+    height: 100vh;
+    position: relative;
+    background:
+        radial-gradient(ellipse at center, #1a1a2e 0%, #0B0C10 100%);
+}
+
+/* ========================================
+   LOADING SCREEN
+======================================== */
+
+#loading-screen {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #0B0C10 0%, #1F2833 50%, #0B0C10 100%);
+    z-index: 1000;
+}
+
+.loading-content {
+    text-align: center;
+}
+
+.game-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 4rem;
+    font-weight: 900;
+    background: linear-gradient(135deg, var(--accent-cyan), var(--accent-green));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    text-shadow: 0 0 30px rgba(102, 252, 241, 0.5);
+    margin-bottom: 0.5rem;
+    animation: titlePulse 2s ease-in-out infinite;
+}
+
+@keyframes titlePulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.02); }
+}
+
+.subtitle {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 1rem;
+    color: var(--text-secondary);
+    letter-spacing: 3px;
+    margin-bottom: 2rem;
+}
+
+.particle-container {
+    position: relative;
+    width: 200px;
+    height: 200px;
+    margin: 0 auto 2rem;
+}
+
+.particle {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--accent-cyan);
+    box-shadow: 0 0 20px var(--accent-cyan);
+    animation: particleOrbit 3s linear infinite;
+}
+
+.particle:nth-child(2) {
+    animation-delay: -1s;
+    background: var(--accent-red);
+    box-shadow: 0 0 20px var(--accent-red);
+}
+
+.particle:nth-child(3) {
+    animation-delay: -2s;
+    background: var(--accent-gold);
+    box-shadow: 0 0 20px var(--accent-gold);
+}
+
+@keyframes particleOrbit {
+    0% { transform: rotate(0deg) translateX(80px) rotate(0deg); }
+    100% { transform: rotate(360deg) translateX(80px) rotate(-360deg); }
+}
+
+.loading-bar {
+    width: 300px;
+    height: 4px;
+    background: var(--bg-dark);
+    border-radius: 2px;
+    margin: 0 auto 1rem;
+    overflow: hidden;
+}
+
+.loading-progress {
+    width: 0%;
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent-cyan), var(--accent-green));
+    border-radius: 2px;
+    animation: loading 2s ease-out forwards;
+}
+
+@keyframes loading {
+    0% { width: 0%; }
+    100% { width: 100%; }
+}
+
+.loading-text {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+/* ========================================
+   MENU SCREEN
+======================================== */
+
+#menu-screen {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(ellipse at center, #1a1a2e 0%, #0B0C10 100%);
+}
+
+.menu-content {
+    text-align: center;
+    position: relative;
+}
+
+.menu-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 3.5rem;
+    font-weight: 900;
+    background: linear-gradient(135deg, var(--accent-cyan), var(--accent-green));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 0.5rem;
+}
+
+.menu-subtitle {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 1rem;
+    color: var(--text-secondary);
+    margin-bottom: 3rem;
+    letter-spacing: 2px;
+}
+
+.menu-particles {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: -1;
+}
+
+.floating-particle {
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    background: var(--accent-cyan);
+    border-radius: 50%;
+    box-shadow: 0 0 15px var(--accent-cyan);
+    animation: float 6s ease-in-out infinite;
+    left: var(--x);
+    top: 40%;
+}
+
+@keyframes float {
+    0%, 100% { transform: translateY(0) scale(1); opacity: 0.5; }
+    50% { transform: translateY(-30px) scale(1.2); opacity: 1; }
+}
+
+.menu-btn {
+    display: block;
+    width: 280px;
+    padding: 1rem 2rem;
+    margin: 1rem auto;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 2px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-transform: uppercase;
+}
+
+.menu-btn.primary {
+    background: linear-gradient(135deg, var(--accent-cyan), var(--accent-green));
+    color: var(--bg-deep);
+    box-shadow: 0 0 20px rgba(102, 252, 241, 0.4);
+}
+
+.menu-btn.primary:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 0 30px rgba(102, 252, 241, 0.6);
+}
+
+.menu-btn.secondary {
+    background: transparent;
+    color: var(--accent-cyan);
+    border: 2px solid var(--accent-cyan);
+}
+
+.menu-btn.secondary:hover {
+    background: rgba(69, 162, 158, 0.1);
+    transform: translateY(-3px);
+}
+
+/* ========================================
+   RULES SCREEN
+======================================== */
+
+#rules-screen {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(11, 12, 16, 0.95);
+    z-index: 100;
+}
+
+.rules-content {
+    max-width: 600px;
+    padding: 2rem;
+    background: var(--bg-dark);
+    border-radius: 15px;
+    border: 1px solid var(--accent-cyan);
+    box-shadow: var(--border-glow);
+}
+
+.rules-content h2 {
+    font-family: 'Orbitron', sans-serif;
+    text-align: center;
+    color: var(--accent-cyan);
+    margin-bottom: 1.5rem;
+}
+
+.rule-section {
+    margin-bottom: 1.5rem;
+}
+
+.rule-section h3 {
+    color: var(--accent-green);
+    margin-bottom: 0.5rem;
+    font-size: 1.1rem;
+}
+
+.rule-section p {
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+.particle-types {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.type-badge {
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+.type-badge.quark {
+    background: rgba(255, 46, 99, 0.2);
+    color: var(--quark-color);
+    border: 1px solid var(--quark-color);
+}
+
+.type-badge.lepton {
+    background: rgba(102, 252, 241, 0.2);
+    color: var(--lepton-color);
+    border: 1px solid var(--lepton-color);
+}
+
+.type-badge.boson {
+    background: rgba(240, 138, 93, 0.2);
+    color: var(--boson-color);
+    border: 1px solid var(--boson-color);
+}
+
+/* ========================================
+   CARDS ENCYCLOPEDIA SCREEN
+======================================== */
+
+#cards-screen {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(11, 12, 16, 0.98);
+    z-index: 100;
+    padding: 1rem;
+}
+
+.cards-content {
+    max-width: 1200px;
+    width: 100%;
+    max-height: 95vh;
+    overflow-y: auto;
+}
+
+.cards-content h2 {
+    font-family: 'Orbitron', sans-serif;
+    text-align: center;
+    color: var(--accent-cyan);
+    margin-bottom: 0.5rem;
+    font-size: 2rem;
+}
+
+.cards-intro {
+    text-align: center;
+    color: var(--text-secondary);
+    margin-bottom: 1.5rem;
+    font-size: 0.95rem;
+}
+
+.cards-filter {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+}
+
+.filter-btn {
+    padding: 0.6rem 1.5rem;
+    background: transparent;
+    border: 2px solid var(--accent-cyan);
+    border-radius: 25px;
+    color: var(--accent-cyan);
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.filter-btn:hover {
+    background: rgba(69, 162, 158, 0.2);
+}
+
+.filter-btn.active {
+    background: var(--accent-cyan);
+    color: var(--bg-deep);
+}
+
+.cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.encyclopedia-card {
+    background: var(--bg-dark);
+    border-radius: 15px;
+    border: 2px solid;
+    overflow: hidden;
+    transition: all 0.3s ease;
+}
+
+.encyclopedia-card.quark {
+    border-color: var(--quark-color);
+}
+
+.encyclopedia-card.lepton {
+    border-color: var(--lepton-color);
+}
+
+.encyclopedia-card.boson {
+    border-color: var(--boson-color);
+}
+
+.encyclopedia-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+.encyclopedia-header {
+    display: flex;
+    align-items: center;
+    padding: 1rem;
+    gap: 1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.encyclopedia-icon {
+    width: 60px;
+    height: 60px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+}
+
+.quark .encyclopedia-icon {
+    background: rgba(255, 46, 99, 0.2);
+}
+
+.lepton .encyclopedia-icon {
+    background: rgba(102, 252, 241, 0.2);
+}
+
+.boson .encyclopedia-icon {
+    background: rgba(240, 138, 93, 0.2);
+}
+
+.encyclopedia-info {
+    flex: 1;
+}
+
+.encyclopedia-name {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+}
+
+.encyclopedia-family {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.encyclopedia-body {
+    padding: 1rem;
+}
+
+.encyclopedia-game-info {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.game-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.game-stat-label {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+}
+
+.game-stat-value {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 1.2rem;
+    font-weight: 700;
+}
+
+.game-stat-value.cost {
+    color: var(--accent-cyan);
+}
+
+.game-stat-value.attack {
+    color: var(--accent-gold);
+}
+
+.game-stat-value.health {
+    color: var(--accent-red);
+}
+
+.encyclopedia-description {
+    margin-bottom: 1rem;
+}
+
+.encyclopedia-game-desc {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.75rem;
+    font-style: italic;
+}
+
+.encyclopedia-real-info {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    padding: 0.75rem;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 8px;
+    border-left: 3px solid var(--accent-green);
+}
+
+.encyclopedia-real-info strong {
+    color: var(--accent-green);
+}
+
+.encyclopedia-facts {
+    margin-top: 0.75rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.encyclopedia-facts ul {
+    list-style: none;
+    padding: 0;
+    margin: 0.5rem 0 0 0;
+}
+
+.encyclopedia-facts li {
+    padding: 0.25rem 0;
+    padding-left: 1rem;
+    position: relative;
+}
+
+.encyclopedia-facts li::before {
+    content: '→';
+    position: absolute;
+    left: 0;
+    color: var(--accent-cyan);
+}
+
+.encyclopedia-card.absurd {
+    border-color: #9d4edd;
+    box-shadow: 0 0 20px rgba(157, 78, 221, 0.3);
+}
+
+.absurd .encyclopedia-icon {
+    background: rgba(157, 78, 221, 0.2);
+}
+
+/* ========================================
+   DEVELOPER CREDIT
+======================================== */
+
+.developer-credit {
+    font-family: 'Courier Prime', monospace;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    margin-bottom: 2rem;
+    letter-spacing: 2px;
+}
+
+.dev-name {
+    color: var(--accent-cyan);
+    font-weight: 700;
+    text-shadow: 0 0 10px var(--accent-cyan);
+    animation: devGlow 2s ease-in-out infinite;
+}
+
+@keyframes devGlow {
+    0%, 100% { text-shadow: 0 0 10px var(--accent-cyan); }
+    50% { text-shadow: 0 0 20px var(--accent-cyan), 0 0 30px var(--accent-green); }
+}
+
+/* ========================================
+   GLITCH TEXT EFFECT
+======================================== */
+
+.glitch-text {
+    position: relative;
+    color: var(--accent-cyan);
+}
+
+.glitch-text::before,
+.glitch-text::after {
+    content: attr(data-text);
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.glitch-text::before {
+    left: 2px;
+    text-shadow: -2px 0 var(--accent-red);
+    clip: rect(44px, 450px, 56px, 0);
+    animation: glitch-anim-1 5s infinite linear alternate-reverse;
+}
+
+.glitch-text::after {
+    left: -2px;
+    text-shadow: -2px 0 var(--accent-green);
+    clip: rect(44px, 450px, 56px, 0);
+    animation: glitch-anim-2 5s infinite linear alternate-reverse;
+}
+
+@keyframes glitch-anim-1 {
+    0% { clip: rect(20px, 9999px, 15px, 0); }
+    20% { clip: rect(50px, 9999px, 60px, 0); }
+    40% { clip: rect(80px, 9999px, 35px, 0); }
+    60% { clip: rect(10px, 9999px, 85px, 0); }
+    80% { clip: rect(45px, 9999px, 5px, 0); }
+    100% { clip: rect(70px, 9999px, 95px, 0); }
+}
+
+@keyframes glitch-anim-2 {
+    0% { clip: rect(65px, 9999px, 100px, 0); }
+    20% { clip: rect(15px, 9999px, 35px, 0); }
+    40% { clip: rect(90px, 9999px, 15px, 0); }
+    60% { clip: rect(5px, 9999px, 75px, 0); }
+    80% { clip: rect(35px, 9999px, 55px, 0); }
+    100% { clip: rect(25px, 9999px, 45px, 0); }
+}
+
+/* ========================================
+   ENTROPY METER
+======================================== */
+
+#entropy-container {
+    position: absolute;
+    top: 50%;
+    left: 20px;
+    transform: translateY(-50%);
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.entropy-label {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.7rem;
+    color: var(--accent-purple);
+    letter-spacing: 2px;
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    transform: rotate(180deg);
+}
+
+.entropy-bar {
+    width: 8px;
+    height: 200px;
+    background: rgba(157, 78, 221, 0.2);
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid rgba(157, 78, 221, 0.5);
+}
+
+.entropy-fill {
+    width: 100%;
+    height: 0%;
+    background: linear-gradient(180deg, #9d4edd, #e040fb, #ff6b6b);
+    border-radius: 4px;
+    transition: height 0.5s ease;
+    box-shadow: 0 0 10px rgba(157, 78, 221, 0.5);
+}
+
+.entropy-fill.critical {
+    animation: entropyPulse 0.5s ease-in-out infinite;
+}
+
+@keyframes entropyPulse {
+    0%, 100% { box-shadow: 0 0 10px rgba(255, 107, 107, 0.5); }
+    50% { box-shadow: 0 0 20px rgba(255, 107, 107, 0.8); }
+}
+
+#entropy-percent {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.8rem;
+    color: var(--accent-purple);
+}
+
+/* ========================================
+   TOAST MESSAGES
+======================================== */
+
+#toast-message {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 200;
+    pointer-events: none;
+}
+
+.toast {
+    background: rgba(31, 40, 51, 0.95);
+    border: 2px solid var(--accent-cyan);
+    border-radius: 10px;
+    padding: 1rem 1.5rem;
+    box-shadow: 0 0 30px rgba(69, 162, 158, 0.4);
+    animation: toastSlideIn 0.5s ease-out;
+}
+
+.toast.hidden {
+    display: none;
+}
+
+@keyframes toastSlideIn {
+    0% {
+        transform: translateY(-100px);
+        opacity: 0;
+    }
+    100% {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.toast-content {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.toast-icon {
+    font-size: 1.5rem;
+}
+
+.toast-text {
+    font-family: 'Roboto', sans-serif;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    max-width: 300px;
+}
+
+.toast.fact {
+    border-color: var(--accent-green);
+}
+
+.toast.warning {
+    border-color: var(--accent-red);
+}
+
+.toast.absurd {
+    border-color: var(--accent-purple);
+    animation: toastSlideIn 0.5s ease-out, toastShake 0.5s ease-in-out;
+}
+
+@keyframes toastShake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-10px); }
+    75% { transform: translateX(10px); }
+}
+
+/* ========================================
+   COLLAPSE SCREEN
+======================================== */
+
+#collapse-screen {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(157, 78, 221, 0.95);
+    z-index: 500;
+    animation: collapseFlash 0.5s ease-out;
+}
+
+@keyframes collapseFlash {
+    0% { background: white; }
+    100% { background: rgba(157, 78, 221, 0.95); }
+}
+
+.collapse-content {
+    text-align: center;
+    color: white;
+}
+
+.collapse-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 2.5rem;
+    font-weight: 900;
+    margin-bottom: 1rem;
+    text-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+    animation: collapseTitlePulse 0.5s ease-in-out infinite;
+}
+
+@keyframes collapseTitlePulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+}
+
+.collapse-description {
+    font-size: 1.2rem;
+    max-width: 600px;
+    line-height: 1.6;
+}
+
+/* ========================================
+   GAME SCREEN
+======================================== */
+
+#game-screen {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Opponent Area */
+#opponent-area {
+    height: 25%;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+#opponent-hero {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.hero-portrait {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 3px solid;
+    transition: all 0.3s ease;
+}
+
+.hero-portrait.opponent {
+    border-color: var(--accent-red);
+}
+
+.hero-portrait.player {
+    border-color: var(--accent-cyan);
+}
+
+.hero-portrait.targetable {
+    animation: targetPulse 1s ease-in-out infinite;
+    cursor: pointer;
+}
+
+@keyframes targetPulse {
+    0%, 100% { box-shadow: 0 0 10px currentColor; }
+    50% { box-shadow: 0 0 30px currentColor; }
+}
+
+.portrait-image {
+    width: 100%;
+    height: 100%;
+}
+
+.portrait-svg {
+    width: 100%;
+    height: 100%;
+}
+
+.hero-stats {
+    flex: 1;
+}
+
+.health-bar {
+    width: 150px;
+    height: 20px;
+    background: var(--bg-dark);
+    border-radius: 10px;
+    overflow: hidden;
+    position: relative;
+    border: 1px solid var(--text-secondary);
+}
+
+.health-fill {
+    height: 100%;
+    transition: width 0.5s ease;
+}
+
+.health-fill.player {
+    background: linear-gradient(90deg, var(--accent-cyan), var(--accent-green));
+}
+
+.health-fill.opponent {
+    background: linear-gradient(90deg, var(--accent-red), #ff6b6b);
+}
+
+.health-text {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: white;
+    text-shadow: 0 0 5px rgba(0, 0, 0, 0.8);
+}
+
+.mana-display {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: rgba(69, 162, 158, 0.2);
+    border-radius: 20px;
+    border: 1px solid var(--accent-cyan);
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.9rem;
+}
+
+.mana-icon {
+    color: var(--accent-cyan);
+    font-size: 1.2rem;
+}
+
+#opponent-mana {
+    margin-left: auto;
+}
+
+#player-mana {
+    margin-right: 1rem;
+}
+
+/* Hand Area */
+.hand-area {
+    display: flex;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 100px;
+    padding: 0.5rem;
+}
+
+#opponent-hand .card-back {
+    width: 70px;
+    height: 100px;
+    background: linear-gradient(135deg, #2D3748 0%, #1F2833 100%);
+    border-radius: 8px;
+    border: 2px solid var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#opponent-hand .card-back::after {
+    content: '⚛';
+    font-size: 1.5rem;
+    color: var(--text-secondary);
+}
+
+/* Battlefield */
+#battlefield {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 10px;
+    position: relative;
+}
+
+.play-area {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 1rem;
+    min-height: 140px;
+    padding: 1rem;
+}
+
+#ai-play-area {
+    border-bottom: 1px dashed rgba(255, 46, 99, 0.3);
+}
+
+#player-play-area {
+    border-top: 1px dashed rgba(102, 252, 241, 0.3);
+}
+
+.center-effect {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+}
+
+.effect-animation {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--accent-cyan), transparent);
+    animation: effectPulse 0.5s ease-out;
+}
+
+@keyframes effectPulse {
+    0% { transform: scale(0); opacity: 1; }
+    100% { transform: scale(3); opacity: 0; }
+}
+
+/* Player Area */
+#player-area {
+    height: 25%;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+#player-hero {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+}
+
+.end-turn-btn {
+    padding: 0.75rem 1.5rem;
+    background: linear-gradient(135deg, var(--accent-red), #ff6b6b);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-transform: uppercase;
+}
+
+.end-turn-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 0 20px rgba(255, 46, 99, 0.5);
+}
+
+.end-turn-btn:disabled {
+    background: var(--bg-dark);
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+/* ========================================
+   CARDS
+======================================== */
+
+.card {
+    width: 120px;
+    height: 170px;
+    background: var(--bg-card);
+    border-radius: 12px;
+    border: 2px solid;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.card.quark {
+    border-color: var(--quark-color);
+    box-shadow: 0 0 10px rgba(255, 46, 99, 0.3);
+}
+
+.card.lepton {
+    border-color: var(--lepton-color);
+    box-shadow: 0 0 10px rgba(102, 252, 241, 0.3);
+}
+
+.card.boson {
+    border-color: var(--boson-color);
+    box-shadow: 0 0 10px rgba(240, 138, 93, 0.3);
+}
+
+.card:hover {
+    transform: translateY(-10px) scale(1.05);
+    z-index: 100;
+}
+
+.card.in-hand {
+    position: relative;
+}
+
+.card.on-field {
+    width: 100px;
+    height: 140px;
+}
+
+.card.can-attack {
+    animation: canAttack 1s ease-in-out infinite;
+    cursor: crosshair;
+}
+
+@keyframes canAttack {
+    0%, 100% { box-shadow: 0 0 15px var(--accent-green); }
+    50% { box-shadow: 0 0 25px var(--accent-green); }
+}
+
+.card.targetable {
+    animation: targetablePulse 0.8s ease-in-out infinite;
+    cursor: pointer;
+}
+
+@keyframes targetablePulse {
+    0%, 100% { box-shadow: 0 0 15px var(--accent-red); }
+    50% { box-shadow: 0 0 30px var(--accent-red); }
+}
+
+.card.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.card.selected {
+    transform: translateY(-15px) scale(1.1);
+    box-shadow: 0 0 30px var(--accent-cyan);
+}
+
+.card-cost {
+    position: absolute;
+    top: 5px;
+    left: 5px;
+    width: 28px;
+    height: 28px;
+    background: linear-gradient(135deg, var(--accent-cyan), var(--accent-green));
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--bg-deep);
+}
+
+.card-image {
+    width: 100%;
+    height: 70px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 25px;
+    font-size: 2.5rem;
+}
+
+.card-name {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-align: center;
+    padding: 0.25rem;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.card-description {
+    font-size: 0.55rem;
+    text-align: center;
+    padding: 0.25rem 0.5rem;
+    color: var(--text-secondary);
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.card-stats {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.5rem;
+}
+
+.stat {
+    width: 35px;
+    height: 35px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 700;
+    font-size: 0.9rem;
+}
+
+.stat.attack {
+    background: linear-gradient(135deg, var(--accent-gold), #ffd93d);
+    color: var(--bg-deep);
+}
+
+.stat.health {
+    background: linear-gradient(135deg, var(--accent-red), #ff6b6b);
+    color: white;
+}
+
+.stat.damaged {
+    animation: damageShake 0.5s ease;
+}
+
+@keyframes damageShake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-5px) rotate(-5deg); }
+    75% { transform: translateX(5px) rotate(5deg); }
+}
+
+/* Card type indicator */
+.card-type {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+}
+
+.card.quark .card-type {
+    background: rgba(255, 46, 99, 0.3);
+    color: var(--quark-color);
+}
+
+.card.lepton .card-type {
+    background: rgba(102, 252, 241, 0.3);
+    color: var(--lepton-color);
+}
+
+.card.boson .card-type {
+    background: rgba(240, 138, 93, 0.3);
+    color: var(--boson-color);
+}
+
+/* ========================================
+   GAME HUD
+======================================== */
+
+#game-hud {
+    position: absolute;
+    top: 50%;
+    left: 20px;
+    transform: translateY(-50%);
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+#turn-indicator {
+    padding: 0.75rem 1.5rem;
+    background: var(--bg-dark);
+    border: 2px solid var(--accent-cyan);
+    border-radius: 8px;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--accent-cyan);
+    text-align: center;
+    box-shadow: var(--border-glow);
+}
+
+#game-log {
+    width: 200px;
+    height: 200px;
+    background: rgba(11, 12, 16, 0.9);
+    border: 1px solid var(--text-secondary);
+    border-radius: 8px;
+    padding: 0.5rem;
+    overflow-y: auto;
+}
+
+.log-content {
+    font-size: 0.7rem;
+}
+
+.log-entry {
+    padding: 0.25rem 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.log-entry.system {
+    color: var(--accent-cyan);
+}
+
+.log-entry.player {
+    color: var(--accent-green);
+}
+
+.log-entry.enemy {
+    color: var(--accent-red);
+}
+
+.log-entry.damage {
+    color: var(--accent-gold);
+}
+
+/* ========================================
+   END SCREEN
+======================================== */
+
+#end-screen {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(11, 12, 16, 0.95);
+    z-index: 100;
+}
+
+.end-content {
+    text-align: center;
+}
+
+.end-result h1 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 4rem;
+    font-weight: 900;
+    margin-bottom: 1rem;
+}
+
+.end-result.victory h1 {
+    background: linear-gradient(135deg, var(--accent-cyan), var(--accent-green));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.end-result.defeat h1 {
+    background: linear-gradient(135deg, var(--accent-red), #ff6b6b);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+#end-message {
+    font-size: 1.2rem;
+    color: var(--text-secondary);
+    margin-bottom: 2rem;
+}
+
+.end-stats {
+    margin-bottom: 2rem;
+    color: var(--text-secondary);
+}
+
+.end-stats p {
+    margin: 0.5rem 0;
+}
+
+/* ========================================
+   MODAL
+======================================== */
+
+.modal {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(11, 12, 16, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+}
+
+.modal-content {
+    background: var(--bg-dark);
+    padding: 2rem;
+    border-radius: 15px;
+    border: 2px solid var(--accent-cyan);
+    text-align: center;
+}
+
+.modal-content h3 {
+    font-family: 'Orbitron', sans-serif;
+    color: var(--accent-cyan);
+    margin-bottom: 1.5rem;
+}
+
+#target-options {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-bottom: 1.5rem;
+}
+
+/* ========================================
+   UTILITY CLASSES
+======================================== */
+
+.hidden {
+    display: none !important;
+}
+
+/* Drag and drop styles */
+.card.dragging {
+    opacity: 0.5;
+    transform: scale(1.1);
+}
+
+.drop-zone {
+    border: 2px dashed var(--accent-cyan);
+    background: rgba(69, 162, 158, 0.1);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+    width: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-deep);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--accent-cyan);
+    border-radius: 3px;
+}
+
+/* Damage number animation */
+.damage-number {
+    position: absolute;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 1.5rem;
+    font-weight: 900;
+    color: var(--accent-red);
+    text-shadow: 0 0 10px var(--accent-red);
+    animation: damageFloat 1s ease-out forwards;
+    pointer-events: none;
+    z-index: 1000;
+}
+
+@keyframes damageFloat {
+    0% {
+        transform: translateY(0) scale(1);
+        opacity: 1;
+    }
+    100% {
+        transform: translateY(-50px) scale(1.5);
+        opacity: 0;
+    }
+}
+
+/* Death animation */
+.card.dying {
+    animation: cardDeath 0.5s ease-out forwards;
+}
+
+@keyframes cardDeath {
+    0% {
+        transform: scale(1);
+        opacity: 1;
+    }
+    50% {
+        transform: scale(1.2) rotate(10deg);
+    }
+    100% {
+        transform: scale(0) rotate(180deg);
+        opacity: 0;
+    }
+}
+
+/* Spawn animation */
+.card.spawning {
+    animation: cardSpawn 0.5s ease-out;
+}
+
+@keyframes cardSpawn {
+    0% {
+        transform: scale(0) translateY(-50px);
+        opacity: 0;
+    }
+    100% {
+        transform: scale(1) translateY(0);
+        opacity: 1;
+    }
+}
+
+/* Attack animation */
+.card.attacking {
+    animation: cardAttack 0.3s ease-in-out;
+}
+
+@keyframes cardAttack {
+    0%, 100% { transform: translateX(0); }
+    50% { transform: translateX(30px); }
+}
+
+/* Hit animation */
+.card.hit {
+    animation: cardHit 0.3s ease-in-out;
+}
+
+@keyframes cardHit {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-10px); }
+    75% { transform: translateX(10px); }
+}
+
+/* Hero hit animation */
+.hero-portrait.hit {
+    animation: heroHit 0.5s ease-in-out;
+}
+
+@keyframes heroHit {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-20px); }
+    75% { transform: translateX(20px); }
+}
+
+/* Shake animation for game container */
+.shake {
+    animation: shake 0.5s ease-in-out;
+}
+
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-10px); }
+    75% { transform: translateX(10px); }
+}

@@ -28,6 +28,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Новости', href: '/news' },
   { label: 'Релизы', href: CATALOG_PATH },
   { label: 'Персонажи', href: '/characters' },
+  { label: 'Игры', href: '/games' },
   { label: 'Места', href: '/places' },
   { label: 'Цвета', href: '/colors' },
 ]

@@ -1,6 +1,7 @@
 import { notFound, permanentRedirect, redirect } from 'next/navigation'
 import Link from 'next/link'
 
+import { CharacterGamesSection } from '@/components/character-games-section'
 import { CharacterProfileHero } from '@/components/character-profile-hero'
 import { CharacterProfileSections } from '@/components/character-profile-sections'
 import { CharacterReleasesSection } from '@/components/character-releases-section'
@@ -14,6 +15,7 @@ import { listVisibleCharacterPosts } from '@/lib/server/character-posts'
 import { fetchWallPosts } from '@/lib/server/character-wall'
 import { fetchReleasesByCharacter } from '@/lib/server/releases'
 import { fetchSeriesByCharacter } from '@/lib/server/series'
+import { fetchGamesByCharacter } from '@/lib/server/games'
 import { fetchPlacesByCharacter } from '@/lib/server/places'
 import { getCurrentUser } from '@/lib/server/session'
 import { generateCharacterSchema } from '@/lib/seo/schema'
@@ -81,7 +83,7 @@ export default async function CharacterPage({ params, searchParams }: CharacterP
     redirect(`/characters/${slug}#${LEGACY_TAB_ANCHOR[tab]}`)
   }
 
-  const [stats, friends, posts, wall, currentUser, subjectReleases, subjectSeries, characterPlaces] = await Promise.all([
+  const [stats, friends, posts, wall, currentUser, subjectReleases, subjectSeries, characterPlaces, games] = await Promise.all([
     fetchCharacterStats(data.character.id),
     fetchCharacterFriends(data.character.id, 12),
     listVisibleCharacterPosts(data.character.slug),
@@ -90,6 +92,7 @@ export default async function CharacterPage({ params, searchParams }: CharacterP
     fetchReleasesByCharacter(data.character.id, { onlyPublished: true }),
     fetchSeriesByCharacter(data.character.id),
     fetchPlacesByCharacter(data.character.id),
+    fetchGamesByCharacter(data.character.id),
   ])
 
   const isAdmin = currentUser?.is_admin ?? false
@@ -141,6 +144,12 @@ export default async function CharacterPage({ params, searchParams }: CharacterP
       {subjectReleases.some((rel) => rel.role === 'main') ? (
         <div className="cf-rise-late mt-12">
           <CharacterReleasesSection releases={subjectReleases} />
+        </div>
+      ) : null}
+
+      {games.length > 0 ? (
+        <div className="cf-rise-late mt-16">
+          <CharacterGamesSection games={games} />
         </div>
       ) : null}
 

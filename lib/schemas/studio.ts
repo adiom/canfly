@@ -31,8 +31,8 @@ const requiredString = z
   .trim()
   .min(1, 'Поле обязательно')
 
-/** Slug: латиница/цифры/дефис. */
-const slugSchema = z
+/** Slug: латиница/цифры/дефис. Общий для всех Studio-сущностей (в т.ч. игр). */
+export const slugSchema = z
   .string()
   .trim()
   .min(1, 'Slug обязателен')

@@ -3,6 +3,7 @@ import { dbQuery } from '@/lib/db'
 import { fetchReleasesWithEditions } from '@/lib/server/releases'
 import { fetchNewsPosts } from '@/lib/server/news'
 import { fetchPublicCharactersList } from '@/lib/server/characters'
+import { fetchPublishedGames } from '@/lib/server/games'
 import { fetchPublicPlaces } from '@/lib/server/places'
 import { fetchAllSeries } from '@/lib/server/series'
 import { fetchPublishedEditionsForSitemap } from '@/lib/server/editions'
@@ -13,11 +14,12 @@ import { absoluteUrl } from '@/lib/seo/entities'
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const [releases, newsPosts, characters, places, series, editions, authorUsers] = await Promise.all([
+  const [releases, newsPosts, characters, places, games, series, editions, authorUsers] = await Promise.all([
     fetchReleasesWithEditions({ status: 'published' }),
     fetchNewsPosts(100),
     fetchPublicCharactersList(),
     fetchPublicPlaces(),
+    fetchPublishedGames(),
     fetchAllSeries(),
     fetchPublishedEditionsForSitemap(),
     dbQuery<{ handle: string; updated_at: string }>(
@@ -58,6 +60,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     changeFrequency: 'monthly' as const,
     priority: 0.6,
     images: place.avatar ? [place.avatar] : undefined,
+  }))
+
+  // Хаб `/games` намеренно без записи: он noindex, как и `/places`.
+  const gameEntries = games.map((game) => ({
+    url: `${BASE_URL}/games/${game.slug}`,
+    lastModified: new Date(game.updated_at),
+    changeFrequency: 'monthly' as const,
+    priority: 0.6,
+    images: game.cover_image ? [game.cover_image] : undefined,
   }))
 
   const seriesEntries = series.map((s) => ({
@@ -120,6 +131,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...newsEntries,
     ...characterEntries,
     ...placeEntries,
+    ...gameEntries,
     ...seriesEntries,
     ...authorEntries,
   ]

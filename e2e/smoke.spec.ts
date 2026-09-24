@@ -5,6 +5,7 @@ const PUBLIC_ROUTES = [
   '/home',
   '/releases',
   '/characters',
+  '/games',
   '/news',
   '/search',
   '/login',

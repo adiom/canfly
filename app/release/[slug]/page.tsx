@@ -5,6 +5,7 @@ import { fetchEditionsByRelease } from '@/lib/server/editions'
 import { fetchPublishedChapterListByEdition } from '@/lib/server/chapters'
 import { fetchSeriesById, fetchSeriesWithReleases } from '@/lib/server/series'
 import { fetchCharactersList } from '@/lib/server/characters'
+import { fetchGamesByRelease } from '@/lib/server/games'
 import { fetchPlacesByRelease } from '@/lib/server/places'
 import { fetchPublicHighlightsByRelease } from '@/lib/server/chapter-highlights'
 import { getReleaseViewer } from '@/lib/server/studio-auth'
@@ -88,12 +89,13 @@ export default async function ReleasePublicPage({ params }: { params: Promise<{ 
     meta = computeEditionMeta(await fetchPublishedChapterListByEdition(primaryEdition.id))
   }
 
-  const [releaseChars, allCharacters, seriesLinks, highlights, releasePlaces] = await Promise.all([
+  const [releaseChars, allCharacters, seriesLinks, highlights, releasePlaces, games] = await Promise.all([
     fetchReleaseCharacters(release.id),
     fetchCharactersList(),
     fetchReleaseSeries(release.id),
     fetchPublicHighlightsByRelease(release.id, 6),
     fetchPlacesByRelease(release.id),
+    fetchGamesByRelease(release.id),
   ])
 
   const characters = releaseChars
@@ -177,6 +179,7 @@ export default async function ReleasePublicPage({ params }: { params: Promise<{ 
         highlights={highlights}
         meta={meta}
         characters={characters}
+        games={games}
         otherSeriesReleases={otherSeriesReleases}
         breadcrumbs={breadcrumbItems}
         preview={preview}

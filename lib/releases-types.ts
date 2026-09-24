@@ -317,3 +317,41 @@ export interface ChapterEditorialNote {
   author_name?: string | null
   author_avatar?: string | null
 }
+
+// === Games ===
+
+/** Соотношение сторон окна игры на странице-обёртке. */
+export type GameAspectRatio = '16:9' | '4:3' | '1:1' | '9:16'
+
+/**
+ * Игра — статический бандл в `public/games/<slug>/` (точка входа `index.html`).
+ * В БД живут только метаданные и связи, сами файлы в canfly не собираются.
+ */
+export interface Game {
+  id: string
+  title: string
+  slug: string
+  tagline: string | null
+  description: string | null
+  cover_image: string | null
+  aspect_ratio: GameAspectRatio
+  display_order: number
+  is_published: boolean
+  created_at: string
+  updated_at: string
+}
+
+/** Связь игры с релизом — для блока «Игры» на странице релиза. */
+export interface ReleaseGame {
+  release_id: string
+  release_slug: string
+  release_title: string
+}
+
+/** Связь игры с персонажем — для чипов на странице игры. */
+export interface CharacterGame {
+  character_id: string
+  character_name: string
+  character_slug: string
+  character_avatar: string | null
+}

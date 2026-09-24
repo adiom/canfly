@@ -1,4 +1,4 @@
-import type { ChapterHighlight, Edition, Release, Series } from '@/lib/releases-types'
+import type { ChapterHighlight, Edition, Game, Release, Series } from '@/lib/releases-types'
 
 export type ReleaseMeta = {
   chapterCount: number
@@ -33,6 +33,7 @@ export type ReleasePagePublicProps = {
   highlights: ChapterHighlight[]
   meta: ReleaseMeta
   characters: ReleaseCharacter[]
+  games: Game[]
   otherSeriesReleases: OtherSeriesRelease[]
   /**
    * Режим предпросмотра для непубличных релизов. `null` — обычная публикация.

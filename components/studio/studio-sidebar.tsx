@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { BookOpen, Layers, Library, Home, PenTool, Users } from 'lucide-react'
+import { BookOpen, Gamepad2, Layers, Library, Home, PenTool, Users } from 'lucide-react'
 import type { SessionUser } from '@/lib/server/session'
 import {
   Sidebar,
@@ -26,6 +26,7 @@ const baseNav = [
 
 const passportNav = [
   { title: 'Персонажи', href: '/studio/characters', icon: Users },
+  { title: 'Игры', href: '/studio/games', icon: Gamepad2 },
 ]
 
 export function StudioSidebar({ user, isAdmin: _isAdmin = false, isAuthorOrAdmin = false }: { user: SessionUser; isAdmin?: boolean; isAuthorOrAdmin?: boolean }) {

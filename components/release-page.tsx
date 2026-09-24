@@ -5,6 +5,7 @@ import { SiteHeader } from '@/components/site-header'
 import { Breadcrumbs } from '@/components/breadcrumbs'
 import { CATALOG_PATH } from '@/lib/nav'
 import { ReleaseCharacters } from './release/release-characters'
+import { ReleaseGames } from './release/release-games'
 import { ReleaseHighlights } from './release/release-highlights'
 import { ReleaseHero } from './release/release-hero'
 import { ReleaseSeries } from './release/release-series'
@@ -49,6 +50,7 @@ export function ReleasePagePublic({
   highlights,
   meta,
   characters,
+  games,
   otherSeriesReleases,
   breadcrumbs,
   preview = null,
@@ -78,6 +80,8 @@ export function ReleasePagePublic({
       />
 
       {config.show_characters !== false && <ReleaseCharacters characters={characters} />}
+
+      <ReleaseGames games={games} />
 
       {config.show_series !== false && seriesLink && (
         <ReleaseSeries series={seriesLink.series} releases={otherSeriesReleases} />
