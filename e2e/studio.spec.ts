@@ -1,6 +1,9 @@
 import { test, expect, type Page } from '@playwright/test'
+import { randomBytes, randomInt } from 'node:crypto'
+import { Client } from 'pg'
 import { loadTestCredentials, type TestCredentials } from './setup/credentials'
 import { loginViaMagicLink } from './setup/login-helper'
+import { loadEnvLocal, pgConfig } from './setup/pg'
 
 const STUDIO_ROUTES = ['/studio', '/studio/characters'] as const
 
@@ -131,6 +134,102 @@ test.describe('smoke: studio routes (admin role)', () => {
     const downloadButton = page.locator('button').filter({ hasText: 'Скачать' })
     await expect(downloadButton).toBeVisible({ timeout: 5_000 })
     expect(errors, `runtime errors on full page:\n${errors.join('\n')}`).toEqual([])
+  })
+})
+
+async function withDb<T>(run: (client: Client) => Promise<T>): Promise<T | null> {
+  loadEnvLocal()
+  const url = process.env.DATABASE_URL
+  if (!url) return null
+
+  const client = new Client(pgConfig(url))
+  await client.connect()
+  try {
+    return await run(client)
+  } finally {
+    await client.end()
+  }
+}
+
+/**
+ * Вход тестового админа по magic-link токену из БД. UI-helper
+ * `loginViaMagicLink` ждёт код на экране, а в текущем логине dev-код в
+ * разметку не попадает — здесь ссылка подкладывается напрямую, без почты и
+ * лимита «3 письма за 15 минут».
+ */
+async function loginTestAdminByMagicLink(page: Page, credentials: TestCredentials) {
+  // Прогрев cookie: в свежем контексте параллельные /api/auth/session и
+  // /api/auth/csrf генерируют каждый свой токен и перезаписывают cookie друг
+  // друга — callback падает с MissingCSRF. После /login cookie уже валиден.
+  await page.goto('/login', { waitUntil: 'domcontentloaded' })
+  await page.waitForLoadState('networkidle').catch(() => {})
+
+  const linkToken = randomBytes(32).toString('hex')
+
+  await withDb((client) =>
+    client.query(
+      `INSERT INTO magic_tokens (token, link_token, email, expires_at)
+       VALUES ($1, $2, $3, NOW() + INTERVAL '15 minutes')`,
+      [String(randomInt(10_000_000, 100_000_000)), linkToken, credentials.email],
+    ),
+  )
+
+  await page.goto(`/hi/${linkToken}`, { waitUntil: 'domcontentloaded' })
+  await page.waitForURL('/profile', { timeout: 20_000 })
+}
+
+test.describe('smoke: studio news draft', () => {
+  test.skip(
+    !CREDENTIALS,
+    'Test admin не создан — DATABASE_URL не настроен или globalSetup упал',
+  )
+
+  let credentials: TestCredentials
+  const createdIds: string[] = []
+
+  test.beforeAll(() => {
+    credentials = CREDENTIALS!
+  })
+
+  test.beforeEach(async ({ page }) => {
+    await loginTestAdminByMagicLink(page, credentials)
+  })
+
+  // Черновики ссылаются на тестового админа, а globalTeardown удаляет юзера —
+  // без уборки teardown упал бы на FK.
+  test.afterAll(async () => {
+    await withDb(async (client) => {
+      if (createdIds.length > 0) {
+        await client.query('DELETE FROM news_posts WHERE id = ANY($1::uuid[])', [createdIds])
+      }
+      await client.query('DELETE FROM magic_tokens WHERE email = $1', [credentials.email])
+    })
+  })
+
+  test('POST /studio/new создаёт новость и slug из заголовка (регрессия: NOT NULL slug)', async ({ page }) => {
+    test.setTimeout(90_000)
+    const errors = attachErrorCollectors(page)
+    const uniqueTitle = `Тестовая новость ${Date.now()}`
+
+    await page.goto('/studio/new', { waitUntil: 'domcontentloaded' })
+    await page.locator('form').filter({ hasText: 'Новость' }).getByRole('button').click()
+
+    await page.waitForURL(/\/studio\/news\/[0-9a-f-]{36}$/, { timeout: 30_000 })
+    const newsId = page.url().split('/').pop()!
+    createdIds.push(newsId)
+
+    await page.locator('input[placeholder="Заголовок новости"]').fill(uniqueTitle)
+    await page.locator('input[placeholder="Заголовок новости"]').blur()
+    await expect(page.getByText('Сохранено', { exact: true }).first()).toBeVisible({ timeout: 25_000 })
+
+    const slug = await withDb((client) =>
+      client
+        .query<{ slug: string }>('SELECT slug FROM news_posts WHERE id = $1', [newsId])
+        .then((res) => res.rows[0]?.slug ?? null),
+    )
+
+    expect(slug, 'slug черновика должен следовать за заголовком').toMatch(/^testovaya-novost-\d+/)
+    expect(errors, `runtime errors:\n${errors.join('\n')}`).toEqual([])
   })
 })
 

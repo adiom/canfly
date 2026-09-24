@@ -43,19 +43,29 @@ export async function fetchNewsPostBySlug(slug: string) {
   return row ? withSafeContent(row) : row
 }
 
-/** Генерирует уникальный slug из title, проверяя коллизии в БД */
-async function generateUniqueNewsSlug(title: string): Promise<string> {
+const MAX_SLUG_ATTEMPTS = 50
+
+/**
+ * Генерирует уникальный slug из title, проверяя коллизии в БД.
+ * `excludeId` исключает текущую строку — иначе пересохранение черновика
+ * считало бы свой же slug занятым и наращивало суффиксы при каждом сохранении.
+ */
+export async function generateUniqueNewsSlug(title: string, excludeId?: string): Promise<string> {
   const base = generateSlug(title)
   const existing = await dbQuery<{ slug: string }>(
-    'SELECT slug FROM news_posts WHERE slug = $1 OR slug LIKE $2',
-    [base, `${base}-%`],
+    `SELECT slug FROM news_posts
+     WHERE (slug = $1 OR slug LIKE $2) AND ($3::uuid IS NULL OR id <> $3::uuid)`,
+    [base, `${base}-%`, excludeId ?? null],
   )
-  const slugs = existing.map(r => r.slug)
-  if (slugs.length === 0) return base
+  const used = new Set(existing.map(r => r.slug))
+  if (!used.has(base)) return base
 
-  let counter = 2
-  while (slugs.includes(`${base}-${counter}`)) counter++
-  return `${base}-${counter}`
+  for (let counter = 2; counter < MAX_SLUG_ATTEMPTS; counter++) {
+    const candidate = `${base}-${counter}`
+    if (!used.has(candidate)) return candidate
+  }
+
+  throw new Error(`Не удалось подобрать slug новости для «${base}»`)
 }
 
 export async function createNewsPost(data: Record<string, unknown>) {

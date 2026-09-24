@@ -3,6 +3,7 @@
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { dbQueryOne } from '@/lib/db'
+import { createNewsDraft } from '@/lib/server/news-studio'
 import { requireStudioSession } from '@/lib/server/studio-auth'
 import { generateSlug } from '@/lib/slug-utils'
 
@@ -22,7 +23,9 @@ export async function createDraftAction(formData: FormData) {
     return createReleaseDraft(session.user.id)
   }
   if (type === 'news') {
-    return createNewsDraft(session.user.id)
+    const news = await createNewsDraft(session.user.id)
+    revalidatePath('/studio/news')
+    redirect(`/studio/news/${news.id}`)
   }
   redirect('/studio/new')
 }
@@ -45,17 +48,4 @@ async function createReleaseDraft(userId: string) {
 
   revalidatePath('/studio')
   redirect(`/studio/releases/${release.id}`)
-}
-
-async function createNewsDraft(userId: string) {
-  const news = await dbQueryOne<{ id: string }>(
-    `INSERT INTO news_posts (title, section, content, status, author_user_id)
-     VALUES ('Без названия', 'dispatch', '', 'draft', $1)
-     RETURNING id`,
-    [userId],
-  )
-  if (!news) redirect('/studio/new')
-
-  revalidatePath('/studio/news')
-  redirect(`/studio/news/${news.id}`)
 }
