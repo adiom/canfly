@@ -19,6 +19,7 @@ const CATEGORY_PILLS: { label: string; value: CategoryValue }[] = [
   { label: 'Журналы', value: 'magazine' },
   { label: 'Альбомы', value: 'album' },
   { label: 'Цифровые', value: 'digital' },
+  { label: 'Картины', value: 'artwork' },
 ]
 
 interface ReleasesPageBookmateProps {

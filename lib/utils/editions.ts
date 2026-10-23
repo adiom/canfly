@@ -7,6 +7,7 @@ const FORMAT_PRIORITY: EditionFormat[] = [
   'audiobook',
   'audiorelease',
   'album',
+  'artwork',
   'digital',
 ]
 
@@ -57,6 +58,7 @@ export const EDITION_FORMAT_LABELS: Record<EditionFormat, string> = {
   audiorelease: 'Аудиорелиз',
   album: 'Альбом',
   digital: 'Цифровой релиз',
+  artwork: 'Картина',
 }
 
 export const QUALITY_TIER_LABELS: Record<QualityTier, string> = {

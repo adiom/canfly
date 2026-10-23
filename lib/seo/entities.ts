@@ -83,6 +83,7 @@ export const EDITION_SCHEMA_TYPES: Record<EditionFormat, EditionTypeSpec> = {
   audiorelease: { type: 'AudioObject' },
   album: { type: 'MusicAlbum' },
   digital: { type: 'DigitalDocument' },
+  artwork: { type: 'VisualArtwork' },
 }
 
 export function editionSchemaType(format: EditionFormat): EditionTypeSpec {

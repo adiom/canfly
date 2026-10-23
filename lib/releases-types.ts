@@ -1,6 +1,6 @@
 export type ReleaseStatus = 'draft' | 'published' | 'archived'
 export type EditionStatus = 'draft' | 'published' | 'archived'
-export type EditionFormat = 'book' | 'comic' | 'audiobook' | 'audiorelease' | 'album' | 'magazine' | 'digital'
+export type EditionFormat = 'book' | 'comic' | 'audiobook' | 'audiorelease' | 'album' | 'magazine' | 'digital' | 'artwork'
 export type QualityTier = 'draft' | 'standard' | 'premium'
 export type MediaType = 'trailer' | 'podcast' | 'review' | 'other'
 export type CollaboratorRole = 'owner' | 'editor' | 'viewer'
@@ -63,6 +63,7 @@ export interface Edition {
   id: string
   release_id: string
   format: EditionFormat
+  artwork_url: string | null
   platform: string | null
   external_url: string | null
   slug: string
@@ -80,6 +81,7 @@ export interface Edition {
 export interface EditionCreateInput {
   release_id: string
   format?: EditionFormat
+  artwork_url?: string | null
   platform?: string | null
   external_url?: string | null
   slug?: string

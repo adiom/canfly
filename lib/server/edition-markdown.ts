@@ -8,6 +8,7 @@ const EDITION_FORMAT_LABELS: Record<EditionFormat, string> = {
   album: 'альбом',
   magazine: 'журнал',
   digital: 'цифровой релиз',
+  artwork: 'картина',
 }
 
 function stripHtmlTags(html: string): string {

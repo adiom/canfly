@@ -13,6 +13,7 @@ const FORMAT_LABELS: Record<EditionFormat, string> = {
   album: 'Альбом',
   magazine: 'Журнал',
   digital: 'Цифровой релиз',
+  artwork: 'Картина',
 }
 
 function formatYear(date: string | null | undefined): string | null {

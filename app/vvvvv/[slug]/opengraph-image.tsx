@@ -28,7 +28,7 @@ export default async function Image({ params }: { params: Promise<{ slug: string
       kicker: [format, tier].filter(Boolean).join(' · '),
       title: release.title,
       note: ogClamp(release.annotation ?? release.description, 150),
-      image: release.cover_image,
+      image: edition.artwork_url ?? release.cover_image,
     })
   } catch {
     return ogFallback()

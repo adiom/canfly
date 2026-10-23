@@ -25,6 +25,7 @@ import {
   seriesFormSchema,
   releaseStatusSchema,
   editionStatusSchema,
+  artworkUrlSchema,
 } from '@/lib/schemas/studio'
 
 /** Безопасный парсинг enum-строки; возвращает значение или null. */
@@ -266,7 +267,9 @@ export async function createEditionAction(formData: FormData) {
 
   revalidatePath(`/studio/releases/${data.release_id}`)
   revalidatePath('/studio/editions')
-  if (edition) redirect(`/studio/editions/${edition.id}/setup`)
+  if (edition) {
+    redirect(data.format === 'artwork' ? `/studio/editions/${edition.id}` : `/studio/editions/${edition.id}/setup`)
+  }
 }
 
 
@@ -274,13 +277,35 @@ export async function updateEditionStatusAction(id: string, status: string) {
   await requireEditionOwnership(id)
   const parsed = editionStatusSchemaSafe(status)
   if (!parsed) throw new Error('Недопустимый статус издания')
-  await editionsDb.updateEditionStatus(id, parsed)
   const edition = await editionsDb.fetchEditionById(id)
-  if (edition) {
-    revalidatePath(`/studio/editions/${id}`)
-    revalidatePath('/studio/editions')
-    revalidatePath(`/studio/releases/${edition.release_id}`)
+  if (!edition) throw new Error('Издание не найдено')
+  if (parsed === 'published' && edition.format === 'artwork' && !edition.artwork_url) {
+    throw new Error('Сначала загрузите изображение картины')
   }
+  await editionsDb.updateEditionStatus(id, parsed)
+  revalidatePath(`/studio/editions/${id}`)
+  revalidatePath('/studio/editions')
+  revalidatePath(`/studio/releases/${edition.release_id}`)
+  const release = await releasesDb.fetchReleaseById(edition.release_id)
+  if (release) {
+    revalidatePath(`/release/${release.slug}`)
+    revalidatePath('/releases')
+  }
+}
+
+export async function updateArtworkImageAction(editionId: string, artworkUrl: string | null) {
+  await requireEditionOwnership(editionId)
+  const parsedUrl = artworkUrlSchema.safeParse(artworkUrl)
+  if (!parsedUrl.success) throw new Error('Некорректная ссылка на изображение')
+
+  const edition = await editionsDb.fetchEditionById(editionId)
+  if (!edition || edition.format !== 'artwork') throw new Error('Издание-картина не найдено')
+
+  await editionsDb.updateEdition(editionId, { artwork_url: parsedUrl.data })
+  revalidatePath(`/studio/editions/${editionId}`)
+  revalidatePath('/studio/editions')
+  revalidatePath(`/studio/releases/${edition.release_id}`)
+  revalidatePath(`/vvvvv/${edition.slug}`)
 }
 
 export async function deleteEditionAction(id: string, releaseId: string) {

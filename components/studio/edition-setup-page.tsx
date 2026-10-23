@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ArrowLeft, Save, BookOpen, Image, Headphones, Radio, Newspaper, Globe } from 'lucide-react'
+import { ArrowLeft, Save, BookOpen, Image, Headphones, Radio, Newspaper, Globe, Palette } from 'lucide-react'
 
 const formatLabels: Record<string, string> = {
   book: 'Книга',
@@ -27,6 +27,7 @@ const formatLabels: Record<string, string> = {
   audiorelease: 'Аудиорелиз',
   magazine: 'Журнал',
   digital: 'Цифровой релиз',
+  artwork: 'Картина',
 }
 
 const formatIcons: Record<string, React.ElementType> = {
@@ -36,6 +37,7 @@ const formatIcons: Record<string, React.ElementType> = {
   audiorelease: Radio,
   magazine: Newspaper,
   digital: Globe,
+  artwork: Palette,
 }
 
 interface SetupData {
@@ -156,7 +158,7 @@ export function EditionSetupPage({ data }: { data: SetupData }) {
           </Button>
           <Button onClick={handleSave} disabled={saving} className="rounded-xl bg-gradient-to-r from-violet-600 to-violet-500 text-white shadow-md shadow-violet-500/25 hover:from-violet-700 hover:to-violet-600">
             <Save className="mr-2 h-4 w-4" />
-            {saving ? 'Сохраняю...' : 'Сохранить и перейти к главам'}
+            {saving ? 'Сохраняю...' : edition.format === 'artwork' ? 'Сохранить и открыть издание' : 'Сохранить и перейти к главам'}
           </Button>
         </div>
       </div>

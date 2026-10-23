@@ -8,7 +8,7 @@ import type {
 } from '@/lib/releases-types'
 
 const editionColumns = `
-  id, release_id, format, platform, external_url,
+  id, release_id, format, platform, external_url, artwork_url,
   slug, status, is_primary, quality_tier, created_at, updated_at
 `
 
@@ -58,13 +58,14 @@ export async function fetchEditionByIdOrSlug(idOrSlug: string) {
  */
 export async function fetchPublishedEditionsForSitemap() {
   return dbQuery<Edition & { release_slug: string; release_updated_at: string }>(
-    `SELECT e.id, e.release_id, e.format, e.platform, e.external_url,
+    `SELECT e.id, e.release_id, e.format, e.platform, e.external_url, e.artwork_url,
             e.slug, e.status, e.is_primary, e.quality_tier, e.created_at, e.updated_at,
             r.slug AS release_slug, r.updated_at AS release_updated_at
      FROM editions e
      JOIN releases r ON r.id = e.release_id
      WHERE e.status = 'published' AND r.status = 'published'
        AND e.format <> 'digital'
+       AND (e.format <> 'artwork' OR e.artwork_url IS NOT NULL)
      ORDER BY r.slug ASC, e.created_at ASC`,
   )
 }
@@ -72,14 +73,14 @@ export async function fetchPublishedEditionsForSitemap() {
 // --- Сквозные списки для Studio ---
 
 const editionWithReleaseSelect = `
-  e.id, e.release_id, e.format, e.platform, e.external_url,
+  e.id, e.release_id, e.format, e.platform, e.external_url, e.artwork_url,
   e.slug, e.status, e.is_primary, e.quality_tier, e.created_at, e.updated_at,
   r.title AS release_title, r.slug AS release_slug, r.status AS release_status,
   (COUNT(c.id))::integer AS chapter_count
 `
 
 const editionWithReleaseGroupBy = `
-  GROUP BY e.id, e.release_id, e.format, e.platform, e.external_url,
+  GROUP BY e.id, e.release_id, e.format, e.platform, e.external_url, e.artwork_url,
            e.slug, e.status, e.is_primary, e.quality_tier, e.created_at, e.updated_at,
            r.title, r.slug, r.status
   ORDER BY e.updated_at DESC
@@ -149,8 +150,8 @@ export async function createEdition(data: EditionCreateInput) {
       : `${baseSlug}-${startIndex + attempt}`
 
     const inserted = await dbQueryOne<Edition>(
-      `INSERT INTO editions (release_id, format, platform, external_url, slug, status, is_primary, quality_tier)
-       VALUES ($1, $2::edition_format, $3, $4, $5, $6::edition_status, $7, $8)
+      `INSERT INTO editions (release_id, format, platform, external_url, artwork_url, slug, status, is_primary, quality_tier)
+       VALUES ($1, $2::edition_format, $3, $4, $5, $6, $7::edition_status, $8, $9)
        ON CONFLICT (slug) DO NOTHING
        RETURNING ${editionColumns}`,
       [
@@ -158,6 +159,7 @@ export async function createEdition(data: EditionCreateInput) {
         data.format ?? 'book',
         data.platform ?? null,
         data.external_url ?? null,
+        data.artwork_url ?? null,
         candidate,
         data.status ?? 'draft',
         data.is_primary ?? false,
@@ -206,6 +208,7 @@ const editionUpdatable: Record<string, UpdatableColumn> = {
   format: { column: 'format', cast: '::edition_format' },
   platform: { column: 'platform' },
   external_url: { column: 'external_url' },
+  artwork_url: { column: 'artwork_url' },
   slug: { column: 'slug' },
   status: { column: 'status', cast: '::edition_status' },
   is_primary: { column: 'is_primary' },

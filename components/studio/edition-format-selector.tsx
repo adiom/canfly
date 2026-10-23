@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { createEditionAction } from '@/lib/actions/studio'
 import { Button } from '@/components/ui/button'
 import {
-  BookOpen, Image, Headphones, Newspaper, Radio, Globe,
+  BookOpen, Image, Headphones, Newspaper, Radio, Globe, Palette,
   ArrowLeft,
 } from 'lucide-react'
 import Link from 'next/link'
@@ -18,6 +18,7 @@ const formats = [
   { value: 'audiorelease', label: 'Аудиорелиз', desc: 'Альбом, подкаст, аудио-сингл', icon: Radio, gradient: 'from-sky-200 to-sky-50' },
   { value: 'magazine', label: 'Журнал', desc: 'Статьи и материалы в сборнике', icon: Newspaper, gradient: 'from-orange-200 to-orange-50' },
   { value: 'digital', label: 'Цифровой релиз', desc: 'Книга на других площадках: Litres, Amazon и т.д.', icon: Globe, gradient: 'from-emerald-200 to-emerald-50' },
+  { value: 'artwork', label: 'Картина', desc: 'Одна самостоятельная художественная работа', icon: Palette, gradient: 'from-fuchsia-200 to-fuchsia-50' },
 ]
 
 const bookTiers = [

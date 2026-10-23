@@ -146,7 +146,7 @@ function editionExample(
     author: releaseAuthors(release),
     publisher: ref(ID.organization),
     potentialAction: {
-      '@type': isAudio ? 'ListenAction' : 'ReadAction',
+      '@type': isAudio ? 'ListenAction' : edition.format === 'artwork' ? 'ViewAction' : 'ReadAction',
       target: { '@type': 'EntryPoint', urlTemplate: url },
     },
   }
@@ -310,7 +310,7 @@ export function generateEditionSchema(opts: {
       stripHtml(release.annotation ?? release.description) || `«${release.title}» на canfly`,
       300,
     ),
-    image: imageObject(release.cover_image),
+    image: imageObject(edition.artwork_url ?? release.cover_image),
     url,
     mainEntityOfPage: { '@type': 'WebPage', '@id': url },
     inLanguage: 'ru-RU',
@@ -341,7 +341,7 @@ export function generateEditionSchema(opts: {
     ...(isAudio && { duration: toISO8601Duration(meta.durationSeconds) }),
     ...(hasPart.length > 0 && { hasPart }),
     potentialAction: {
-      '@type': isAudio ? 'ListenAction' : 'ReadAction',
+      '@type': isAudio ? 'ListenAction' : edition.format === 'artwork' ? 'ViewAction' : 'ReadAction',
       target: { '@type': 'EntryPoint', urlTemplate: url },
     },
   }

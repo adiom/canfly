@@ -11,10 +11,11 @@ import { SpreadReader } from '@/components/spread-reader'
 import type { ReaderUserRole } from '@/components/spread-reader'
 import { ReleaseComicReader } from '@/components/release-comic-reader'
 import { ReleaseAudioPlayer } from '@/components/release-audio-player'
+import { ArtworkViewer } from '@/components/artwork-viewer'
 import { JsonLd } from '@/components/seo/json-ld'
 import { Breadcrumbs } from '@/components/breadcrumbs'
 import { generateEditionSchema } from '@/lib/seo/schema'
-import { buildMetadata, notFoundMetadata } from '@/lib/seo/metadata'
+import { buildMetadata, notFoundMetadata, stripHtml } from '@/lib/seo/metadata'
 import { computeEditionMeta, EDITION_FORMAT_LABELS, isAudioFormat } from '@/lib/utils/editions'
 import { fetchSeriesById } from '@/lib/server/series'
 
@@ -56,7 +57,7 @@ export async function generateMetadata({
     generatedImage: true,
     // og:type `book` — только для читаемых форматов: у аудио нет ни автора-книги,
     // ни ISBN, которые ожидает эта разметка.
-    ogType: isAudioFormat(edition.format) ? 'website' : 'book',
+    ogType: isAudioFormat(edition.format) || edition.format === 'artwork' ? 'website' : 'book',
     publishedTime: release.release_date ?? edition.created_at,
     modifiedTime: edition.updated_at,
   })
@@ -71,14 +72,56 @@ export default async function VvvvvReaderPage({
   const edition = await loadEdition(slug)
   if (!edition || edition.status !== 'published') notFound()
 
-  // Релиз, главы и пользователь друг от друга не зависят — один круг вместо трёх.
-  const [release, chapters, user] = await Promise.all([
-    loadRelease(edition.release_id),
+  const release = await loadRelease(edition.release_id)
+  if (!release || release.status !== 'published') notFound()
+  if (edition.format === 'artwork') {
+    if (!edition.artwork_url) notFound()
+
+    const seriesLinks = await fetchReleaseSeries(release.id)
+    const series = seriesLinks.length > 0 ? await fetchSeriesById(seriesLinks[0].series_id) : null
+    const editionSlug = edition.slug || edition.id
+    const breadcrumbItems = series
+      ? [
+          { label: 'canfly', url: '/' },
+          { label: 'Серии', url: '/series' },
+          { label: series.title, url: `/series/${series.slug}` },
+          { label: release.title, url: `/release/${release.slug}` },
+          { label: 'Картина', url: `/vvvvv/${editionSlug}` },
+        ]
+      : [
+          { label: 'canfly', url: '/' },
+          { label: 'Релизы', url: '/releases' },
+          { label: release.title, url: `/release/${release.slug}` },
+          { label: 'Картина', url: `/vvvvv/${editionSlug}` },
+        ]
+    const jsonLd = generateEditionSchema({
+      edition,
+      release,
+      chapters: [],
+      meta: computeEditionMeta([]),
+      series: series ? { slug: series.slug, title: series.title } : null,
+    })
+
+    return (
+      <>
+        <JsonLd schemas={[jsonLd]} />
+        <div className="mx-auto max-w-6xl px-5 pt-4 md:px-8">
+          <Breadcrumbs items={breadcrumbItems} />
+        </div>
+        <ArtworkViewer
+          imageUrl={edition.artwork_url}
+          title={release.title}
+          description={stripHtml(release.annotation ?? release.description) || null}
+        />
+      </>
+    )
+  }
+
+  // Главы и пользователь нужны только обычным ридерам; картине они не требуются.
+  const [chapters, user] = await Promise.all([
     loadChapters(edition.id),
     getCurrentUser(),
   ])
-
-  if (!release || release.status !== 'published') notFound()
   if (chapters.length === 0) notFound()
 
   // Серия нужна только разметке (`isPartOf`), поэтому берётся отдельно и не

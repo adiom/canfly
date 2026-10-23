@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import type { Edition, Chapter } from '@/lib/releases-types'
 import { createChapterAction, deleteEditionAction, updateEditionStatusAction } from '@/lib/actions/studio'
 import { ChapterList } from '@/components/studio/chapter-list'
+import { ArtworkImageEditor } from '@/components/studio/artwork-image-editor'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -28,18 +29,21 @@ const formatLabels: Record<string, string> = {
   book: 'Книга', comic: 'Комикс', audiobook: 'Аудиокнига',
   audiorelease: 'Аудиорелиз', album: 'Альбом', magazine: 'Журнал',
   digital: 'Цифровой релиз',
+  artwork: 'Картина',
 }
 
 const chapterLabels: Record<string, string> = {
   book: 'Главы', comic: 'Главы', audiobook: 'Треки',
   audiorelease: 'Треки', album: 'Треки', magazine: 'Статьи',
   digital: 'Главы',
+  artwork: 'Изображение',
 }
 
 const addLabels: Record<string, string> = {
   book: 'Добавить главу', comic: 'Добавить главу', audiobook: 'Добавить трек',
   audiorelease: 'Добавить трек', album: 'Добавить трек', magazine: 'Добавить статью',
   digital: 'Добавить главу',
+  artwork: 'Добавить изображение',
 }
 
 const statusLabels: Record<string, string> = {
@@ -91,7 +95,7 @@ export function EditionPageClient({ edition, chapters }: { edition: Edition; cha
       router.refresh()
     } catch (error) {
       if (isRedirectError(error)) throw error
-      toast.error('Ошибка смены статуса')
+      toast.error(error instanceof Error ? error.message : 'Ошибка смены статуса')
     }
   }
 
@@ -113,9 +117,9 @@ export function EditionPageClient({ edition, chapters }: { edition: Edition; cha
         </Badge>
       </div>
 
-      <Tabs defaultValue={edition.format === 'digital' ? 'settings' : 'chapters'} className="space-y-6">
+      <Tabs defaultValue={edition.format === 'digital' || edition.format === 'artwork' ? 'settings' : 'chapters'} className="space-y-6">
         <TabsList className="bg-white/60 backdrop-blur-md border border-white/70 rounded-xl shadow-sm">
-          {edition.format !== 'digital' && (
+          {edition.format !== 'digital' && edition.format !== 'artwork' && (
             <TabsTrigger value="chapters" className="rounded-lg data-[state=active]:bg-violet-100/80 data-[state=active]:text-violet-700 data-[state=active]:shadow-sm text-gray-500">
               {chapterLabel} ({chapters.length})
             </TabsTrigger>
@@ -125,7 +129,7 @@ export function EditionPageClient({ edition, chapters }: { edition: Edition; cha
           </TabsTrigger>
         </TabsList>
 
-        {edition.format !== 'digital' && (
+        {edition.format !== 'digital' && edition.format !== 'artwork' && (
           <TabsContent value="chapters" className="space-y-6">
             <div className="bg-white/60 backdrop-blur-md border border-white/70 rounded-2xl shadow-sm shadow-black/5 p-5 md:p-6">
               <div className="flex items-center justify-between mb-4">
@@ -151,6 +155,9 @@ export function EditionPageClient({ edition, chapters }: { edition: Edition; cha
         )}
 
         <TabsContent value="settings" className="space-y-4">
+          {edition.format === 'artwork' && (
+            <ArtworkImageEditor editionId={edition.id} initialImageUrl={edition.artwork_url} />
+          )}
           {edition.format === 'digital' && (
             <div className="bg-white/60 backdrop-blur-md border border-white/70 rounded-2xl shadow-sm shadow-black/5 p-5 md:p-6">
               <div className="flex items-center gap-3">

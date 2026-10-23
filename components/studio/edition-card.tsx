@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import type { Edition } from '@/lib/releases-types'
 import { EDITION_FORMAT_LABELS, QUALITY_TIER_LABELS } from '@/lib/utils/editions'
-import { BookOpen, Globe, Headphones, Image, Music, Newspaper, Radio } from 'lucide-react'
+import { BookOpen, Globe, Headphones, Image, Music, Newspaper, Radio, Palette } from 'lucide-react'
 
 /** Иконки форматов — общие с разделом /studio/editions. */
 export const EDITION_FORMAT_ICONS: Record<string, React.ElementType> = {
@@ -14,6 +14,7 @@ export const EDITION_FORMAT_ICONS: Record<string, React.ElementType> = {
   album: Music,
   magazine: Newspaper,
   digital: Globe,
+  artwork: Palette,
 }
 
 export const EDITION_STATUS_STAMPS = {

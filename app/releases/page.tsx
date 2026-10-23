@@ -19,6 +19,7 @@ const VALID_CATEGORIES: (EditionFormat | 'all')[] = [
   'magazine',
   'album',
   'digital',
+  'artwork',
 ]
 
 const PAGE_SIZE = 24
@@ -71,6 +72,7 @@ export async function generateMetadata({
     magazine: ' · журналы',
     album: ' · альбомы',
     digital: ' · цифровые релизы',
+    artwork: ' · картины',
   }
   const categoryLabel = CATEGORY_LABELS[category]
 

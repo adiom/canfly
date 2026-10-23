@@ -22,6 +22,7 @@ const editionFormat = z.enum([
   'album',
   'magazine',
   'digital',
+  'artwork',
 ])
 
 /** Поля карточки релиза в списке — без annotation/editor_notes/design_config. */
@@ -172,7 +173,7 @@ export function registerReleasesTools(server: McpServer) {
     {
       title: 'Создать издание',
       description:
-        'Добавить формат (book/comic/audiobook/audiorelease/album/magazine/digital) к релизу. slug генерируется автоматически из слага релиза: {release-slug}-0, -1, -2…',
+        'Добавить формат (book/comic/audiobook/audiorelease/album/magazine/digital/artwork) к релизу. slug генерируется автоматически из слага релиза: {release-slug}-0, -1, -2…',
       inputSchema: z.object({
         release_id: uuid.describe('UUID релиза'),
         format: editionFormat.optional().describe('Формат (по умолчанию book)'),

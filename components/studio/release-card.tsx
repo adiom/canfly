@@ -15,6 +15,7 @@ const FORMAT_LABELS: Partial<Record<EditionFormat, string>> = {
   magazine: 'Журнал',
   album: 'Альбом',
   digital: 'Цифровой',
+  artwork: 'Картина',
 }
 
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {

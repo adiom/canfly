@@ -12,6 +12,7 @@ const FORMAT_LABEL: Record<EditionFormat, string> = {
   album: 'альбом',
   magazine: 'журнал',
   digital: 'цифровой релиз',
+  artwork: 'картина',
 }
 
 function getEventHref(event: {

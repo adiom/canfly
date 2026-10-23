@@ -13,9 +13,19 @@ import { z } from 'zod'
 
 export const releaseStatusSchema = z.enum(['draft', 'published', 'archived'])
 export const editionStatusSchema = z.enum(['draft', 'published', 'archived'])
-export const editionFormatSchema = z.enum(['book', 'comic', 'audiobook', 'audiorelease', 'album', 'magazine', 'digital'])
+export const editionFormatSchema = z.enum(['book', 'comic', 'audiobook', 'audiorelease', 'album', 'magazine', 'digital', 'artwork'])
 export const chapterStatusSchema = z.enum(['draft', 'published'])
 export const qualityTierSchema = z.enum(['draft', 'standard', 'premium'])
+export const artworkUrlSchema = z.union([
+  z.string().trim().url().max(2048).refine((value) => {
+    try {
+      return new URL(value).protocol === 'https:'
+    } catch {
+      return false
+    }
+  }, 'Ссылка на изображение должна использовать HTTPS'),
+  z.null(),
+])
 
 // --- Общие хелперы для FormData (значения приходят строкой или null) ---
 

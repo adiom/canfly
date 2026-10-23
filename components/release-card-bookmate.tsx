@@ -14,6 +14,7 @@ const FORMAT_LABELS: Partial<Record<EditionFormat, string>> = {
   audiorelease: 'Аудио',
   album: 'Альбом',
   magazine: 'Журнал',
+  artwork: 'Картина',
 }
 
 export function ReleaseCardBookmate({ release, priority = false }: ReleaseCardBookmateProps) {

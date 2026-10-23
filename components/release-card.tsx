@@ -10,6 +10,7 @@ const FORMAT_LABELS: Record<EditionFormat, string> = {
   album: 'Альбом',
   magazine: 'Журнал',
   digital: 'Цифровой релиз',
+  artwork: 'Картина',
 }
 
 interface ReleaseCardProps {
