@@ -103,15 +103,82 @@ const trustedEmailProviders = new Set(
     .filter(Boolean),
 )
 
+interface GitHubEmail {
+  email?: string
+  primary?: boolean
+  verified?: boolean
+}
+
 /**
- * Подтверждён ли адрес на стороне провайдера. Google и OIDC отдают
- * `email_verified`, а GitHub и Yandex — нет: `providers/github.js` берёт
- * primary-email игнорируя его `verified`, `providers/yandex.js` отдаёт
- * `default_email` вообще без признака подтверждения.
+ * GitHub не присылает `email_verified`: `/user` отдаёт публичный адрес, а
+ * встроенный провайдер подставляет primary из `/user/emails`, не проверяя
+ * флаг `verified`. Поэтому подтверждение спрашиваем у GitHub напрямую тем же
+ * access token'ом (scope `user:email` провайдер запрашивает сам).
  */
-function hasVerifiedEmail(provider: string, profile: unknown): boolean {
-  if (trustedEmailProviders.has(provider)) return true
+async function resolveVerifiedGitHubEmail(
+  accessToken: string,
+  claimedEmail: string | null | undefined,
+): Promise<string | null> {
+  try {
+    const response = await fetch('https://api.github.com/user/emails', {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/vnd.github+json',
+        'User-Agent': 'canfly',
+      },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(5000),
+    })
+
+    if (!response.ok) {
+      console.warn('[auth] github email verification failed', { status: response.status })
+      return null
+    }
+
+    const emails = await response.json() as GitHubEmail[]
+    if (!Array.isArray(emails)) return null
+
+    const verified = emails.filter(
+      (item): item is GitHubEmail & { email: string } =>
+        item.verified === true && typeof item.email === 'string',
+    )
+
+    const claimed = claimedEmail?.toLowerCase()
+    return (
+      verified.find(item => item.email.toLowerCase() === claimed)?.email ??
+      verified.find(item => item.primary)?.email ??
+      verified[0]?.email ??
+      null
+    )
+  } catch (error) {
+    console.warn('[auth] github email verification error', {
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return null
+  }
+}
+
+/**
+ * Адрес, владение которым подтвердил провайдер. Сливать с существующим
+ * аккаунтом можно только такой: иначе вход по чужому адресу отдавал бы чужой
+ * аккаунт целиком. Google и OIDC отдают `email_verified`; Yandex признак
+ * подтверждения не присылает вовсе.
+ */
+async function resolveVerifiedEmail(
+  provider: string,
+  profile: unknown,
+  userEmail: string | null | undefined,
+  account: { access_token?: string | null } | null | undefined,
+): Promise<string | null> {
+  if (trustedEmailProviders.has(provider)) return userEmail ?? null
+  if (provider === 'github') {
+    return account?.access_token
+      ? resolveVerifiedGitHubEmail(account.access_token, userEmail)
+      : null
+  }
   return (profile as { email_verified?: unknown } | null | undefined)?.email_verified === true
+    ? userEmail ?? null
+    : null
 }
 
 /**
@@ -321,8 +388,9 @@ export function createAuthConfig(request?: NextRequest): NextAuthConfig {
           }
 
           // Обычный OAuth-вход. Основной ключ — provider_account_id, а не email:
-          // GitHub и Yandex не отдают email_verified, поэтому вход по чужому
-          // (непроверенному) адресу иначе отдавал бы чужой аккаунт целиком.
+          // вход по чужому (непроверенному) адресу иначе отдавал бы чужой
+          // аккаунт целиком. У GitHub подтверждение адреса спрашиваем через API,
+          // у Yandex такого признака нет.
           // Twitter OAuth 2.0 может не отдать email вовсе — такой вход допустим:
           // пользователь создаётся без адреса и входит только этим провайдером.
           const existingLink = await dbQueryOne<{ user_id: string }>(
@@ -339,13 +407,24 @@ export function createAuthConfig(request?: NextRequest): NextAuthConfig {
               [existingLink.user_id],
             )
           } else {
+            // У GitHub нет claim'а о подтверждении адреса, поэтому спрашиваем
+            // список verified-адресов у API. Если подтверждён другой адрес
+            // (например, primary вместо публичного) — входим по нему.
+            const verifiedEmail = user.email
+              ? await resolveVerifiedEmail(provider, profile, user.email, account)
+              : null
+
+            if (verifiedEmail) {
+              user.email = verifiedEmail
+            }
+
             if (user.email) {
               const byEmail = await findUserByEmail(user.email)
 
-              if (byEmail && !hasVerifiedEmail(provider, profile)) {
-                // Аккаунт с таким адресом уже есть, а провайдер подтверждение
-                // не прислал. Привязать можно только осознанно — из настроек,
-                // уже будучи внутри аккаунта (ветка isLinking выше).
+              if (byEmail && !verifiedEmail) {
+                // Аккаунт с таким адресом уже есть, а провайдер владение им
+                // не подтвердил. Привязать можно только осознанно — из
+                // настроек, уже будучи внутри аккаунта (ветка isLinking выше).
                 console.warn('[auth] signIn rejected: unverified email would merge accounts', { provider })
                 return '/login?error=link_required'
               }
