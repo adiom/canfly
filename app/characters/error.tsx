@@ -1,6 +1,6 @@
 'use client'
 
-export default function CharactersError({ reset }: { reset: () => void }) {
+export default function CharactersError({ retry }: { retry: () => void }) {
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-3xl items-center justify-center px-6 py-24 text-center">
       <div>
@@ -11,7 +11,7 @@ export default function CharactersError({ reset }: { reset: () => void }) {
         </p>
         <button
           type="button"
-          onClick={reset}
+          onClick={retry}
           className="mt-8 rounded-full border border-cf-air-line px-5 py-3 text-[11px] uppercase tracking-[0.2em] text-cf-text-2 transition-colors hover:bg-cf-air-surface-2 hover:text-cf-text-heading"
         >
           Повторить

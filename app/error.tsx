@@ -4,10 +4,10 @@ import Link from 'next/link'
 
 interface ErrorProps {
   error: Error & { digest?: string }
-  reset: () => void
+  retry: () => void
 }
 
-export default function Error({ error, reset }: ErrorProps) {
+export default function Error({ error, retry }: ErrorProps) {
   return (
     <main className="min-h-screen bg-cf-bg text-cf-text-1 flex items-center justify-center px-4">
       <div className="w-full max-w-md">
@@ -41,7 +41,7 @@ export default function Error({ error, reset }: ErrorProps) {
             Обновить страницу
           </button>
           <button
-            onClick={reset}
+            onClick={retry}
             className="h-12 px-5 border border-cf-text-1/18 text-cf-text-1 font-bold uppercase text-sm tracking-[0.1em] hover:bg-cf-text-1/8 transition-colors"
           >
             Попробовать снова

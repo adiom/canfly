@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import Image from 'next/image'
 import { useRef, useEffect, useState } from 'react'
+import { readTextStream } from '@/lib/chat/read-text-stream'
 
 interface Message {
   id: string
@@ -96,34 +97,20 @@ export function CharacterChat({ characterSlug, characterName, characterAvatar }:
 
       if (!response.ok) throw new Error('Chat failed')
 
-      const reader = response.body?.getReader()
-      if (!reader) throw new Error('No response body')
-
-      const decoder = new TextDecoder()
+      if (!response.body) throw new Error('No response body')
       let assistantMessage = ''
-      const messageId = Date.now().toString()
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        const chunk = decoder.decode(value)
-        assistantMessage += chunk
-
+      const messageId = crypto.randomUUID()
+      const updateMessage = () => {
         setMessages((prev) => {
           const existing = prev.find((m) => m.id === messageId)
-          if (existing) {
-            return prev.map((m) => (m.id === messageId ? { ...m, content: assistantMessage } : m))
-          }
-          return [
-            ...prev,
-            {
-              id: messageId,
-              role: 'assistant',
-              content: assistantMessage,
-            },
-          ]
+          if (existing) return prev.map((m) => m.id === messageId ? { ...m, content: assistantMessage } : m)
+          return [...prev, { id: messageId, role: 'assistant', content: assistantMessage }]
         })
+      }
+
+      for await (const chunk of readTextStream(response.body)) {
+        assistantMessage += chunk
+        updateMessage()
       }
     } catch (error) {
       console.error('Chat error:', error)

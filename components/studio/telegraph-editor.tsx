@@ -1,13 +1,12 @@
 'use client'
 
-import { forwardRef, useCallback, useEffect, useRef, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useRef } from 'react'
 import { useEditor, EditorContent, type Editor } from '@tiptap/react'
 import { BubbleMenu } from '@tiptap/react/menus'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import TiptapLink from '@tiptap/extension-link'
 import TiptapImage from '@tiptap/extension-image'
-import { updateChapterAction } from '@/lib/actions/studio'
 import {
   Bold,
   Italic,
@@ -22,10 +21,9 @@ import {
 } from 'lucide-react'
 
 interface TelegraphEditorProps {
-  chapterId: string
   initialTitle: string
   initialContent: string | null
-  onSaveStatus?: (status: 'saving' | 'saved' | 'error') => void
+  onDraftChange: (patch: { title?: string; content?: string }) => void
   onContentUpdate?: () => void
   onEditorReady?: (editor: Editor) => void
 }
@@ -67,16 +65,13 @@ function BubbleDivider() {
 
 export const TelegraphEditor = forwardRef<HTMLDivElement, TelegraphEditorProps>(
   function TelegraphEditor(
-    { chapterId, initialTitle, initialContent, onSaveStatus, onContentUpdate, onEditorReady },
+    { initialTitle, initialContent, onDraftChange, onContentUpdate, onEditorReady },
     ref,
   ) {
-    const [title, setTitle] = useState(initialTitle)
-    const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const titleRef = useRef(initialTitle)
-    const lastSavedContent = useRef(initialContent ?? '')
     const containerRef = useRef<HTMLDivElement>(null)
 
     const editor = useEditor({
+      immediatelyRender: false,
       extensions: [
         StarterKit.configure({
           heading: { levels: [2, 3] },
@@ -100,43 +95,16 @@ export const TelegraphEditor = forwardRef<HTMLDivElement, TelegraphEditorProps>(
         },
       },
       onUpdate: ({ editor }) => {
-        scheduleSave(editor.getHTML())
+        onDraftChange({ content: editor.getHTML() })
         onContentUpdate?.()
       },
     })
 
-    const save = useCallback(
-      async (content: string, chapterTitle: string) => {
-        if (content === lastSavedContent.current && chapterTitle === titleRef.current) return
-        onSaveStatus?.('saving')
-        try {
-          await updateChapterAction(chapterId, { title: chapterTitle, content })
-          lastSavedContent.current = content
-          titleRef.current = chapterTitle
-          onSaveStatus?.('saved')
-        } catch {
-          onSaveStatus?.('error')
-        }
-      },
-      [chapterId, onSaveStatus],
-    )
-
-    function scheduleSave(content: string) {
-      if (saveTimer.current) clearTimeout(saveTimer.current)
-      saveTimer.current = setTimeout(() => save(content, title), 1500)
-    }
-
     useEffect(() => {
-      return () => {
-        if (saveTimer.current) clearTimeout(saveTimer.current)
+      if (editor && editor.getHTML() !== (initialContent ?? '')) {
+        editor.commands.setContent(initialContent ?? '', { emitUpdate: false })
       }
-    }, [])
-
-    function handleTitleBlur() {
-      if (title !== titleRef.current && editor) {
-        scheduleSave(editor.getHTML())
-      }
-    }
+    }, [editor, initialContent])
 
     function addLink() {
       if (!editor) return
@@ -169,9 +137,8 @@ export const TelegraphEditor = forwardRef<HTMLDivElement, TelegraphEditorProps>(
       <div ref={setRefs} className="relative mx-auto max-w-2xl">
         {/* Title */}
         <input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          onBlur={handleTitleBlur}
+          value={initialTitle}
+          onChange={(e) => onDraftChange({ title: e.target.value })}
           className="mb-1 w-full bg-transparent text-3xl font-black uppercase leading-none tracking-tight text-cf-text-heading placeholder:text-cf-text-3/50 focus:outline-none"
           placeholder="Заголовок главы"
         />

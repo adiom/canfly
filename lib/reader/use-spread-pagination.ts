@@ -1,12 +1,15 @@
 'use client'
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { clampPage } from '@/lib/reader/pagination'
 
 export const SPINE_WIDTH = 56
 const SPREAD_BREAKPOINT = 900
 const SPREAD_MAX_PAGE_WIDTH = 720
 
 export interface SpreadPaginationState {
+  measured: boolean
+  chapterKey: string
   pageCount: number
   currentPage: number
   isSpread: boolean
@@ -46,6 +49,8 @@ export function useSpreadPagination(
   remeasure: () => void
 } {
   const [state, setState] = useState<SpreadPaginationState>({
+    measured: false,
+    chapterKey: '',
     pageCount: 1,
     currentPage: 0,
     isSpread: false,
@@ -105,13 +110,11 @@ export function useSpreadPagination(
     const rightPageStart = spread ? spineCenter + gutter / 2 : 0
 
     setState(prev => {
-      const pagesPerView = spread ? 2 : 1
-      const maxPage = Math.max(0, pageCount - pagesPerView)
-      let newPage = Math.min(prev.currentPage, maxPage)
-      if (spread && newPage % 2 !== 0) newPage = Math.max(0, newPage - 1)
-      newPage = Math.max(0, newPage)
+      const newPage = clampPage(prev.chapterKey === chapterKey ? prev.currentPage : 0, pageCount, spread)
 
       if (
+        prev.measured &&
+        prev.chapterKey === chapterKey &&
         prev.pageCount === pageCount &&
         prev.isSpread === spread &&
         prev.pageWidth === pageW &&
@@ -125,6 +128,8 @@ export function useSpreadPagination(
       ) return prev
 
       return {
+        measured: true,
+        chapterKey,
         pageCount,
         currentPage: newPage,
         isSpread: spread,
@@ -137,7 +142,7 @@ export function useSpreadPagination(
         rightPageStart,
       }
     })
-  }, [viewportRef, trackRef])
+  }, [viewportRef, trackRef, chapterKey])
 
   const remeasure = useCallback(() => {
     requestAnimationFrame(() => requestAnimationFrame(measure))
@@ -181,10 +186,7 @@ export function useSpreadPagination(
 
   const setCurrentPage = useCallback((page: number) => {
     setState(prev => {
-      const pagesPerView = prev.isSpread ? 2 : 1
-      const maxPage = Math.max(0, prev.pageCount - pagesPerView)
-      let newPage = Math.max(0, Math.min(page, maxPage))
-      if (prev.isSpread && newPage % 2 !== 0) newPage = Math.max(0, newPage - 1)
+      const newPage = clampPage(page, prev.pageCount, prev.isSpread)
       return { ...prev, currentPage: newPage }
     })
   }, [])

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useEditor, EditorContent } from '@tiptap/react'
 import { BubbleMenu } from '@tiptap/react/menus'
@@ -34,7 +34,8 @@ import {
   updateNewsStatusAction,
   deleteNewsAction,
 } from '@/lib/actions/studio-news'
-import { isRedirectError } from 'next/dist/client/components/redirect-error'
+import { unstable_rethrow } from 'next/navigation'
+import { useAutosave } from '@/lib/studio/use-autosave'
 
 interface NewsEditorProps {
   news: NewsPost
@@ -45,8 +46,6 @@ const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   published: { label: 'Опубликована', className: 'text-cf-warm border-cf-warm/40' },
   archived: { label: 'Архив', className: 'text-cf-text-4 border-cf-text-1/15' },
 }
-
-type SaveStatus = 'saved' | 'saving' | 'error' | 'idle'
 
 function ToolbarBtn({
   active,
@@ -89,20 +88,37 @@ export function NewsEditor({ news }: NewsEditorProps) {
   const [tag, setTag] = useState(news.tag ?? '')
   const [coverImage, setCoverImage] = useState(news.cover_image ?? '')
   const [status, setStatus] = useState(news.status)
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [statusUpdating, setStatusUpdating] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [restoredContent, setRestoredContent] = useState<string | null>(null)
 
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const lastSaved = useRef({
-    title: news.title,
-    section: news.section,
-    tag: news.tag ?? '',
-    coverImage: news.cover_image ?? '',
-    content: news.content ?? '',
+  const autosave = useAutosave({
+    storageKey: `cf-news-draft:${news.id}`,
+    initial: {
+      title: news.title, section: news.section, tag: news.tag ?? '',
+      coverImage: news.cover_image ?? '', content: news.content ?? '',
+    },
+    save: async (draft) => {
+      const formData = new FormData()
+      formData.set('title', draft.title)
+      formData.set('section', draft.section)
+      formData.set('tag', draft.tag)
+      formData.set('content', draft.content)
+      formData.set('cover_image', draft.coverImage)
+      await updateNewsAction(news.id, formData)
+    },
+    onRestore: (draft) => {
+      setTitle(draft.title)
+      setSection(draft.section)
+      setTag(draft.tag)
+      setCoverImage(draft.coverImage)
+      setRestoredContent(draft.content)
+    },
   })
+  const saveStatus = autosave.status
 
   const editor = useEditor({
+    immediatelyRender: false,
     extensions: [
       StarterKit.configure({
         heading: { levels: [2, 3] },
@@ -126,62 +142,19 @@ export function NewsEditor({ news }: NewsEditorProps) {
       },
     },
     onUpdate: ({ editor }) => {
-      scheduleSave(editor.getHTML())
+      autosave.update({ content: editor.getHTML() })
     },
   })
 
-  const save = useCallback(
-    async (content: string) => {
-      const current = { title, section, tag, coverImage, content }
-      const prev = lastSaved.current
-      if (
-        current.title === prev.title &&
-        current.section === prev.section &&
-        current.tag === prev.tag &&
-        current.coverImage === prev.coverImage &&
-        current.content === prev.content
-      ) {
-        return
-      }
-
-      setSaveStatus('saving')
-      try {
-        const formData = new FormData()
-        formData.set('title', title)
-        formData.set('section', section)
-        formData.set('tag', tag)
-        formData.set('content', content)
-        formData.set('cover_image', coverImage)
-        await updateNewsAction(news.id, formData)
-        lastSaved.current = current
-        setSaveStatus('saved')
-      } catch (error) {
-        if (isRedirectError(error)) throw error
-        setSaveStatus('error')
-      }
-    },
-    [news.id, title, section, tag, coverImage],
-  )
-
-  function scheduleSave(content: string) {
-    if (saveTimer.current) clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(() => save(content), 1500)
-  }
-
   useEffect(() => {
-    return () => {
-      if (saveTimer.current) clearTimeout(saveTimer.current)
-    }
-  }, [])
-
-  function handleFieldChange() {
-    if (editor) scheduleSave(editor.getHTML())
-  }
+    if (editor && restoredContent !== null) editor.commands.setContent(restoredContent, { emitUpdate: false })
+  }, [editor, restoredContent])
 
   async function handleStatusChange(newStatus: 'draft' | 'published' | 'archived') {
     if (newStatus === status) return
     setStatusUpdating(true)
     try {
+      await autosave.flush()
       await updateNewsStatusAction(news.id, newStatus)
       setStatus(newStatus)
       toast.success(
@@ -190,7 +163,7 @@ export function NewsEditor({ news }: NewsEditorProps) {
         'Сохранено как черновик'
       )
     } catch (error) {
-      if (isRedirectError(error)) throw error
+      unstable_rethrow(error)
       toast.error('Не удалось изменить статус')
     } finally {
       setStatusUpdating(false)
@@ -199,9 +172,10 @@ export function NewsEditor({ news }: NewsEditorProps) {
 
   async function handleDelete() {
     try {
+      await autosave.flush()
       await deleteNewsAction(news.id)
     } catch (error) {
-      if (isRedirectError(error)) throw error
+      unstable_rethrow(error)
       toast.error('Не удалось удалить')
       setConfirmDelete(false)
     }
@@ -230,6 +204,9 @@ export function NewsEditor({ news }: NewsEditorProps) {
           <span className={`border px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.12em] ${statusCfg.className}`}>
             {statusCfg.label}
           </span>
+          {saveStatus === 'pending' && (
+            <span className="text-xs text-cf-text-3" role="status">Есть несохранённые правки</span>
+          )}
           {saveStatus === 'saving' && (
             <span className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-[0.12em] text-cf-text-3">
               <Loader2 className="h-3 w-3 animate-spin" />
@@ -267,8 +244,7 @@ export function NewsEditor({ news }: NewsEditorProps) {
       {/* Title */}
       <input
         value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        onBlur={handleFieldChange}
+        onChange={(e) => { setTitle(e.target.value); autosave.update({ title: e.target.value }) }}
         className="w-full bg-transparent text-3xl font-black uppercase leading-none tracking-tight text-cf-text-heading placeholder:text-cf-text-3/50 focus:outline-none"
         placeholder="Заголовок новости"
       />
@@ -279,8 +255,7 @@ export function NewsEditor({ news }: NewsEditorProps) {
           <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-cf-text-3">Раздел</span>
           <input
             value={section}
-            onChange={(e) => setSection(e.target.value)}
-            onBlur={handleFieldChange}
+            onChange={(e) => { setSection(e.target.value); autosave.update({ section: e.target.value }) }}
             placeholder="dispatch / заметки / маршруты"
             className="w-full border border-cf-text-1/12 bg-cf-bg-2 px-3 py-2 text-sm text-cf-text-1 placeholder:text-cf-text-4 focus:border-cf-warm/40 focus:outline-none"
           />
@@ -289,8 +264,7 @@ export function NewsEditor({ news }: NewsEditorProps) {
           <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-cf-text-3">Тег</span>
           <input
             value={tag}
-            onChange={(e) => setTag(e.target.value)}
-            onBlur={handleFieldChange}
+            onChange={(e) => { setTag(e.target.value); autosave.update({ tag: e.target.value }) }}
             placeholder="необязательно"
             className="w-full border border-cf-text-1/12 bg-cf-bg-2 px-3 py-2 text-sm text-cf-text-1 placeholder:text-cf-text-4 focus:border-cf-warm/40 focus:outline-none"
           />
@@ -304,7 +278,7 @@ export function NewsEditor({ news }: NewsEditorProps) {
           value={coverImage || null}
           onChange={(url) => {
             setCoverImage(url ?? '')
-            handleFieldChange()
+            autosave.update({ coverImage: url ?? '' })
           }}
         />
       </div>

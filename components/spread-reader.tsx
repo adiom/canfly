@@ -1,11 +1,13 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { X, AlignJustify, Bookmark, BookmarkPlus, Heart, ChevronLeft, Sun, Moon, Palette, MessageCircle, Check, Trash2, Type } from 'lucide-react'
 import { toast } from 'sonner'
 import { useSpreadPagination } from '@/lib/reader/use-spread-pagination'
+import { lastPageStart, chapterProgress } from '@/lib/reader/pagination'
+import { captureReadingPosition, pageForReadingPosition, type ReadingPosition } from '@/lib/reader/reading-position'
 import { useEditorialNotes } from '@/lib/reader/use-editorial-notes'
 import {
   collectParagraphs,
@@ -45,6 +47,9 @@ export interface SpreadReaderProps {
   userRole: ReaderUserRole | null
   userName: string | null
   initialChapterIndex?: number
+  initialPosition?: ReadingPosition | null
+  initialProgressPercent?: number
+  initialProgressUpdatedAt?: number
 }
 
 // ─── Компонент ────────────────────────────────────────────────────────────────
@@ -57,6 +62,9 @@ export function SpreadReader({
   initialHighlights,
   userRole,
   initialChapterIndex = 0,
+  initialPosition = null,
+  initialProgressPercent = 0,
+  initialProgressUpdatedAt = 0,
 }: SpreadReaderProps) {
   const accent = release.design_config?.accent_color ?? '#d52525'
   const isEditor = userRole === 'editor' || userRole === 'admin'
@@ -75,7 +83,6 @@ export function SpreadReader({
 
   // Максимально допустимый translateX трека — чтобы на последней странице
   // не торчал обрезок соседней колонки через overflow:hidden.
-  const [maxTranslate, setMaxTranslate] = useState(0)
   // Ширина кликабельной полосы листания по каждому краю viewport.
   const [sideGutter, setSideGutter] = useState(28)
 
@@ -107,6 +114,11 @@ export function SpreadReader({
   const viewportRef = useRef<HTMLDivElement>(null)
   const trackRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
+  const readingAnchor = useRef<{ chapterId: string; position: ReadingPosition } | null>(
+    initialPosition && chapters[initialChapterIndex] ? { chapterId: chapters[initialChapterIndex].id, position: initialPosition } : null,
+  )
+  const resumed = useRef(false)
+  const latestProgress = useRef<{ editionId: string; chapterId: string; progressPercent: number; position: ReadingPosition } | null>(null)
   const floatingMenuRef = useRef<HTMLDivElement>(null)
 
   // Пагинация книжного разворота (используется для currentPage / pageCount
@@ -136,7 +148,7 @@ export function SpreadReader({
 
   // Вычисленные
   const pagesPerView = isSpread ? 2 : 1
-  const maxPage = Math.max(0, pageCount - pagesPerView)
+  const maxPage = lastPageStart(pageCount, isSpread)
 
   // Пересчёт максимального сдвига трека и ширины полей листания. Двойной
   // rAF, чтобы колонки гарантированно отрендерились с актуальной геометрией
@@ -149,8 +161,6 @@ export function SpreadReader({
       if (!track || !vp || !stage) return
       // viewport теперь совпадает со страницей (поля живут на stage), поэтому
       // clientWidth — чистая ширина страницы.
-      const next = Math.max(0, track.scrollWidth - vp.clientWidth)
-      setMaxTranslate(prev => (Math.abs(prev - next) > 0.5 ? next : prev))
       // Полоса листания = поле страницы плюс пустое место от края окна до
       // stage (окно шире maxWidth). Минимум 28px под палец.
       const padLeft = parseFloat(getComputedStyle(stage).paddingLeft)
@@ -186,7 +196,7 @@ export function SpreadReader({
   } = useEditorialNotes({ chapterId: currentChapter?.id, enabled: isEditor })
 
   // Прогресс
-  const intraChapter = pageCount > 1 ? currentPage / (pageCount - 1) : 1
+  const intraChapter = chapterProgress(currentPage, pageCount, isSpread)
   const progress = Math.round(((currentIndex + intraChapter) / chapters.length) * 100)
 
   // ── Загрузка хайлайтов при смене главы ──
@@ -270,23 +280,93 @@ export function SpreadReader({
   }, [chapterHighlights, chapterEditorialNotes, setActiveEditorialNote, mounted])
 
   // ── Сохранение прогресса ──
+  useLayoutEffect(() => {
+    const root = contentRef.current
+    const track = trackRef.current
+    if (!root || !track || !mounted || !pagination.measured || pagination.chapterKey !== currentChapter?.id) return
+    if (!resumed.current && currentUserId) {
+      try {
+        const raw = localStorage.getItem(`cf-reading:${currentUserId}:${edition.id}`)
+        const local = raw ? JSON.parse(raw) as {
+          version?: number; chapterId?: string; updatedAt?: number; position?: ReadingPosition;
+        } : null
+        if (local?.version === 1 && local.position && (local.updatedAt ?? 0) > initialProgressUpdatedAt &&
+            Number.isInteger(local.position.paragraphIndex) && local.position.paragraphIndex >= 0 &&
+            Number.isInteger(local.position.offset) && local.position.offset >= 0) {
+          const index = chapters.findIndex(chapter => chapter.id === local.chapterId)
+          if (index >= 0) {
+            readingAnchor.current = { chapterId: chapters[index].id, position: local.position }
+            if (index !== currentIndex) {
+              resumed.current = true
+              // eslint-disable-next-line react-hooks/set-state-in-effect -- restore persisted chapter before painting its text
+              setCurrentIndex(index)
+              return
+            }
+          }
+        }
+      } catch {}
+    }
+    const anchor = readingAnchor.current
+    if (anchor?.chapterId === currentChapter?.id) {
+      setCurrentPage(pageForReadingPosition(root, track, anchor.position, pageWidth + gutter))
+    } else if (!resumed.current && currentIndex === initialChapterIndex && initialProgressPercent > 0) {
+      const fraction = Math.max(0, Math.min(1, initialProgressPercent / 100 * chapters.length - currentIndex))
+      setCurrentPage(Math.round(fraction * (pageCount - 1)))
+    }
+    resumed.current = true
+  }, [currentChapter?.id, pageCount, pageWidth, gutter, isSpread, fontSize, mounted, pagination.measured, pagination.chapterKey, setCurrentPage, currentIndex, initialChapterIndex, initialProgressPercent, initialProgressUpdatedAt, chapters, currentUserId, edition.id])
+
   useEffect(() => {
-    if (!currentUserId || !currentChapter) return
-    const timer = setTimeout(() => {
+    if (!currentChapter || !mounted || !pagination.measured || pagination.chapterKey !== currentChapter.id) return
+    let payload: { editionId: string; chapterId: string; progressPercent: number; position: ReadingPosition } | null = null
+    const capturePosition = () => {
+      const root = contentRef.current
+      const track = trackRef.current
+      if (!root || !track) return
+      const position = captureReadingPosition(root, track, currentPage, pageWidth + gutter)
+      readingAnchor.current = { chapterId: currentChapter.id, position }
+      payload = { editionId: edition.id, chapterId: currentChapter.id, progressPercent: progress, position }
+      latestProgress.current = payload
+      if (currentUserId) {
+        try { localStorage.setItem(`cf-reading:${currentUserId}:${edition.id}`, JSON.stringify({ version: 1, ...payload, updatedAt: Date.now() })) } catch {}
+      }
+    }
+    let capture = requestAnimationFrame(() => {
+      capture = requestAnimationFrame(capturePosition)
+    })
+    const save = () => {
+      if (!currentUserId || !payload) return
       fetch('/api/reading-progress', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          editionId: edition.id,
-          chapterId: currentChapter.id,
-          progressPercent: progress,
-        }),
+        body: JSON.stringify(payload),
         keepalive: true,
       }).catch(() => {})
-    }, 1500)
-    return () => clearTimeout(timer)
+    }
+    const timer = setTimeout(save, 1500)
+    return () => {
+      cancelAnimationFrame(capture)
+      clearTimeout(timer)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- saves on chapter+progress change, not on full object
-  }, [currentUserId, currentChapter?.id, edition.id, progress])
+  }, [currentUserId, currentChapter?.id, edition.id, progress, currentPage, pageWidth, gutter, mounted, pagination.measured, pagination.chapterKey])
+
+  useEffect(() => {
+    if (!currentUserId) return
+    const saveLatest = () => {
+      if (!latestProgress.current) return
+      void fetch('/api/reading-progress', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(latestProgress.current), keepalive: true,
+      }).catch(() => {})
+    }
+    const onHide = () => { if (document.visibilityState === 'hidden') saveLatest() }
+    document.addEventListener('visibilitychange', onHide)
+    return () => {
+      document.removeEventListener('visibilitychange', onHide)
+      saveLatest()
+    }
+  }, [currentUserId, edition.id])
 
   // ── Сброс страницы и selection при смене главы ──
   useEffect(() => {
@@ -298,14 +378,12 @@ export function SpreadReader({
 
   // ── После remeasure: восстановить последнюю страницу (переход назад) ──
   useEffect(() => {
-    if (!pendingLastPage || pageCount <= 1) return
-    const lastPage = isSpread
-      ? Math.floor((pageCount - 2) / 2) * 2
-      : pageCount - 1
+    if (!pendingLastPage || !pagination.measured || pagination.chapterKey !== currentChapter?.id) return
+    const lastPage = lastPageStart(pageCount, isSpread)
     setCurrentPage(Math.max(0, lastPage))
     // eslint-disable-next-line react-hooks/set-state-in-effect -- restore last page on back navigation
     setPendingLastPage(false)
-  }, [pendingLastPage, pageCount, isSpread, setCurrentPage])
+  }, [pendingLastPage, pageCount, isSpread, setCurrentPage, pagination.measured, pagination.chapterKey, currentChapter?.id])
 
   // ── После смены главы: навигация к закладке ──
   useEffect(() => {
@@ -875,7 +953,7 @@ export function SpreadReader({
                 WebkitHyphens: 'auto',
                 MozHyphens: 'auto',
                 msHyphens: 'auto',
-                transform: `translateX(-${currentPage >= maxPage ? Math.min(currentPage * (pagination.pageWidth + pagination.gutter), maxTranslate) : currentPage * (pagination.pageWidth + pagination.gutter)}px)`,
+                transform: `translateX(-${currentPage * (pagination.pageWidth + pagination.gutter)}px)`,
               }}
             >
               {chapters.length > 1 && (

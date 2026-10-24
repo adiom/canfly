@@ -1,8 +1,9 @@
 'use client'
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useRef } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useSpreadPagination } from '@/lib/reader/use-spread-pagination'
+import { lastPageStart } from '@/lib/reader/pagination'
 
 /**
  * Фрагмент, который посетитель листает на лендинге.
@@ -34,32 +35,20 @@ export function VvvvvSpreadDemo() {
   const viewportRef = useRef<HTMLDivElement>(null)
   const trackRef = useRef<HTMLDivElement>(null)
 
-  // Геометрию берём из хука ридера, а номер страницы держим свой: его clamp
-  // округляет разворот вниз до чётной страницы и при нечётном общем числе
-  // прячет последнюю. На лендинге хвост фрагмента терять нельзя.
-  const { pageCount, isSpread, pageWidth, gutter, spreadWidth } =
+  // Демо использует ту же геометрию и навигацию, что и основной ридер.
+  const { pageCount, currentPage: page, setCurrentPage, isSpread, pageWidth, gutter, spreadWidth } =
     useSpreadPagination(viewportRef, trackRef, FONT_SIZE, DEMO_EXCERPT.title)
 
-  const [storedPage, setStoredPage] = useState(0)
-
   const step = isSpread ? 2 : 1
-  const lastPage = isSpread
-    ? Math.max(0, pageCount % 2 === 0 ? pageCount - 2 : pageCount - 1)
-    : Math.max(0, pageCount - 1)
-
-  // Пересчёт раскладки (ресайз, поворот, загрузка шрифтов) может оставить
-  // сохранённую страницу за пределами нового диапазона. Приводим её к диапазону
-  // при рендере, а не эффектом: эффект здесь дал бы лишний каскадный рендер.
-  const clamped = Math.min(storedPage, lastPage)
-  const page = isSpread && clamped % 2 !== 0 ? Math.max(0, clamped - 1) : clamped
+  const lastPage = lastPageStart(pageCount, isSpread)
 
   const canPrev = page > 0
   const canNext = page < lastPage
 
-  const goPrev = useCallback(() => setStoredPage(Math.max(0, page - step)), [page, step])
+  const goPrev = useCallback(() => setCurrentPage(page - step), [page, step, setCurrentPage])
   const goNext = useCallback(
-    () => setStoredPage(Math.min(lastPage, page + step)),
-    [lastPage, page, step],
+    () => setCurrentPage(page + step),
+    [page, step, setCurrentPage],
   )
 
   // Стрелки перехватываем только когда разворот в фокусе — иначе демо

@@ -228,6 +228,9 @@ export default async function VvvvvReaderPage({
         edition={edition}
         chapters={chapters}
         initialChapterIndex={initialChapterIndex}
+        initialPosition={progress?.position ?? null}
+        initialProgressPercent={progress ? Number(progress.progress_percent) : 0}
+        initialProgressUpdatedAt={progress?.last_read_at ? new Date(progress.last_read_at).getTime() : 0}
         currentUserId={user?.id ?? null}
         initialHighlights={initialHighlights}
         userRole={userRole}

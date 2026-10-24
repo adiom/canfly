@@ -1,43 +1,47 @@
 import { dbQuery, dbQueryOne } from '@/lib/db'
+import type { ReadingPosition } from '@/lib/reader/reading-position'
+
+let hasPositionColumn = false
+
+async function supportsPosition() {
+  if (hasPositionColumn) return true
+  const row = await dbQueryOne<{ supported: boolean }>(
+    `SELECT EXISTS (SELECT 1 FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'reading_progress' AND column_name = 'position') AS supported`,
+  )
+  hasPositionColumn = row?.supported ?? false
+  return hasPositionColumn
+}
 
 /**
  * Прогресс чтения пользователя по главе внутри издания.
- * Условный уникальный индекс (WHERE user_id IS NOT NULL) не поддерживает
- * ON CONFLICT напрямую. Поэтому используем явный UPDATE + INSERT.
+ * ON CONFLICT использует тот же WHERE, что и частичный уникальный индекс.
  */
 export async function upsertReadingProgress(params: {
   editionId: string
   chapterId: string
   userId: string
   progressPercent: number
+  position?: ReadingPosition | null
 }) {
   const clamped = Math.max(0, Math.min(100, params.progressPercent))
-
-  // Сначала пробуем UPDATE
-  const updateResult = await dbQueryOne<{ id: string }>(
-    `UPDATE reading_progress
-     SET progress_percent = $1, last_read_at = NOW()
-     WHERE edition_id = $2 AND chapter_id = $3 AND user_id = $4
-     RETURNING id`,
-    [clamped, params.editionId, params.chapterId, params.userId],
-  )
-
-  // Если UPDATE ничего не обновил, INSERT новую запись
-  if (updateResult) return updateResult
-
+  const withPosition = await supportsPosition()
+  // The partial unique index needs the same predicate in ON CONFLICT.
   return dbQueryOne<{ id: string }>(
-    `INSERT INTO reading_progress (edition_id, chapter_id, user_id, progress_percent, last_read_at)
-     VALUES ($1, $2, $3, $4, NOW())
+    `INSERT INTO reading_progress (edition_id, chapter_id, user_id, progress_percent, last_read_at${withPosition ? ', position' : ''})
+     VALUES ($1, $2, $3, $4, NOW()${withPosition ? ', $5::jsonb' : ''})
+     ON CONFLICT (edition_id, chapter_id, user_id) WHERE user_id IS NOT NULL
+     DO UPDATE SET progress_percent = EXCLUDED.progress_percent, last_read_at = NOW()${withPosition ? ', position = EXCLUDED.position' : ''}
      RETURNING id`,
-    [params.editionId, params.chapterId, params.userId, clamped],
+    [params.editionId, params.chapterId, params.userId, clamped, ...(withPosition ? [JSON.stringify(params.position ?? null)] : [])],
   )
 }
 
 /** Последняя прочитанная позиция пользователя в издании (для resume-функционала). */
 export async function fetchReadingProgress(editionId: string, userId: string) {
-  return dbQueryOne<{ chapter_id: string; progress_percent: string }>(
-    `SELECT chapter_id, progress_percent
-     FROM reading_progress
+  return dbQueryOne<{ chapter_id: string; progress_percent: string; position: ReadingPosition | null; last_read_at: Date }>(
+    `SELECT chapter_id, progress_percent, to_jsonb(rp)->'position' AS position, last_read_at
+     FROM reading_progress rp
      WHERE edition_id = $1 AND user_id = $2
      ORDER BY last_read_at DESC
      LIMIT 1`,

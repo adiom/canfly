@@ -4,10 +4,10 @@ import Link from 'next/link'
 
 interface GlobalErrorProps {
   error: Error & { digest?: string }
-  reset: () => void
+  retry: () => void
 }
 
-export default function GlobalError({ error, reset }: GlobalErrorProps) {
+export default function GlobalError({ error, retry }: GlobalErrorProps) {
   return (
     <html lang="ru">
       <body style={{ margin: 0, background: '#111210', color: '#f4efe5', fontFamily: 'sans-serif' }}>
@@ -42,7 +42,7 @@ export default function GlobalError({ error, reset }: GlobalErrorProps) {
                 Обновить страницу
               </button>
               <button
-                onClick={reset}
+                onClick={retry}
                 style={{ height: '3rem', padding: '0 1.25rem', border: '1px solid rgba(244,239,229,0.18)', color: '#f4efe5', fontWeight: 700, fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.1em', background: 'transparent', cursor: 'pointer' }}
               >
                 Попробовать снова

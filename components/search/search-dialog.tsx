@@ -7,7 +7,7 @@ import { Search, Clock, X } from 'lucide-react'
 import {
   CommandDialog,
   CommandInput,
-  CommandEmpty,
+  CommandList,
   CommandGroup,
   CommandItem,
 } from '@/components/ui/command'
@@ -29,6 +29,16 @@ export function SearchDialog() {
   const handleOpenChange = useCallback((next: boolean) => {
     setOpen(next)
     if (next) setRecents(getRecentSearches())
+    else {
+      abortRef.current?.abort()
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => () => {
+    abortRef.current?.abort()
+    if (debounceRef.current) clearTimeout(debounceRef.current)
   }, [])
 
   // Cmd/Ctrl+K shortcut
@@ -64,18 +74,21 @@ export function SearchDialog() {
         return
       }
       const data = await res.json()
-      setResults(data.results ?? [])
+      if (!controller.signal.aborted) setResults(data.results ?? [])
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') return
       setResults([])
     } finally {
-      setLoading(false)
+      if (abortRef.current === controller) setLoading(false)
     }
   }, [])
 
   const handleQueryChange = useCallback(
     (value: string) => {
       setQuery(value)
+      abortRef.current?.abort()
+      setResults([])
+      setLoading(value.trim().length >= 2)
       if (debounceRef.current) clearTimeout(debounceRef.current)
       debounceRef.current = setTimeout(() => fetchResults(value), 300)
     },
@@ -104,15 +117,6 @@ export function SearchDialog() {
     [query, router],
   )
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === 'Enter' && query.trim().length >= 2) {
-        saveAndNavigate(query.trim(), `/search?q=${encodeURIComponent(query.trim())}`)
-      }
-    },
-    [query, saveAndNavigate],
-  )
-
   const handleClearRecents = useCallback(() => {
     clearRecentSearches()
     setRecents([])
@@ -134,13 +138,22 @@ export function SearchDialog() {
         <Search className="h-5 w-5" />
       </button>
 
-      <CommandDialog open={open} onOpenChange={handleOpenChange} shouldFilter={false}>
+      <CommandDialog
+        open={open}
+        onOpenChange={handleOpenChange}
+        shouldFilter={false}
+        title="Поиск по Canfly"
+        description="Найдите релиз, персонажа или новость. Используйте стрелки и Enter."
+        className="max-h-[calc(100dvh-2rem)]"
+      >
         <CommandInput
           placeholder="Книги, персонажи, новости…"
           value={query}
           onValueChange={handleQueryChange}
-          onKeyDown={handleKeyDown}
+          className="pr-8"
         />
+
+        <CommandList className="max-h-[min(420px,calc(100dvh-8rem))]">
 
         {/* Пустое состояние — недавние запросы + быстрые ссылки */}
         {isEmpty && (
@@ -194,8 +207,9 @@ export function SearchDialog() {
 
         {/* Результаты поиска */}
         {!isEmpty && !loading && results.length === 0 && (
-          <CommandEmpty>Ничего не найдено</CommandEmpty>
+          <div role="status" className="px-4 py-6 text-center text-sm text-cf-text-3">Ничего не найдено</div>
         )}
+        {!isEmpty && loading && <div role="status" className="px-4 py-3 text-sm text-cf-text-3">Ищем…</div>}
 
         {!isEmpty && (
           <CommandGroup heading="">
@@ -279,6 +293,7 @@ export function SearchDialog() {
           </CommandGroup>
         )}
 
+        </CommandList>
         {/* Футер-подсказки клавиш */}
         <div className="border-t border-cf-text-1/10 px-3 py-2 flex items-center gap-4">
           <span className="text-[10px] text-cf-text-3">↑↓ навигация</span>

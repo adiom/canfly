@@ -119,15 +119,15 @@ export function HomeHeroSlider({ slides }: HomeHeroSliderProps) {
                 <article className="relative min-h-[calc(100vh-108px)] overflow-hidden md:min-h-[680px]">
                   {slide.background_image || slide.mobile_image ? (
                     <>
-                      {slide.mobile_image ? (
+                      {slide.mobile_image || slide.background_image ? (
                         <div
                           className="absolute inset-0 bg-cover bg-center opacity-[0.58] pointer-events-none md:hidden"
-                          style={{ backgroundImage: `url(${slide.mobile_image})` }}
+                          style={{ backgroundImage: `url(${slide.mobile_image ?? slide.background_image})` }}
                         />
                       ) : null}
                       <div
                         className="absolute inset-0 bg-cover bg-center opacity-[0.58] pointer-events-none hidden md:block"
-                        style={{ backgroundImage: `url(${slide.background_image})` }}
+                        style={{ backgroundImage: `url(${slide.background_image ?? slide.mobile_image})` }}
                       />
                     </>
                   ) : (
@@ -143,7 +143,7 @@ export function HomeHeroSlider({ slides }: HomeHeroSliderProps) {
                         style={{
                           borderColor: theme.accent,
                           backgroundColor: `${theme.accent}14`,
-                          color: theme.accent,
+                          color: 'var(--cf-text-1)',
                         }}
                       >
                         {slide.eyebrow || theme.label}
@@ -160,7 +160,7 @@ export function HomeHeroSlider({ slides }: HomeHeroSliderProps) {
                         {slide.primary_cta_label && slide.primary_cta_href ? (
                           <Link
                             href={slide.primary_cta_href}
-                            className="inline-flex h-12 items-center justify-center gap-2 rounded-sm px-5 text-sm font-bold uppercase text-cf-bg transition-transform hover:-translate-y-0.5"
+                            className="inline-flex h-12 items-center justify-center gap-2 rounded-sm px-5 text-sm font-bold uppercase text-cf-text-on-pastel transition-transform hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-cf-text-1"
                             style={{ backgroundColor: theme.accent }}
                           >
                             {slide.primary_cta_label}

@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Geist, Geist_Mono, Cormorant_Garamond, EB_Garamond, Libre_Franklin } from 'next/font/google'
 import { SessionProvider } from 'next-auth/react'
 import { ThemeProvider } from '@/components/theme-provider'
+import { Toaster } from '@/components/ui/sonner'
 import { organizationNode, authorNode, websiteNode } from '@/lib/seo/entities'
 import { JsonLd } from '@/components/seo/json-ld'
 import { Analytics } from '@vercel/analytics/next'
@@ -79,6 +80,7 @@ export default function RootLayout({
             <Analytics />
             <SpeedInsights/>
               {children}
+            <Toaster />
           </ThemeProvider>
         </SessionProvider>
         <YandexMetrika />

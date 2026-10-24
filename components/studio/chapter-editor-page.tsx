@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useRef, useCallback, type ReactNode } from 'react'
-import { useRouter } from 'next/navigation'
-import { isRedirectError } from 'next/dist/client/components/redirect-error'
+import { useRouter, unstable_rethrow } from 'next/navigation'
+import { useAutosave } from '@/lib/studio/use-autosave'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import type { Editor } from '@tiptap/react'
@@ -90,7 +90,8 @@ export function ChapterEditorPage({
   const router = useRouter()
   const isAudioEditor = audioFormats.has(editionFormat)
   const isComic = editionFormat === 'comic'
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [mediaSaveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [chapterTitle, setChapterTitle] = useState(chapter.title)
   const [editorialNotes, setEditorialNotes] = useState<ChapterEditorialNote[]>([])
   const [isHtmlMode, setIsHtmlMode] = useState(false)
   const [htmlContent, setHtmlContent] = useState('')
@@ -105,6 +106,22 @@ export function ChapterEditorPage({
   }, [])
   const tiptapRef = useRef<Editor | null>(null)
   const [, setContentVersion] = useState(0)
+  const autosave = useAutosave({
+    storageKey: `cf-chapter-draft:${chapter.id}`,
+    initial: { title: chapter.title, content: chapter.content ?? '' },
+    save: async (draft) => { await updateChapterAction(chapter.id, draft) },
+    onRestore: (draft) => {
+      setChapterTitle(draft.title)
+      setInitialContent(draft.content)
+      tiptapRef.current?.commands.setContent(draft.content, { emitUpdate: false })
+    },
+  })
+  const saveStatus = isAudioEditor || isComic ? mediaSaveStatus : autosave.status
+  const updateDraft = autosave.update
+  const handleDraftChange = useCallback((patch: { title?: string; content?: string }) => {
+    if (patch.title !== undefined) setChapterTitle(patch.title)
+    updateDraft(patch)
+  }, [updateDraft])
 
   const handleEditorReady = useCallback((editor: Editor) => {
     tiptapRef.current = editor
@@ -162,44 +179,57 @@ export function ChapterEditorPage({
     setContentVersion(v => v + 1)
   }, [])
 
-  function switchToHtml() {
+  async function switchToHtml() {
     if (!tiptapRef.current) return
-    setHtmlContent(tiptapRef.current.getHTML())
-    setIsHtmlMode(true)
+    try {
+      await autosave.flush()
+      setHtmlContent(tiptapRef.current.getHTML())
+      setIsHtmlMode(true)
+    } catch (error) {
+      unstable_rethrow(error)
+      toast.error('Не удалось сохранить правки')
+    }
   }
 
-  function switchToWysiwyg() {
-    setInitialContent(htmlContent)
-    setIsHtmlMode(false)
+  async function switchToWysiwyg() {
+    try {
+      await autosave.flush()
+      setInitialContent(htmlContent)
+      setIsHtmlMode(false)
+    } catch (error) {
+      unstable_rethrow(error)
+      toast.error('Не удалось сохранить правки')
+    }
   }
 
   async function handleHtmlSave() {
-    setSaveStatus('saving')
     try {
-      await updateChapterAction(chapter.id, { title: chapter.title, content: htmlContent })
+      await autosave.flush()
       setInitialContent(htmlContent)
-      setSaveStatus('saved')
-    } catch {
-      setSaveStatus('error')
+    } catch (error) {
+      unstable_rethrow(error)
+      toast.error('Не удалось сохранить правки')
     }
   }
 
   async function handlePublish() {
     try {
+      await autosave.flush()
       await publishChapterAction(chapter.id)
       toast.success('Глава опубликована')
       router.refresh()
     } catch (error) {
-      if (isRedirectError(error)) throw error
+      unstable_rethrow(error)
       toast.error('Ошибка публикации')
     }
   }
 
   async function handleDelete() {
     try {
+      await autosave.flush()
       await deleteChapterAction(chapter.id)
     } catch (error) {
-      if (isRedirectError(error)) throw error
+      unstable_rethrow(error)
       toast.error('Ошибка удаления')
     }
   }
@@ -218,7 +248,8 @@ export function ChapterEditorPage({
             <Badge variant="outline" className={`border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] rounded-lg ${chapter.status === 'published' ? 'bg-cf-status-resolved/15 text-cf-status-resolved border-cf-status-resolved/40' : 'bg-cf-status-open/15 text-cf-status-open border-cf-status-open/40'}`}>
               {chapter.status === 'published' ? 'Опубликована' : 'Черновик'}
             </Badge>
-            <span className="text-sm text-cf-text-3">
+            <span className="text-sm text-cf-text-3" role="status" aria-live="polite">
+              {saveStatus === 'pending' && 'Есть несохранённые правки'}
               {saveStatus === 'saving' && <Loader2 className="inline h-3 w-3 animate-spin text-cf-accent" />}
               {saveStatus === 'saved' && <Check className="inline h-3 w-3 text-cf-status-resolved" />}
               {saveStatus === 'error' && <AlertCircle className="inline h-3 w-3 text-cf-accent" />}
@@ -303,7 +334,10 @@ export function ChapterEditorPage({
                 <label className="text-sm font-semibold text-cf-text-2 mb-2 block">HTML код главы</label>
                 <textarea
                   value={htmlContent}
-                  onChange={(e) => setHtmlContent(e.target.value)}
+                  onChange={(e) => {
+                    setHtmlContent(e.target.value)
+                    handleDraftChange({ content: e.target.value })
+                  }}
                   className="w-full min-h-[60vh] bg-cf-bg border border-cf-text-1/10 rounded-xl font-mono text-sm leading-6 text-cf-text-1 p-4 resize-y focus:outline-none focus:ring-2 focus:ring-cf-accent/70 focus:border-cf-accent/70"
                   spellCheck={false}
                 />
@@ -346,10 +380,9 @@ export function ChapterEditorPage({
               />
               <TelegraphEditor
                 ref={editorCallbackRef}
-                chapterId={chapter.id}
-                initialTitle={chapter.title}
+                initialTitle={chapterTitle}
                 initialContent={initialContent}
-                onSaveStatus={setSaveStatus}
+                onDraftChange={handleDraftChange}
                 onContentUpdate={handleContentUpdate}
                 onEditorReady={handleEditorReady}
               />

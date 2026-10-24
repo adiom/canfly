@@ -2,6 +2,17 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/server/session'
 import { upsertReadingProgress } from '@/lib/server/reading-progress'
 import { apiHandler } from '@/lib/api-handler'
+import { z } from 'zod'
+
+const progressSchema = z.object({
+  editionId: z.string().uuid(),
+  chapterId: z.string().uuid(),
+  progressPercent: z.number().finite().min(0).max(100),
+  position: z.object({
+    paragraphIndex: z.number().int().min(0).max(1_000_000),
+    offset: z.number().int().min(0).max(10_000_000),
+  }).nullable().optional(),
+})
 
 /**
  * POST /api/reading-progress
@@ -13,21 +24,15 @@ async function saveReadingProgress(request: NextRequest) {
   const user = await getCurrentUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const body = await request.json()
-  const { editionId, chapterId, progressPercent } = body ?? {}
-
-  if (!editionId || !chapterId) {
-    return NextResponse.json({ error: 'editionId and chapterId are required' }, { status: 400 })
-  }
-  if (typeof progressPercent !== 'number' || Number.isNaN(progressPercent)) {
-    return NextResponse.json({ error: 'progressPercent must be a number' }, { status: 400 })
-  }
+  const parsed = progressSchema.safeParse(await request.json())
+  if (!parsed.success) return NextResponse.json({ error: 'Некорректный прогресс чтения' }, { status: 400 })
 
   await upsertReadingProgress({
-    editionId,
-    chapterId,
+    editionId: parsed.data.editionId,
+    chapterId: parsed.data.chapterId,
     userId: user.id,
-    progressPercent,
+    progressPercent: parsed.data.progressPercent,
+    position: parsed.data.position,
   })
 
   return NextResponse.json({ data: { ok: true } })
