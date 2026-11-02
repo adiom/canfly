@@ -140,7 +140,9 @@ export function ReleaseComicReader({ release, chapters }: ReleaseComicReaderProp
       >
         <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-b from-black/80 to-transparent">
           <Link
-            href="/"
+            href={`/release/${release.slug}`}
+            aria-label={`О произведении «${release.title}»`}
+            title="О произведении"
             className="flex items-center gap-2 text-white/70 hover:text-white transition-colors"
           >
             <ChevronLeft className="h-5 w-5" />
@@ -214,6 +216,12 @@ export function ReleaseComicReader({ release, chapters }: ReleaseComicReaderProp
         <div className="flex flex-col items-center gap-6 py-16 px-4 max-w-[720px] mx-auto">
           <div className="w-12 h-px bg-white/20" />
           <p className="text-white/40 text-xs uppercase tracking-[0.18em]">Конец</p>
+          <Link
+            href={`/release/${release.slug}`}
+            className="text-white/70 hover:text-white text-sm transition-colors"
+          >
+            ← О произведении
+          </Link>
           <Link
             href="/"
             className="text-white/40 hover:text-white text-xs uppercase tracking-[0.18em] transition-colors"

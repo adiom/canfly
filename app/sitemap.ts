@@ -6,22 +6,19 @@ import { fetchPublicCharactersList } from '@/lib/server/characters'
 import { fetchPublishedGames } from '@/lib/server/games'
 import { fetchPublicPlaces } from '@/lib/server/places'
 import { fetchAllSeries } from '@/lib/server/series'
-import { fetchPublishedEditionsForSitemap } from '@/lib/server/editions'
 import { CATALOG_PATH, LANDING_PATH } from '@/lib/nav'
-import { getEditionTocUrl } from '@/lib/utils/editions'
 import { absoluteUrl } from '@/lib/seo/entities'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const [releases, newsPosts, characters, places, games, series, editions, authorUsers] = await Promise.all([
+  const [releases, newsPosts, characters, places, games, series, authorUsers] = await Promise.all([
     fetchReleasesWithEditions({ status: 'published' }),
     fetchNewsPosts(100),
     fetchPublicCharactersList(),
     fetchPublicPlaces(),
     fetchPublishedGames(),
     fetchAllSeries(),
-    fetchPublishedEditionsForSitemap(),
     dbQuery<{ handle: string; updated_at: string }>(
       `SELECT handle, updated_at FROM users
        WHERE public_role = 'author' AND profile_is_public = TRUE
@@ -86,15 +83,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.6,
   }))
 
-  // Все издания ссылаются на `/vvvvv/[editionSlug]`. Приоритет ниже релиза:
-  // страница релиза остаётся главной SEO-точкой.
-  const editionEntries = editions.map((edition) => ({
-    url: `${BASE_URL}${getEditionTocUrl(edition.release_slug, edition)}`,
-    lastModified: new Date(edition.updated_at),
-    changeFrequency: 'weekly' as const,
-    priority: 0.8,
-  }))
-
+  // Издания `/vvvvv/[slug]` — noindex с canonical на релиз, поэтому в sitemap
+  // остаются только карточки произведений и отдельный лендинг `/vvvvv`.
   return [
     {
       url: absoluteUrl(LANDING_PATH),
@@ -127,7 +117,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.5,
     },
     ...releaseEntries,
-    ...editionEntries,
     ...newsEntries,
     ...characterEntries,
     ...placeEntries,

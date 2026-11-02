@@ -51,8 +51,10 @@ export async function generateMetadata({
       release.description ??
       release.annotation ??
       `«${release.title}» — ${formatLabel} на canfly`,
-    // Издание открывается и по UUID, и по слагу — канонический адрес один, по слагу.
+    // OG-карточка ведёт в издание; canonical всех изданий — родительский релиз.
     path: `/vvvvv/${edition.slug || edition.id}`,
+    canonicalPath: `/release/${release.slug}`,
+    noindex: true,
     // og:image — из opengraph-image.tsx рядом.
     generatedImage: true,
     // og:type `book` — только для читаемых форматов: у аудио нет ни автора-книги,

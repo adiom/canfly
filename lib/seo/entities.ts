@@ -41,7 +41,8 @@ export function ref(id: string) {
 }
 
 /**
- * Канонический адрес издания — всегда `/vvvvv/[slug]`.
+ * Публичный адрес сущности Edition для JSON-LD — `/vvvvv/[slug]`.
+ * SEO-canonical страницы издания указывает на родительский `/release/[slug]`.
  */
 export function editionUrl(editionSlug: string) {
   return `${BASE_URL}/vvvvv/${editionSlug}`

@@ -1,4 +1,8 @@
 import { test, expect, type Page } from '@playwright/test'
+import { buildMetadata } from '@/lib/seo/metadata'
+import { absoluteUrl } from '@/lib/seo/entities'
+import { fetchEditionBySlug } from '@/lib/server/editions'
+import { loadEnvLocal } from './setup/pg'
 
 /**
  * Регрессия на SEO-разметку (09.08.2026).
@@ -9,11 +13,14 @@ import { test, expect, type Page } from '@playwright/test'
  *    даёт невалидный документ, который Google просто игнорирует;
  * 2. OG/Twitter-теги есть на каждой публичной странице — без них ссылка в
  *    мессенджере разворачивается пустой карточкой;
- * 3. матрица noindex — читалки и служебные страницы закрыты, а `/release`
- *    и `/vvvvv` открыты (последнее — сознательное решение, легко потерять).
+ * 3. матрица noindex — reader `/vvvvv/[slug]` и служебные страницы закрыты,
+ *    а `/release/[slug]` и отдельный лендинг `/vvvvv` открыты;
+ * 4. canonical всех изданий ведёт на родительский Release, reader нет в sitemap.
  *
  * Тест не требует авторизации и не пишет в БД. Страницы сущностей ищутся по
  * ссылкам с публичных списков, поэтому на пустой базе они скипаются.
+ * Проверка UUID дополнительно читает Edition через серверный репозиторий.
+ * Общие globalSetup/globalTeardown Playwright при этом могут менять БД.
  */
 
 type Graph = Record<string, unknown>
@@ -124,6 +131,129 @@ async function metaContent(page: Page, property: string): Promise<string | null>
   if ((await meta.count()) === 0) return null
   return meta.getAttribute('content')
 }
+
+test.describe('buildMetadata', () => {
+  test('по умолчанию canonical и og:url используют path', () => {
+    const path = '/release/seo-test'
+    const metadata = buildMetadata({ title: 'SEO test', path })
+    expect(metadata.alternates?.canonical).toBe(absoluteUrl(path))
+    expect(metadata.openGraph?.url).toBe(absoluteUrl(path))
+    expect(metadata.robots).toBeUndefined()
+  })
+
+  test('canonicalPath объединяет издания, не меняя OG-карточку', () => {
+    const canonicalPath = '/release/seo-parent'
+    // Слаги намеренно не похожи на родительский: canonical нельзя угадывать по URL.
+    for (const path of ['/vvvvv/independent-edition', '/vvvvv/another-format']) {
+      const metadata = buildMetadata({
+        title: 'SEO reader test',
+        path,
+        canonicalPath,
+        generatedImage: true,
+        noindex: true,
+      })
+      expect(metadata.alternates?.canonical).toBe(absoluteUrl(canonicalPath))
+      expect(metadata.openGraph?.url).toBe(absoluteUrl(path))
+      expect(metadata.openGraph).not.toHaveProperty('images')
+      expect(metadata.twitter).toMatchObject({ card: 'summary_large_image' })
+      expect(metadata.robots).toEqual({ index: false, follow: true })
+    }
+  })
+})
+
+test.describe('SEO reader', () => {
+  test('sitemap сохраняет лендинг, но не содержит reader-страниц', async ({ request }) => {
+    const response = await request.get('/sitemap.xml')
+    expect(response.status()).toBe(200)
+    const xml = await response.text()
+    const paths = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)]
+      .map(match => new URL(match[1]).pathname)
+
+    expect(paths).toEqual(expect.arrayContaining(['/', '/releases', '/news', '/vvvvv']))
+    expect(paths.filter(path => path.startsWith('/vvvvv/'))).toEqual([])
+  })
+
+  test('все доступные издания релиза имеют один canonical', async ({ page, request }) => {
+    test.setTimeout(120_000)
+    const releasePath = await firstHref(page, '/', 'a[href^="/release/"]')
+    test.skip(!releasePath, 'нет опубликованных релизов в БД')
+    await page.goto(releasePath!, { waitUntil: 'domcontentloaded' })
+    const releaseCanonical = absoluteUrl(releasePath!)
+    await expect(page.locator('head link[rel="canonical"]')).toHaveAttribute('href', releaseCanonical)
+
+    const editionPaths = [...new Set(await page.locator('a[href^="/vvvvv/"]').evaluateAll(
+      links => links.map(link => new URL((link as HTMLAnchorElement).href).pathname),
+    ))]
+    test.skip(editionPaths.length === 0, 'у релиза нет изданий с reader')
+
+    for (const path of editionPaths) {
+      const response = await page.goto(path, { waitUntil: 'domcontentloaded' })
+      expect(response?.status(), path).toBe(200)
+      await expect(page.locator('link[rel="canonical"]')).toHaveCount(1)
+      await expect(page.locator('head link[rel="canonical"]')).toHaveAttribute('href', releaseCanonical)
+      await expect(page.locator('head meta[name="robots"]')).toHaveAttribute('content', 'noindex, follow')
+      await expect(page.locator('head meta[property="og:url"]')).toHaveAttribute('content', absoluteUrl(path))
+      expect(await metaContent(page, 'og:image'), `${path}: нет og:image`).toBeTruthy()
+      expect(await metaContent(page, 'twitter:card')).toBe('summary_large_image')
+    }
+
+    const sitemap = await request.get('/sitemap.xml')
+    expect(sitemap.status()).toBe(200)
+    expect(await sitemap.text()).toContain(`<loc>${releaseCanonical}</loc>`)
+  })
+
+  test('вход по UUID использует canonical родительского релиза', async ({ page }) => {
+    loadEnvLocal()
+    test.skip(!process.env.DATABASE_URL, 'DATABASE_URL нужен для чтения UUID издания')
+    const releasePath = await firstHref(page, '/', 'a[href^="/release/"]')
+    test.skip(!releasePath, 'нет опубликованных релизов в БД')
+    const editionPath = await firstHref(page, releasePath!, 'a[href^="/vvvvv/"]')
+    test.skip(!editionPath, 'у релиза нет изданий с reader')
+    const slug = decodeURIComponent(editionPath!.split('/').at(-1)!)
+    const edition = await fetchEditionBySlug(slug)
+    expect(edition, 'издание из публичной ссылки не найдено в БД').toBeTruthy()
+
+    const response = await page.goto(`/vvvvv/${edition!.id}`, { waitUntil: 'domcontentloaded' })
+    expect(response?.status()).toBe(200)
+    await expect(page.locator('link[rel="canonical"]')).toHaveCount(1)
+    await expect(page.locator('head link[rel="canonical"]')).toHaveAttribute('href', absoluteUrl(releasePath!))
+    await expect(page.locator('head meta[name="robots"]')).toHaveAttribute('content', 'noindex, follow')
+    await expect(page.locator('head meta[property="og:url"]')).toHaveAttribute('content', absoluteUrl(editionPath!))
+  })
+
+  test('reader показывает ссылку на произведение на desktop и мобильном', async ({ page }) => {
+    test.setTimeout(120_000)
+    const releasePath = await firstHref(page, '/', 'a[href^="/release/"]')
+    test.skip(!releasePath, 'нет опубликованных релизов в БД')
+    await page.goto(releasePath!, { waitUntil: 'domcontentloaded' })
+    const editionPaths = [...new Set(await page.locator('a[href^="/vvvvv/"]').evaluateAll(
+      links => links.map(link => new URL((link as HTMLAnchorElement).href).pathname),
+    ))]
+    test.skip(editionPaths.length === 0, 'у релиза нет изданий с reader')
+
+    for (const path of editionPaths) {
+      for (const width of [1440, 320]) {
+        await page.setViewportSize({ width, height: 900 })
+        // Новый вход сбрасывает таймер скрытия шапки комикса.
+        await gotoWithJsonLd(page, path)
+        const link = page.getByRole('link', { name: /^О произведении «/ }).first()
+        // У картин вместо кнопки — серверные хлебные крошки с названием Release.
+        const isArtwork = types(await readJsonLd(page)).includes('VisualArtwork')
+        const backLink = isArtwork
+          ? page.getByRole('navigation', { name: 'Навигация', exact: true }).locator(`a[href="${releasePath}"]`)
+          : link
+        await expect(backLink).toBeVisible()
+        await expect(backLink).toHaveAttribute('href', releasePath!)
+        const bounds = await backLink.boundingBox()
+        expect(bounds).not.toBeNull()
+        expect(bounds!.x).toBeGreaterThanOrEqual(0)
+        expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width)
+        await backLink.click()
+        await expect(page).toHaveURL(new URL(releasePath!, page.url()).toString())
+      }
+    }
+  })
+})
 
 test.describe('JSON-LD', () => {
   test('по одному @graph от layout и от страницы', async ({ page }) => {
@@ -417,7 +547,7 @@ test.describe('матрица noindex', () => {
     expect(robots).toContain('nofollow')
   })
 
-  test('релиз и издание открыты', async ({ page }) => {
+  test('релиз открыт, reader закрыт с follow', async ({ page }) => {
     const releasePath = await firstHref(page, '/', 'a[href^="/release/"]')
     test.skip(!releasePath, 'нет опубликованных релизов в БД')
 
@@ -430,7 +560,18 @@ test.describe('матрица noindex', () => {
     test.skip(!editionPath, 'у релиза нет изданий с читалкой-разворотом')
 
     await page.goto(editionPath!, { waitUntil: 'domcontentloaded' })
-    // Издания сознательно открыты: тип по формату (Book/ComicIssue/…).
+    await expect(page.locator('head meta[name="robots"]')).toHaveAttribute('content', 'noindex, follow')
+  })
+
+  test('лендинг /vvvvv остаётся открытым и имеет собственный canonical', async ({ page }) => {
+    await page.goto('/vvvvv', { waitUntil: 'domcontentloaded' })
     expect((await metaContent(page, 'robots')) ?? '').not.toContain('noindex')
+    await expect(page.locator('head link[rel="canonical"]')).toHaveAttribute('href', absoluteUrl('/vvvvv'))
+  })
+
+  test('robots.txt не запрещает обход reader для чтения canonical и noindex', async ({ request }) => {
+    const response = await request.get('/robots.txt')
+    expect(response.status()).toBe(200)
+    expect(await response.text()).not.toMatch(/^Disallow:\s*\/vvvvv/m)
   })
 })

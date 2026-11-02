@@ -165,11 +165,13 @@ export function ReleaseAudioPlayer({ release, chapters, initialChapterIndex = 0 
             </Link>
             <Link
               href={`/release/${release.slug}`}
+              aria-label={`О произведении «${release.title}»`}
+              title="О произведении"
               className="flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-[0.1em] transition-colors hover:bg-cf-text-1/8"
               style={{ borderColor: `${accent}40`, color: accent }}
             >
               <ArrowLeft className="h-3 w-3" />
-              <span className="hidden sm:inline">О релизе</span>
+              <span>О произведении</span>
             </Link>
           </div>
           <div className="flex items-center gap-2">

@@ -56,6 +56,8 @@ export interface BuildMetadataOptions {
   description?: string | null
   /** Путь от корня, начиная со слэша. Абсолютный URL соберётся сам. */
   path: string
+  /** Каноническая страница, если отличается от path; не меняет og:url. */
+  canonicalPath?: string
   image?: string | null
   imageAlt?: string
   /**
@@ -94,6 +96,7 @@ export function buildMetadata(opts: BuildMetadataOptions): Metadata {
   const {
     title,
     path,
+    canonicalPath = path,
     image,
     imageAlt,
     generatedImage = false,
@@ -121,7 +124,7 @@ export function buildMetadata(opts: BuildMetadataOptions): Metadata {
   return {
     title,
     description,
-    alternates: { canonical: url },
+    alternates: { canonical: absoluteUrl(canonicalPath) },
     ...(noindex && { robots: { index: false, follow: true } }),
     openGraph: {
       title,

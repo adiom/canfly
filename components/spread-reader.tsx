@@ -648,12 +648,11 @@ export function SpreadReader({
         }}
       >
         <header
-          className="reader-header"
+          className="reader-header px-2 sm:px-4"
           style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: '0 16px',
             fontSize: 13,
             color: t.text2,
             fontFamily: 'var(--font-geist-sans)',
@@ -666,13 +665,15 @@ export function SpreadReader({
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Link
               href={`/release/${release.slug}`}
-              title="К релизу"
+              title="О произведении"
+              aria-label={`О произведении «${release.title}»`}
               // Паддинг адаптивный, классом: на телефоне тач-зона 24px (padding:4)
               // слишком мала для пальца, на десктопе — норм для курсора.
-              className="p-2.5 sm:p-1"
-              style={{ color: t.text2, display: 'inline-flex' }}
+              className="gap-1 whitespace-nowrap p-2.5 text-[11px] sm:p-1 sm:text-xs"
+              style={{ color: t.text2, display: 'inline-flex', alignItems: 'center' }}
             >
               <ChevronLeft className="h-4 w-4" />
+              <span>О произведении</span>
             </Link>
           </div>
 
@@ -681,7 +682,14 @@ export function SpreadReader({
             style={{ maxWidth: '40%' }}
             title={`${release.title} — ${currentChapter?.title ?? ''}`}
           >
-            <span style={{ opacity: 0.7 }}>{release.title}</span>
+            <Link
+              href={`/release/${release.slug}`}
+              title="О произведении"
+              className="hover:underline"
+              style={{ color: 'inherit', opacity: 0.7 }}
+            >
+              {release.title}
+            </Link>
             {chapters.length > 1 && (
               <span style={{ opacity: 0.5 }}> · {currentChapter?.title}</span>
             )}
