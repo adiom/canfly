@@ -40,6 +40,7 @@ export function ReleaseForm({ release }: ReleaseFormProps) {
   const [isbn, setIsbn] = useState(release?.isbn ?? '')
   const [annotation, setAnnotation] = useState(release?.annotation ?? '')
   const [editorNotes, setEditorNotes] = useState(release?.editor_notes ?? '')
+  const [showInCatalog, setShowInCatalog] = useState(release?.show_in_catalog ?? true)
   const [slugManual, setSlugManual] = useState(false)
 
   function handleTitleChange(newTitle: string) {
@@ -68,6 +69,9 @@ export function ReleaseForm({ release }: ReleaseFormProps) {
       formData.set('isbn', isbn)
       formData.set('annotation', annotation)
       formData.set('editor_notes', editorNotes)
+      // Ключ отправляется всегда: в FormData он не должен пропадать,
+      // иначе контракт «ключа нет = не менять» оставил бы флаг прежним.
+      formData.set('show_in_catalog', showInCatalog ? 'true' : 'false')
       formData.set('authors', JSON.stringify([]))
       if (isEdit) {
         formData.set('status', release!.status)
@@ -138,6 +142,22 @@ export function ReleaseForm({ release }: ReleaseFormProps) {
           <div className="space-y-1">
             <Label htmlFor="editor_notes" className={labelCls}>Заметки редактора</Label>
             <Textarea id="editor_notes" value={editorNotes} onChange={e => setEditorNotes(e.target.value)} rows={2} placeholder="Внутренние заметки" className={fieldCls} />
+          </div>
+
+          <div className="space-y-2 border-t border-cf-text-1/10 pt-5">
+            <label className="flex items-center gap-2 text-sm text-cf-text-2">
+              <input
+                type="checkbox"
+                checked={showInCatalog}
+                onChange={e => setShowInCatalog(e.target.checked)}
+                className="size-4 rounded accent-cf-accent"
+              />
+              Показывать в каталоге релизов
+            </label>
+            <p className="text-xs leading-relaxed text-cf-text-3">
+              Релиз останется доступным по прямой ссылке и в поиске — флаг влияет
+              только на страницу всех релизов /releases.
+            </p>
           </div>
 
           <div className="flex gap-3 border-t border-cf-text-1/10 pt-5">

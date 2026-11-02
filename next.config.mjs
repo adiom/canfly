@@ -14,6 +14,9 @@ const nextConfig = {
     serverComponentsHmrCache: true,
     webpackMemoryOptimizations: true,
     preloadEntriesOnStart: false,
+    // Пул PostgreSQL ограничен тремя соединениями на процесс. Уменьшаем
+    // конкуренцию за них при предрендеринге, не меняя кэширование страниц.
+    staticGenerationMaxConcurrency: 2,
   },
   images: {
     remotePatterns: [

@@ -16,7 +16,7 @@ export interface AuthorSeries {
 const AUTHOR_WORK_COLUMNS = `
   r.id, r.title, r.slug, r.description, r.cover_image, r.genre,
   r.release_date, r.isbn, r.authors, r.annotation, r.editor_notes,
-  r.view_count, r.status, r.design_config, r.created_at, r.updated_at,
+  r.view_count, r.status, r.show_in_catalog, r.design_config, r.created_at, r.updated_at,
   COALESCE(
     json_agg(DISTINCT e.format) FILTER (WHERE e.format IS NOT NULL),
     '[]'::json

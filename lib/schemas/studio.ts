@@ -73,6 +73,14 @@ export const releaseFormSchema = z.object({
   annotation: optionalString,
   editor_notes: optionalString,
   status: releaseStatusSchema.default('draft'),
+  // Флаг листинга /releases. Опционален без default: отсутствующий ключ в
+  // updateReleaseAction означает «не менять» (dbUpdatePartial пропускает
+  // undefined), иначе апдейт без поля сбрасывал бы флаг — старый баг
+  // is_primary у изданий. '' и null вместо булева означают false.
+  show_in_catalog: z
+    .union([z.literal('true'), z.literal('false'), z.literal(''), z.null()])
+    .transform((v) => v === 'true')
+    .optional(),
 })
 
 // --- Edition ---

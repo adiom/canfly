@@ -45,6 +45,13 @@ export interface Release {
   editor_notes: string | null
   view_count: number
   status: ReleaseStatus
+  /**
+   * Показывать ли релиз на странице каталога /releases. Инвариант единственный:
+   * фильтрует fetchReleasesPage (lib/server/releases.ts). Остальные листинги
+   * (поиск, sitemap, события главной, серии, персонажи) флаг игнорируют,
+   * прямая ссылка /release/[slug] работает как у обычного published-релиза.
+   */
+  show_in_catalog: boolean
   design_config: ReleaseDesignConfig
   created_at: string
   updated_at: string

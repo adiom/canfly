@@ -88,6 +88,14 @@ export function ReleaseCard({ release }: { release: StudioRelease }) {
           {status.label}
         </span>
 
+        {/* Бейдж поясняет, почему published-релиз не виден на /releases.
+            Для draft/archived не нужен — там отсутствие в каталоге очевидно. */}
+        {release.status === 'published' && !release.show_in_catalog && (
+          <span className="hidden border border-dashed border-cf-text-1/20 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.12em] text-cf-text-4 sm:inline">
+            Скрыт в каталоге
+          </span>
+        )}
+
         <Link
           href={`/release/${release.slug}`}
           target="_blank"

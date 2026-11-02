@@ -125,6 +125,7 @@ export async function createReleaseAction(formData: FormData) {
     annotation: data.annotation,
     editor_notes: data.editor_notes,
     status: 'draft',
+    show_in_catalog: data.show_in_catalog ?? true,
   })
 
   if (release) {
@@ -154,6 +155,10 @@ export async function updateReleaseAction(id: string, formData: FormData) {
     annotation: data.annotation,
     editor_notes: data.editor_notes,
     status: data.status,
+    // Защита от бессознательного сброса: флаг в update меняется только когда
+    // форма его прислала (ReleaseForm отправляет всегда, но контракт
+    // show_in_catalog допускает частичный апдейт).
+    show_in_catalog: data.show_in_catalog,
   })
 
   revalidatePath(`/studio/releases/${id}`)

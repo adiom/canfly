@@ -13,7 +13,7 @@ import type {
 const releaseColumns = `
   id, title, slug, description, cover_image, genre,
   release_date, isbn, authors, annotation, editor_notes,
-  view_count, status, design_config, created_at, updated_at
+  view_count, status, show_in_catalog, design_config, created_at, updated_at
 `
 
 export async function fetchReleases(options: { status?: string; limit?: number; offset?: number } = {}) {
@@ -44,10 +44,12 @@ export async function createRelease(data: Record<string, unknown>) {
   return dbQueryOne<Release>(
     `INSERT INTO releases (
       title, slug, description, cover_image, genre,
-      release_date, isbn, authors, annotation, editor_notes, status
+      release_date, isbn, authors, annotation, editor_notes,
+      status, show_in_catalog
     ) VALUES (
       $1, $2, $3, $4, $5,
-      $6, $7, $8::jsonb, $9, $10, $11::release_status
+      $6, $7, $8::jsonb, $9, $10,
+      $11::release_status, $12
     )
     RETURNING ${releaseColumns}`,
     [
@@ -62,6 +64,7 @@ export async function createRelease(data: Record<string, unknown>) {
       data.annotation ?? null,
       data.editor_notes ?? null,
       data.status ?? 'draft',
+      data.show_in_catalog ?? true,
     ],
   )
 }
@@ -82,6 +85,7 @@ const releaseUpdatable: Record<string, UpdatableColumn> = {
   annotation: { column: 'annotation' },
   editor_notes: { column: 'editor_notes' },
   status: { column: 'status', cast: '::release_status' },
+  show_in_catalog: { column: 'show_in_catalog' },
 }
 
 /** Частичный апдейт: непереданные поля сохраняют текущее значение. */
@@ -276,7 +280,7 @@ export async function listAllReleasesWithEditions() {
   return dbQuery<ReleaseWithEditionsMeta>(
     `SELECT r.id, r.title, r.slug, r.description, r.cover_image, r.genre,
             r.release_date, r.isbn, r.authors, r.annotation, r.editor_notes,
-            r.view_count, r.status, r.design_config, r.created_at, r.updated_at,
+            r.view_count, r.status, r.show_in_catalog, r.design_config, r.created_at, r.updated_at,
             ${editionsMetaSelect}
      FROM releases r
      LEFT JOIN editions e ON e.release_id = r.id
@@ -289,7 +293,7 @@ export async function listReleasesByAuthorWithEditions(userId: string) {
   return dbQuery<ReleaseWithEditionsMeta>(
     `SELECT r.id, r.title, r.slug, r.description, r.cover_image, r.genre,
             r.release_date, r.isbn, r.authors, r.annotation, r.editor_notes,
-            r.view_count, r.status, r.design_config, r.created_at, r.updated_at,
+            r.view_count, r.status, r.show_in_catalog, r.design_config, r.created_at, r.updated_at,
             ${editionsMetaSelect}
      FROM releases r
      JOIN release_collaborators rc ON rc.release_id = r.id
@@ -307,7 +311,7 @@ export async function fetchReleasesWithEditions(opts: { status?: ReleaseStatus }
   return dbQuery<Release & { formats: EditionFormat[] }>(
     `SELECT r.id, r.title, r.slug, r.description, r.cover_image, r.genre,
             r.release_date, r.isbn, r.authors, r.annotation, r.editor_notes,
-            r.view_count, r.status, r.design_config, r.created_at, r.updated_at,
+            r.view_count, r.status, r.show_in_catalog, r.design_config, r.created_at, r.updated_at,
             COALESCE(
               json_agg(DISTINCT e.format) FILTER (WHERE e.format IS NOT NULL),
               '[]'::json
@@ -335,8 +339,15 @@ export interface ReleasesPage {
  * Серверная пагинация + фильтр по формату издания.
  *
  * @param format — 'all' | 'audiobook' (→ audiobook+audiorelease) | конкретный EditionFormat
- * Фильтр applied в SQL через EXISTS-подзапрос, COUNT — отдельным запросом.
+ * Фильтр применяется в SQL через EXISTS-подзапрос, COUNT — отдельным запросом.
  * `formats`-массив карточки всё равно содержит ВСЕ опубликованные форматы релиза.
+ *
+ * КОНТРАКТ КАТАЛОГА: это единственный листинг страницы /releases, поэтому
+ * релизы с show_in_catalog = false не выдаются никогда (ни в COUNT, ни в items).
+ * Остальные листинги пакета (search, sitemap, события на главной, серии,
+ * персонажи) и прямые ссылки /release/[slug] этот флаг не проверяют.
+ * Отключающего параметра нет намеренно: если появится потребитель полного
+ * каталога, вводить отдельную опцию, а не удалять фильтр.
  */
 export async function fetchReleasesPage(opts: {
   status?: ReleaseStatus
@@ -361,6 +372,7 @@ export async function fetchReleasesPage(opts: {
     `SELECT COUNT(*)::int AS total
      FROM releases r
      WHERE r.status = $1::release_status
+       AND r.show_in_catalog
        AND ($2::edition_format[] IS NULL OR EXISTS (
             SELECT 1 FROM editions e2
             WHERE e2.release_id = r.id
@@ -380,7 +392,7 @@ export async function fetchReleasesPage(opts: {
   const items = await dbQuery<Release & { formats: EditionFormat[] }>(
     `SELECT r.id, r.title, r.slug, r.description, r.cover_image, r.genre,
             r.release_date, r.isbn, r.authors, r.annotation, r.editor_notes,
-            r.view_count, r.status, r.design_config, r.created_at, r.updated_at,
+            r.view_count, r.status, r.show_in_catalog, r.design_config, r.created_at, r.updated_at,
             COALESCE(
               json_agg(DISTINCT e.format) FILTER (WHERE e.format IS NOT NULL),
               '[]'::json
@@ -388,6 +400,7 @@ export async function fetchReleasesPage(opts: {
      FROM releases r
      LEFT JOIN editions e ON e.release_id = r.id AND e.status = 'published'
      WHERE r.status = $1::release_status
+       AND r.show_in_catalog
        AND ($2::edition_format[] IS NULL OR EXISTS (
             SELECT 1 FROM editions e2
             WHERE e2.release_id = r.id
