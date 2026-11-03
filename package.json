@@ -11,6 +11,7 @@
     "lint": "eslint .",
     "test:e2e": "playwright test",
     "test:smoke": "playwright test e2e/smoke.spec.ts",
+    "seo:audit": "node scripts/seo-audit.mjs",
     "sync:tasks": "node scripts/sync-issues.mjs"
   },
   "dependencies": {

@@ -30,6 +30,16 @@ async function requireAdmin() {
   return session
 }
 
+/*
+ * Публичный профиль персонажа живёт в ISR (`revalidate = 300`). Точечный сброс
+ * по slug есть не у каждой мутации, а профилей немного, поэтому сбрасываем
+ * шаблон динамического маршрута целиком: следующий запрос соберёт страницу
+ * заново. Права и запись в БД от этого не меняются.
+ */
+function revalidateCharacterProfiles() {
+  revalidatePath('/characters/[slug]', 'page')
+}
+
 async function requireAuthorOrAdmin() {
   const session = await requireAuthorOrAdminSession()
   if (!session) redirect('/login')
@@ -175,6 +185,7 @@ export async function updateCharacterAction(id: string, formData: FormData) {
   revalidatePath('/studio/characters')
   revalidatePath(`/studio/characters/${id}`)
   revalidatePath('/characters')
+  revalidateCharacterProfiles()
   redirect(`/studio/characters/${id}`)
 }
 
@@ -193,6 +204,7 @@ export async function deleteCharacterAction(id: string) {
   await charactersDb.deleteCharacter(id)
   revalidatePath('/studio/characters')
   revalidatePath('/characters')
+  revalidateCharacterProfiles()
   redirect('/studio/characters')
 }
 
@@ -238,6 +250,7 @@ export async function createCharacterPostAction(characterId: string, formData: F
   })
 
   revalidatePath(`/studio/characters/${characterId}`)
+  revalidateCharacterProfiles()
   redirect(`/studio/characters/${characterId}`)
 }
 
@@ -279,6 +292,7 @@ export async function updateCharacterPostAction(postId: string, formData: FormDa
   })
 
   revalidatePath(`/studio/characters/${existing.character_id}`)
+  revalidateCharacterProfiles()
   redirect(`/studio/characters/${existing.character_id}`)
 }
 
@@ -288,6 +302,7 @@ export async function deleteCharacterPostAction(postId: string) {
   if (!existing) return
   await postsDb.deleteCharacterPost(postId)
   revalidatePath(`/studio/characters/${existing.character_id}`)
+  revalidateCharacterProfiles()
 }
 
 // ── Wall moderation ─────────────────────────────────────────────────────────
@@ -300,7 +315,10 @@ export async function listStudioWallPosts(characterId: string) {
 export async function setWallPostHiddenAction(wallPostId: string, hidden: boolean) {
   await requireAdmin()
   const updated = await wallDb.setWallPostHidden(wallPostId, hidden)
-  if (updated) revalidatePath(`/studio/characters/${updated.character_id}`)
+  if (updated) {
+    revalidatePath(`/studio/characters/${updated.character_id}`)
+    revalidateCharacterProfiles()
+  }
 }
 
 export async function deleteStudioWallPostAction(wallPostId: string) {
@@ -309,6 +327,7 @@ export async function deleteStudioWallPostAction(wallPostId: string) {
   if (!existing) return
   await wallDb.deleteWallPost(wallPostId)
   revalidatePath(`/studio/characters/${existing.character_id}`)
+  revalidateCharacterProfiles()
 }
 
 // ── Character ↔ Character relationships ─────────────────────────────────────
@@ -348,6 +367,7 @@ export async function upsertCharacterRelationshipAction(formData: FormData) {
   })
 
   revalidatePath(`/studio/characters/${parsed.data.characterId}`)
+  revalidateCharacterProfiles()
 }
 
 /**
@@ -370,6 +390,7 @@ export async function deleteCharacterRelationshipAction(formData: FormData) {
   )
 
   revalidatePath(`/studio/characters/${parsed.data.characterId}`)
+  revalidateCharacterProfiles()
 }
 
 /**
@@ -420,6 +441,7 @@ export async function setCharacterReaderStatusAction(formData: FormData) {
 
   await usersDb.setCharacterReaderStatus(userId, characterId, status)
   revalidatePath(`/studio/characters/${characterId}`)
+  revalidateCharacterProfiles()
 }
 
 export async function deleteCharacterReaderAction(formData: FormData) {
@@ -434,4 +456,5 @@ export async function deleteCharacterReaderAction(formData: FormData) {
 
   await usersDb.adminDeleteCharacterFriendship(userId, characterId)
   revalidatePath(`/studio/characters/${characterId}`)
+  revalidateCharacterProfiles()
 }

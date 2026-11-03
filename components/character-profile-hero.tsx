@@ -1,3 +1,5 @@
+import Link from 'next/link'
+
 import { CharacterFriendButton } from '@/components/character-friend-button'
 import { CharacterConstellation } from '@/components/character-constellation'
 import type { ConstellationNode } from '@/lib/character-constellation'
@@ -9,6 +11,8 @@ interface CharacterProfileHeroProps {
   stats: CharacterStats
   /** Узлы орбитального поля — собираются сервером через buildConstellationNodes. */
   constellation: ConstellationNode[]
+  /** Места вселенной, к которым привязан персонаж. */
+  places?: Array<{ slug: string; name: string }>
 }
 
 const RELATIVE = new Intl.RelativeTimeFormat('ru', { numeric: 'auto' })
@@ -52,6 +56,7 @@ export function CharacterProfileHero({
   character,
   stats,
   constellation,
+  places = [],
 }: CharacterProfileHeroProps) {
   const canChat =
     character.can_receive_messages !== false && character.reply_mode !== 'disabled'
@@ -91,6 +96,23 @@ export function CharacterProfileHero({
       {character.bio ? (
         <p className="mt-6 max-w-md text-center text-[15px] leading-relaxed text-cf-text-caption">
           {character.bio}
+        </p>
+      ) : null}
+
+      {places.length > 0 ? (
+        <p className="mt-4 text-center text-[13px] text-cf-text-3">
+          <span className="text-cf-text-4">место: </span>
+          {places.map((place, index) => (
+            <span key={place.slug}>
+              {index > 0 ? <span className="text-cf-text-4">, </span> : null}
+              <Link
+                href={`/places/${place.slug}`}
+                className="text-cf-air-accent-ink underline-offset-4 transition-colors hover:underline"
+              >
+                {place.name}
+              </Link>
+            </span>
+          ))}
         </p>
       ) : null}
 

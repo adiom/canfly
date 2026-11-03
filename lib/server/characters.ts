@@ -51,7 +51,9 @@ export async function fetchCharacterBySlug(slug: string): Promise<{
   character: Character
   relationships: CharacterRelationshipWithTarget[]
 } | null> {
-  const character = await dbQueryOne<Character>('SELECT * FROM characters WHERE slug = $1 LIMIT 1', [
+  // lower(slug): регистр в URL не должен давать 404 — страница сама
+  // перенаправит на сохранённый слаг (см. permanentRedirect в page.tsx).
+  const character = await dbQueryOne<Character>('SELECT * FROM characters WHERE lower(slug) = lower($1) LIMIT 1', [
     slug,
   ])
 

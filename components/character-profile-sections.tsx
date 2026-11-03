@@ -20,8 +20,6 @@ interface CharacterProfileSectionsProps {
   posts: CharacterPostWithCharacter[]
   friends: CharacterFriendSummary[]
   wall: CharacterWallPostWithUser[]
-  currentUserId: string | null
-  isAdmin: boolean
 }
 
 /**
@@ -36,8 +34,6 @@ export function CharacterProfileSections({
   posts,
   friends,
   wall,
-  currentUserId,
-  isAdmin,
 }: CharacterProfileSectionsProps) {
   return (
     <div className="cf-rise-late mt-24 space-y-20">
@@ -58,12 +54,7 @@ export function CharacterProfileSections({
       </Section>
 
       <Section id="wall" title="Стена">
-        <CharacterWall
-          slug={slug}
-          initialPosts={wall}
-          currentUserId={currentUserId}
-          isAdmin={isAdmin}
-        />
+        <CharacterWall slug={slug} initialPosts={wall} />
       </Section>
     </div>
   )

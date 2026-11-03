@@ -68,27 +68,39 @@ export function CharacterReleasesSection({ releases }: CharacterReleasesSectionP
 }
 
 function ReleaseRow({ release }: { release: CharacterReleaseLink }) {
-  const path = release.series_slug
-    ? `/series/${release.series_slug}`
-    : `/release/${release.release_slug}`
-
+  /*
+   * Название ведёт на сам релиз (это индексируемая страница произведения),
+   * а «серия …» — на страницу серии. Раньше вся строка вела на серию, поэтому
+   * анкор «Крой по душе. Том 2» указывал не на тот URL, а страница персонажа
+   * вообще не ссылалась на релизы, хотя JSON-LD объявляет их subjectOf.
+   */
   return (
-    <Link
-      href={path}
-      className="group flex items-center gap-4 rounded-2xl px-3 py-3 transition-colors duration-300 hover:bg-cf-air-surface"
-    >
+    <div className="group flex items-center gap-4 rounded-2xl px-3 py-3 transition-colors duration-300 hover:bg-cf-air-surface">
       <span
         aria-hidden
         className="h-1.5 w-1.5 shrink-0 rounded-full bg-cf-air-accent shadow-[0_0_8px_rgba(106,154,184,0.45)]"
       />
 
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[15px] leading-tight text-cf-text-heading">
+        <Link
+          href={`/release/${release.release_slug}`}
+          className="block truncate text-[15px] leading-tight text-cf-text-heading transition-colors hover:text-cf-accent"
+        >
           {release.release_title}
-        </p>
-        <p className="mt-1 text-[10px] uppercase tracking-[0.2em] text-cf-text-3">
-          {release.series_slug ? 'часть серии' : 'отдельный релиз'}
-        </p>
+        </Link>
+
+        {release.series_slug ? (
+          <Link
+            href={`/series/${release.series_slug}`}
+            className="mt-1 inline-block text-[10px] uppercase tracking-[0.2em] text-cf-text-3 transition-colors hover:text-cf-text-2"
+          >
+            {release.series_title ? `серия «${release.series_title}»` : 'часть серии'}
+          </Link>
+        ) : (
+          <p className="mt-1 text-[10px] uppercase tracking-[0.2em] text-cf-text-3">
+            отдельный релиз
+          </p>
+        )}
       </div>
 
       <span
@@ -97,6 +109,6 @@ function ReleaseRow({ release }: { release: CharacterReleaseLink }) {
       >
         →
       </span>
-    </Link>
+    </div>
   )
 }

@@ -44,6 +44,14 @@ function permanent(request: NextRequest, pathname: string) {
   return NextResponse.redirect(new URL(pathname, request.url), 301)
 }
 
+/** Прежние вкладки профиля персонажа → якоря разделов одной страницы. */
+const CHARACTER_TAB_ANCHOR: Record<string, string> = {
+  feed: 'posts',
+  about: 'about',
+  relations: 'relations',
+  wall: 'wall',
+}
+
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
@@ -54,6 +62,21 @@ export async function proxy(request: NextRequest) {
   // --- Лендинг живёт на корне; /home остался от прежней раскладки ---
   if (pathname === '/home' || pathname.startsWith('/home/')) {
     return permanent(request, '/')
+  }
+
+  /*
+   * Старые вкладки профиля (`/characters/[slug]?tab=feed|about|…`) стали
+   * якорями. Редирект живёт здесь, а не в page.tsx: чтение searchParams делало
+   * страницу динамической и мешало ISR. 301 — чтобы старые ссылки не копились
+   * в индексе.
+   */
+  if (pathname.startsWith('/characters/')) {
+    const segments = pathname.split('/')
+    const tab = request.nextUrl.searchParams.get('tab')
+    const anchor = tab ? CHARACTER_TAB_ANCHOR[tab] : null
+    if (segments.length === 3 && segments[2] && anchor) {
+      return permanent(request, `/characters/${segments[2]}#${anchor}`)
+    }
   }
 
   // --- Защита /profile через next-auth JWT ---
@@ -175,6 +198,7 @@ export const config = {
     '/studio/:path*',
     '/home',
     '/home/:path*',
+    '/characters/:path*',
     '/release',
     '/release/:path*',
     '/books',

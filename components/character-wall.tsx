@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useSession } from 'next-auth/react'
 import { Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -12,13 +13,19 @@ import type { CharacterWallPostWithUser } from '@/lib/types'
 interface CharacterWallProps {
   slug: string
   initialPosts: CharacterWallPostWithUser[]
-  currentUserId: string | null
-  isAdmin: boolean
 }
 
 const MAX_LENGTH = 2000
 
-export function CharacterWall({ slug, initialPosts, currentUserId, isAdmin }: CharacterWallProps) {
+/*
+ * Сессия читается на клиенте, а не приходит пропсами с сервера: страница
+ * профиля — ISR, и обращение к cookies сделало бы её динамической. Право на
+ * удаление всё равно проверяет API при DELETE, здесь только видимость кнопки.
+ */
+export function CharacterWall({ slug, initialPosts }: CharacterWallProps) {
+  const { data: session } = useSession()
+  const currentUserId = session?.user?.id ?? null
+  const isAdmin = session?.user?.isAdmin ?? false
   const router = useRouter()
   const [posts, setPosts] = useState<CharacterWallPostWithUser[]>(initialPosts)
   const [content, setContent] = useState('')

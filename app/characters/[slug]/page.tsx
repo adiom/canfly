@@ -1,5 +1,6 @@
-import { notFound, permanentRedirect, redirect } from 'next/navigation'
+import { notFound, permanentRedirect } from 'next/navigation'
 import Link from 'next/link'
+import { cache } from 'react'
 
 import { CharacterGamesSection } from '@/components/character-games-section'
 import { CharacterProfileHero } from '@/components/character-profile-hero'
@@ -10,6 +11,7 @@ import {
   fetchCharacterBySlug,
   fetchCharacterFriends,
   fetchCharacterStats,
+  fetchPublicCharactersList,
 } from '@/lib/server/characters'
 import { listVisibleCharacterPosts } from '@/lib/server/character-posts'
 import { fetchWallPosts } from '@/lib/server/character-wall'
@@ -17,7 +19,6 @@ import { fetchReleasesByCharacter } from '@/lib/server/releases'
 import { fetchSeriesByCharacter } from '@/lib/server/series'
 import { fetchGamesByCharacter } from '@/lib/server/games'
 import { fetchPlacesByCharacter } from '@/lib/server/places'
-import { getCurrentUser } from '@/lib/server/session'
 import { generateCharacterSchema } from '@/lib/seo/schema'
 import { buildMetadata, notFoundMetadata } from '@/lib/seo/metadata'
 import { JsonLd } from '@/components/seo/json-ld'
@@ -25,23 +26,51 @@ import { Breadcrumbs } from '@/components/breadcrumbs'
 
 interface CharacterPageProps {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ tab?: string }>
 }
 
-/** Прежние вкладки → якоря разделов на одной странице */
-const LEGACY_TAB_ANCHOR: Record<string, string> = {
-  feed: 'posts',
-  about: 'about',
-  relations: 'relations',
-  wall: 'wall',
-}
-
-async function getCharacterData(slug: string) {
+/*
+ * `generateMetadata` и рендер страницы выполняются в одном запросе, поэтому
+ * React `cache()` убирает повторные походы в БД: профиль персонажа и его серии
+ * нужны и для `<title>`, и для разметки.
+ */
+const getCharacterData = cache(async (slug: string) => {
   try {
     return await fetchCharacterBySlug(slug)
   } catch (error) {
     console.error('Error fetching character:', error)
     return null
+  }
+})
+
+const getCharacterSeries = cache(async (characterId: string) => {
+  try {
+    return await fetchSeriesByCharacter(characterId)
+  } catch (error) {
+    console.error('Error fetching character series:', error)
+    return []
+  }
+})
+
+/*
+ * Профиль больше не читает cookies и searchParams, поэтому может жить в ISR:
+ * записи и стена приходят публичными запросами, а персональные элементы
+ * (кнопка дружбы, удаление своей записи на стене) читают сессию на клиенте.
+ * 5 минут — компромисс между свежестью и TTFB; мутации дополнительно зовут
+ * revalidatePath, поэтому правки видны сразу.
+ */
+export const revalidate = 300
+
+/** Список для сборки: профили людей. Города редиректят на /places. */
+export async function generateStaticParams() {
+  try {
+    const characters = await fetchPublicCharactersList()
+    return characters
+      .filter(character => character.character_type === 'person')
+      .map(character => ({ slug: character.slug }))
+  } catch (error) {
+    // Без БД на этапе сборки страницы сгенерируются по требованию.
+    console.error('Error building character params:', error)
+    return []
   }
 }
 
@@ -57,20 +86,44 @@ export async function generateMetadata({ params }: CharacterPageProps) {
     permanentRedirect(`/places/${character.slug}`)
   }
 
+  /*
+   * Заголовок собирается из имени и серии, где персонаж главный герой.
+   * Прежний `${name} - canfly | культура твоего сознания` тратил половину
+   * сниппета на слоган и не отвечал на запросы вида «Соня Крой по душе».
+   */
+  const series = await getCharacterSeries(character.id)
+  const primarySeries = series[0]
+  const seriesContext = primarySeries ? ` из серии «${primarySeries.title}»` : ''
+
+  /*
+   * Короткий `bio` (у части героев — 42–60 символов) не заполняет сниппет,
+   * поэтому при длинном `full_description` берём его: buildMetadata снимет
+   * разметку и обрежет до 155 символов по границе слова.
+   */
+  const bio = character.bio?.trim() || null
+  const fullDescription = character.full_description?.trim() || null
+  let description = bio ?? fullDescription
+  if (
+    fullDescription &&
+    (!bio || bio.length < 100) &&
+    fullDescription.length > (bio?.length ?? 0)
+  ) {
+    description = fullDescription
+  }
+
   return buildMetadata({
-    title: `${character.name} - canfly | культура твоего сознания`,
+    title: `${character.name} — персонаж canfly${seriesContext}`,
     description:
-      character.bio ??
-      `Персонаж литературной вселенной canfly — ${character.name}.`,
+      description ??
+      `Персонаж литературной вселенной canfly — ${character.name}. Биография, связи и записи героя.`,
     path: `/characters/${character.slug}`,
     generatedImage: true,
     ogType: 'profile',
   })
 }
 
-export default async function CharacterPage({ params, searchParams }: CharacterPageProps) {
+export default async function CharacterPage({ params }: CharacterPageProps) {
   const { slug } = await params
-  const { tab } = await searchParams
   const data = await getCharacterData(slug)
   if (!data?.character) notFound()
 
@@ -79,23 +132,21 @@ export default async function CharacterPage({ params, searchParams }: CharacterP
     permanentRedirect(`/places/${data.character.slug}`)
   }
 
-  if (tab && LEGACY_TAB_ANCHOR[tab]) {
-    redirect(`/characters/${slug}#${LEGACY_TAB_ANCHOR[tab]}`)
+  // Регистр в URL — не часть идентичности: /characters/Sonya ведёт на сохранённый слаг.
+  if (data.character.slug !== slug) {
+    permanentRedirect(`/characters/${data.character.slug}`)
   }
 
-  const [stats, friends, posts, wall, currentUser, subjectReleases, subjectSeries, characterPlaces, games] = await Promise.all([
+  const [stats, friends, posts, wall, subjectReleases, subjectSeries, characterPlaces, games] = await Promise.all([
     fetchCharacterStats(data.character.id),
     fetchCharacterFriends(data.character.id, 12),
     listVisibleCharacterPosts(data.character.slug),
     fetchWallPosts(data.character.id, { includeHidden: false, limit: 50 }),
-    getCurrentUser(),
     fetchReleasesByCharacter(data.character.id, { onlyPublished: true }),
-    fetchSeriesByCharacter(data.character.id),
+    getCharacterSeries(data.character.id),
     fetchPlacesByCharacter(data.character.id),
     fetchGamesByCharacter(data.character.id),
   ])
-
-  const isAdmin = currentUser?.is_admin ?? false
 
   const subjectOfRefs = [
     ...subjectReleases.map(release => ({
@@ -126,7 +177,7 @@ export default async function CharacterPage({ params, searchParams }: CharacterP
       <div className="pt-4">
         <Breadcrumbs items={[
           { label: 'canfly', url: '/' },
-          { label: 'Персонаж', url: '/characters' },
+          { label: 'Персонажи', url: '/characters' },
           { label: data.character.name, url: `/characters/${data.character.slug}` },
         ]} />
       </div>
@@ -134,6 +185,7 @@ export default async function CharacterPage({ params, searchParams }: CharacterP
       <CharacterProfileHero
         character={data.character}
         stats={stats}
+        places={characterPlaces}
         constellation={buildConstellationNodes({
           releases: subjectReleases,
           relationships: data.relationships ?? [],
@@ -160,8 +212,6 @@ export default async function CharacterPage({ params, searchParams }: CharacterP
         posts={posts}
         friends={friends}
         wall={wall}
-        currentUserId={currentUser?.id ?? null}
-        isAdmin={isAdmin}
       />
 
       <div className="mt-24 text-center">

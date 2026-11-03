@@ -104,6 +104,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.8,
     },
     {
+      // Хаб персонажей индексируется (фильтры — нет), поэтому он в карте.
+      url: `${BASE_URL}/characters`,
+      changeFrequency: 'weekly',
+      priority: 0.7,
+    },
+    {
       url: `${BASE_URL}/colors`,
       changeFrequency: 'monthly',
       priority: 0.5,

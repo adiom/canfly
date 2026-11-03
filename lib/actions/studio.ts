@@ -202,6 +202,9 @@ export async function updateReleaseCharactersAction(
 
   await releasesDb.setReleaseCharacters(releaseId, normalized)
   revalidatePath(`/studio/releases/${releaseId}`)
+  // Роль персонажа в релизе меняет и хаб «Главные», и блок работ в профиле.
+  revalidatePath('/characters')
+  revalidatePath('/characters/[slug]', 'page')
 }
 
 export async function deleteReleaseAction(id: string) {

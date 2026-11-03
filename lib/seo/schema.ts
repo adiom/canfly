@@ -380,7 +380,7 @@ export function generateSeriesSchema(series: Series, releases: SeriesRelease[]) 
 // === Персонажи и профили ===
 
 type CharacterSeed = Pick<Character, 'name' | 'slug' | 'avatar'> &
-  Partial<Pick<Character, 'bio' | 'full_description'>>
+  Partial<Pick<Character, 'bio' | 'full_description' | 'updated_at'>>
 
 /**
  * Минимальный набор произведений, в которых персонаж участвует, для subjectOf.
@@ -476,6 +476,11 @@ export function generateCharacterSchema(
   opts: { subjectOf?: CharacterSubjectRef[]; location?: Array<{ slug: string; name: string }>; jobTitle?: string; worksFor?: string } = {},
 ) {
   const url = `${BASE_URL}/characters/${character.slug}`
+  /*
+   * dateModified — единственный сигнал свежести у профиля: записи, связи и
+   * описание меняются без смены URL, а без даты страница выглядит статичной.
+   */
+  const dateModified = toISODate(character.updated_at)
 
   return {
     '@type': 'ProfilePage',
@@ -483,6 +488,7 @@ export function generateCharacterSchema(
     url,
     inLanguage: 'ru-RU',
     isPartOf: ref(ID.website),
+    ...(dateModified && { dateModified }),
     mainEntity: {
       ...characterNode(character, { full: true, subjectOf: opts.subjectOf, location: opts.location }),
       // Поля Person: jobTitle/worksFor — стандартные для schema.org/Person.

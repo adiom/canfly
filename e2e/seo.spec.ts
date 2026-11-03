@@ -382,6 +382,36 @@ test.describe('JSON-LD', () => {
     }
   })
 
+  test('персонаж: заголовок без слогана и ссылки на сами работы', async ({ page }) => {
+    const path = await firstHref(page, '/characters', 'a[href^="/characters/"]')
+    test.skip(!path, 'нет персонажей в БД')
+
+    await gotoWithJsonLd(page, path!)
+    const nodes = await readJsonLd(page)
+
+    // Заголовок раньше был «Имя - canfly | культура твоего сознания»: слоган
+    // занимал половину сниппета и не описывал сущность.
+    const title = await page.title()
+    expect(title).toContain('персонаж canfly')
+    expect(title).not.toContain('культура твоего сознания')
+
+    const profile = nodes.find(node => node['@type'] === 'ProfilePage')
+    expect(profile, 'нет ProfilePage').toBeTruthy()
+    // dateModified — сигнал свежести: записи и связи меняются без смены URL.
+    expect(typeof profile?.dateModified).toBe('string')
+
+    /*
+     * Раньше вся строка релиза была анкором на /series/[slug], поэтому
+     * страницы работ не получали входящих ссылок, хотя JSON-LD объявляет их
+     * через subjectOf. Если subjectOf есть — ссылка на /release/ обязана быть.
+     */
+    const works = (profile?.mainEntity as Graph | undefined)?.subjectOf
+    if (Array.isArray(works) && works.length > 0) {
+      const releaseLinks = await page.locator('#releases a[href^="/release/"]').count()
+      expect(releaseLinks, 'subjectOf без входящих ссылок на релизы').toBeGreaterThan(0)
+    }
+  })
+
   test('релиз с персонажами: character[] + about у главного', async ({ page }) => {
     const path = await firstHref(page, '/', 'a[href^="/release/"]')
     test.skip(!path, 'нет опубликованных релизов в БД')
@@ -567,6 +597,25 @@ test.describe('матрица noindex', () => {
     await page.goto('/vvvvv', { waitUntil: 'domcontentloaded' })
     expect((await metaContent(page, 'robots')) ?? '').not.toContain('noindex')
     await expect(page.locator('head link[rel="canonical"]')).toHaveAttribute('href', absoluteUrl('/vvvvv'))
+  })
+
+  test('хаб персонажей открыт, его фильтры закрыты', async ({ page }) => {
+    // Чистый /characters — точка входа в кластер: на него ведут крошки
+    // профилей, поэтому он обязан индексироваться. URL-фильтры дают дубли
+    // одной выдачи и закрыты noindex, canonical у них всё равно /characters.
+    await page.goto('/characters', { waitUntil: 'domcontentloaded' })
+    expect((await metaContent(page, 'robots')) ?? '').not.toContain('noindex')
+    await expect(page.locator('head link[rel="canonical"]')).toHaveAttribute(
+      'href',
+      absoluteUrl('/characters'),
+    )
+
+    await page.goto('/characters?role=all', { waitUntil: 'domcontentloaded' })
+    expect(await metaContent(page, 'robots')).toContain('noindex')
+    await expect(page.locator('head link[rel="canonical"]')).toHaveAttribute(
+      'href',
+      absoluteUrl('/characters'),
+    )
   })
 
   test('robots.txt не запрещает обход reader для чтения canonical и noindex', async ({ request }) => {

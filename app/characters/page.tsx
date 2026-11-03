@@ -74,8 +74,12 @@ export async function generateMetadata({
   searchParams,
 }: CharactersPageProps): Promise<Metadata> {
   const sp = await searchParams
-  // Хаб с URL-фильтрами — всегда noindex: ?role / ?release / ?series
-  // создают дубли для поисковиков; sitemap отдаёт карточки персонально.
+  /*
+   * Чистый хаб индексируется: это точка входа в кластер персонажей, на неё
+   * ведут хлебные крошки профилей. URL-фильтры (?role/?release/?series)
+   * создают дубли, поэтому закрыты noindex; canonical у них всё равно /characters.
+   */
+  const filtered = Boolean(sp.role || sp.release || sp.series)
   const title = sp.release || sp.series
     ? 'Персонажи по фильтру | canfly'
     : 'Персонажи | canfly — культура твоего сознания'
@@ -84,7 +88,7 @@ export async function generateMetadata({
     title,
     description: CHARACTERS_DESCRIPTION,
     path: '/characters',
-    noindex: true,
+    noindex: filtered,
   })
 }
 

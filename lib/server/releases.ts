@@ -159,6 +159,7 @@ export interface CharacterReleaseLink {
   release_title: string
   release_status: ReleaseStatus
   series_slug: string | null
+  series_title: string | null
   role: ReleaseCharacterRole
 }
 
@@ -174,6 +175,7 @@ export async function fetchReleasesByCharacter(
        r.title AS release_title,
        r.status AS release_status,
        s.slug AS series_slug,
+       s.title AS series_title,
        rc.role
      FROM release_characters rc
      JOIN releases r ON r.id = rc.release_id
@@ -201,6 +203,7 @@ export async function fetchReleasesByPlace(
        r.title AS release_title,
        r.status AS release_status,
        s.slug AS series_slug,
+       s.title AS series_title,
        rp.role
      FROM release_places rp
      JOIN releases r ON r.id = rp.release_id
