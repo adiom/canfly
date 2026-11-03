@@ -36,7 +36,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   const newsEntries = newsPosts.map((post) => ({
     url: `${BASE_URL}/news/${post.slug}`,
-    lastModified: new Date(post.created_at),
+    lastModified: new Date(post.updated_at ?? post.published_at ?? post.created_at),
     changeFrequency: 'monthly' as const,
     priority: 0.7,
   }))
@@ -45,7 +45,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     .filter(char => char.character_type === 'person')
     .map((char) => ({
       url: `${BASE_URL}/characters/${char.slug}`,
-      lastModified: new Date(),
+      lastModified: new Date(char.updated_at),
       changeFrequency: 'monthly' as const,
       priority: 0.6,
       images: char.avatar ? [char.avatar] : undefined,
@@ -85,34 +85,31 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // Издания `/vvvvv/[slug]` — noindex с canonical на релиз, поэтому в sitemap
   // остаются только карточки произведений и отдельный лендинг `/vvvvv`.
+  // У статических страниц нет надёжной даты изменения: lastmod опционален,
+  // а время генерации sitemap не означает обновление содержимого страницы.
   return [
     {
       url: absoluteUrl(LANDING_PATH),
-      lastModified: new Date(),
       changeFrequency: 'daily',
       priority: 1,
     },
     {
       url: `${BASE_URL}${CATALOG_PATH}`,
-      lastModified: new Date(),
       changeFrequency: 'weekly',
       priority: 0.9,
     },
     {
       url: `${BASE_URL}/news`,
-      lastModified: new Date(),
       changeFrequency: 'daily',
       priority: 0.8,
     },
     {
       url: `${BASE_URL}/colors`,
-      lastModified: new Date(),
       changeFrequency: 'monthly',
       priority: 0.5,
     },
     {
       url: `${BASE_URL}/vvvvv`,
-      lastModified: new Date(),
       changeFrequency: 'monthly',
       priority: 0.5,
     },

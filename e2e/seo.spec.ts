@@ -527,7 +527,7 @@ test.describe('матрица noindex', () => {
     const res = await request.get('/robots.txt')
     expect(res.status()).toBe(200)
     const body = await res.text()
-    for (const path of ['/admin', '/studio', '/login', '/profile', '/api', '/search', '/scroll']) {
+    for (const path of ['/admin', '/studio', '/login', '/profile', '/api', '/search']) {
       expect(body, `robots.txt не закрывает ${path}`).toContain(`Disallow: ${path}`)
     }
   })

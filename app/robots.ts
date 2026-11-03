@@ -14,7 +14,6 @@ export default function robots(): MetadataRoute.Robots {
         '/profile',
         '/api',
         '/search',
-        '/scroll',
       ],
     },
     sitemap: `${BASE_URL}/sitemap.xml`,

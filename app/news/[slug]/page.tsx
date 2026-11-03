@@ -1,4 +1,4 @@
-import { notFound, redirect } from 'next/navigation'
+import { notFound, permanentRedirect } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 
@@ -22,7 +22,7 @@ async function resolveNewsSlug(slug: string) {
   if (UUID_RE.test(slug)) {
     const post = await fetchNewsPostById(slug)
     if (post && post.status === 'published') {
-      redirect(`/news/${post.slug}`)
+      permanentRedirect(`/news/${post.slug}`)
     }
     return null
   }

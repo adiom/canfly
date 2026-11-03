@@ -107,7 +107,11 @@ export async function proxy(request: NextRequest) {
    */
   if (pathname.startsWith('/release/')) {
     const segments = pathname.split('/')
-    const slug = (segments[2] ?? '').toLowerCase()
+    // Не меняем байты percent-encoding: `%D0` → `%d0` заставляло клиента
+    // снова нормализовать URL и зацикливало редирект на адресах вроде `knifeНож`.
+    const slug = (segments[2] ?? '').replace(/%[0-9a-f]{2}|[a-z]/gi, part =>
+      part.startsWith('%') ? part : part.toLowerCase(),
+    )
 
     if (!slug) return permanent(request, CATALOG)
 
