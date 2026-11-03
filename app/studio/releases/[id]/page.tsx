@@ -25,6 +25,7 @@ export default async function ReleaseDetailPage({ params }: { params: Promise<{ 
 
   return (
     <ReleasePageClient
+      key={release.id}
       release={release}
       editions={editions}
       series={series}

@@ -13,7 +13,7 @@ import type {
 
 const releaseColumns = `
   id, title, slug, description, cover_image, genre,
-  release_date, isbn, authors, annotation, editor_notes,
+  release_date::text AS release_date, isbn, authors, annotation, editor_notes,
   view_count, status, show_in_catalog, design_config, created_at, updated_at
 `
 

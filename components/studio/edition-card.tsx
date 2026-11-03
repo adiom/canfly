@@ -23,7 +23,7 @@ export const EDITION_STATUS_STAMPS = {
   archived: { label: 'Архив', stamp: 'border-cf-text-1/15 text-cf-text-4' },
 } as const
 
-export function EditionCard({ edition }: { edition: Edition }) {
+export function EditionCard({ edition, variant = 'default' }: { edition: Edition; variant?: 'default' | 'paper' }) {
   const Icon = EDITION_FORMAT_ICONS[edition.format] ?? BookOpen
   const status = EDITION_STATUS_STAMPS[edition.status] ?? EDITION_STATUS_STAMPS.draft
   const tier = edition.quality_tier
@@ -33,7 +33,7 @@ export function EditionCard({ edition }: { edition: Edition }) {
   return (
     <Link
       href={`/studio/editions/${edition.id}`}
-      className="group flex items-center gap-4 px-1 py-4 transition-colors hover:bg-cf-text-1/[0.03]"
+      className={variant === 'paper' ? 'paper-edition group' : 'group flex items-center gap-4 px-1 py-4 transition-colors hover:bg-cf-text-1/[0.03]'}
     >
       <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center border border-cf-text-1/10 bg-cf-bg-2 transition-colors group-hover:border-cf-warm/45">
         <Icon className="h-4 w-4 text-cf-text-3 transition-colors group-hover:text-cf-accent" />

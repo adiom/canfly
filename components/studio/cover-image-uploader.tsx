@@ -1,187 +1,167 @@
 'use client'
 
-import { useRef, useState, useCallback } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import Image from 'next/image'
 import { toast } from 'sonner'
 import { Upload, X, ImageIcon, Loader2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 interface CoverImageUploaderProps {
   value: string | null
   onChange: (url: string | null) => void
+  onUploadingChange?: (uploading: boolean) => void
   disabled?: boolean
   className?: string
+  variant?: 'default' | 'paper'
 }
 
 const MAX_SIZE = 10 * 1024 * 1024
 
-export function CoverImageUploader({ value, onChange, disabled, className }: CoverImageUploaderProps) {
+export function CoverImageUploader({ value, onChange, onUploadingChange, disabled, className, variant = 'default' }: CoverImageUploaderProps) {
   const inputRef = useRef<HTMLInputElement>(null)
+  const requestRef = useRef<XMLHttpRequest | null>(null)
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
   const [dragOver, setDragOver] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const paper = variant === 'paper'
+  const busy = disabled || uploading
 
-  const upload = useCallback(
-    (file: File) => {
-      if (!file.type.startsWith('image/')) {
-        toast.error('Только изображения')
-        return
-      }
-      if (file.size > MAX_SIZE) {
-        toast.error('Файл больше 10 МБ')
-        return
-      }
+  useEffect(() => () => { requestRef.current?.abort() }, [])
 
-      setUploading(true)
-      setProgress(0)
+  function fail(message: string) {
+    setError(message)
+    toast.error(message)
+  }
 
-      const xhr = new XMLHttpRequest()
-      const formData = new FormData()
-      formData.append('file', file)
+  function upload(file: File) {
+    if (busy || requestRef.current) return
+    setError(null)
+    if (!file.type.startsWith('image/')) {
+      fail('Только изображения')
+      return
+    }
+    if (file.size > MAX_SIZE) {
+      fail('Файл больше 10 МБ')
+      return
+    }
 
-      xhr.upload.addEventListener('progress', e => {
-        if (e.lengthComputable) {
-          setProgress(Math.round((e.loaded / e.total) * 100))
+    setUploading(true)
+    onUploadingChange?.(true)
+    setProgress(0)
+    const xhr = new XMLHttpRequest()
+    requestRef.current = xhr
+    const formData = new FormData()
+    formData.append('file', file)
+
+    xhr.upload.addEventListener('progress', event => {
+      if (event.lengthComputable) setProgress(Math.round(event.loaded / event.total * 100))
+    })
+    xhr.addEventListener('load', () => {
+      try {
+        const data: unknown = JSON.parse(xhr.responseText)
+        if (xhr.status >= 200 && xhr.status < 300 && data && typeof data === 'object' && 'url' in data && typeof data.url === 'string') {
+          onChange(data.url)
+          toast.success('Обложка загружена. Сохраните основные данные.')
+        } else {
+          fail(data && typeof data === 'object' && 'error' in data && typeof data.error === 'string' ? data.error : 'Ошибка загрузки')
         }
-      })
+      } catch {
+        fail('Ошибка ответа сервера')
+      }
+    })
+    xhr.addEventListener('error', () => fail('Сетевая ошибка. Попробуйте загрузить обложку ещё раз.'))
+    xhr.addEventListener('loadend', () => {
+      requestRef.current = null
+      setUploading(false)
+      onUploadingChange?.(false)
+    })
+    xhr.open('POST', '/api/studio/upload')
+    xhr.send(formData)
+  }
 
-      xhr.addEventListener('load', () => {
-        setUploading(false)
-        try {
-          const data = JSON.parse(xhr.responseText)
-          if (xhr.status >= 200 && xhr.status < 300 && data.url) {
-            onChange(data.url)
-            toast.success('Обложка загружена')
-          } else {
-            toast.error(data.error ?? 'Ошибка загрузки')
-          }
-        } catch {
-          toast.error('Ошибка ответа сервера')
-        }
-      })
-
-      xhr.addEventListener('error', () => {
-        setUploading(false)
-        toast.error('Сетевая ошибка')
-      })
-
-      xhr.open('POST', '/api/studio/upload')
-      xhr.send(formData)
-    },
-    [onChange],
-  )
-
-  const handleFile = useCallback(
-    (file: File | null) => {
-      if (file) upload(file)
-    },
-    [upload],
-  )
-
-  const handleSelect = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0]
-      handleFile(file ?? null)
-      e.target.value = ''
-    },
-    [handleFile],
-  )
-
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault()
-      setDragOver(false)
-      const file = e.dataTransfer.files?.[0]
-      handleFile(file ?? null)
-    },
-    [handleFile],
-  )
-
-  const handleRemove = useCallback(() => {
-    onChange(null)
-  }, [onChange])
-
-  const handleReplace = useCallback(() => {
-    inputRef.current?.click()
-  }, [])
+  function chooseFile() {
+    if (!busy) inputRef.current?.click()
+  }
 
   return (
-    <div className={cn('space-y-2', className)}>
-      <div
-        onDragOver={e => {
-          e.preventDefault()
-          if (!disabled) setDragOver(true)
+    <div className={cn(paper ? 'paper-cover-block' : 'space-y-2', className)}>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        aria-label="Файл обложки"
+        disabled={busy}
+        className="hidden"
+        onChange={event => {
+          const file = event.target.files?.[0]
+          if (file) upload(file)
+          event.target.value = ''
         }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={handleDrop}
-        onClick={() => !disabled && !uploading && inputRef.current?.click()}
-        className={cn(
-          'relative overflow-hidden rounded-md border-2 border-dashed transition-colors',
-          dragOver ? 'border-foreground bg-muted/50' : 'border-muted-foreground/25',
-          disabled || uploading ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-foreground/60',
-          value ? 'aspect-[3/4] max-w-[240px]' : 'p-8',
-        )}
-      >
-        <input
-          ref={inputRef}
-          type="file"
-          accept="image/*"
-          onChange={handleSelect}
-          disabled={disabled || uploading}
-          className="hidden"
-        />
-
-        {uploading ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background/80 p-4">
-            <Loader2 className="h-6 w-6 animate-spin" />
-            <div className="h-1.5 w-full max-w-[180px] overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full bg-foreground transition-all"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-            <p className="text-xs text-muted-foreground">{progress}%</p>
-          </div>
-        ) : value ? (
-          <Image
-            src={value}
-            alt="Обложка"
-            fill
-            sizes="240px"
-            className="object-cover"
-            unoptimized
-          />
-        ) : (
-          <div className="flex flex-col items-center gap-2 text-muted-foreground">
-            <ImageIcon className="h-8 w-8" />
-            <p className="text-sm font-medium">Загрузите обложку</p>
-            <p className="text-xs">PNG, JPG, WebP · до 10 МБ</p>
-          </div>
+      />
+      <div className="relative">
+        <button
+          type="button"
+          aria-label={value ? 'Заменить обложку' : 'Загрузить обложку'}
+          title="PNG, JPG, WebP · до 10 МБ"
+          disabled={busy}
+          onClick={chooseFile}
+          onDragOver={event => {
+            event.preventDefault()
+            if (!busy) setDragOver(true)
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={event => {
+            event.preventDefault()
+            setDragOver(false)
+            const file = event.dataTransfer.files?.[0]
+            if (file && !busy) upload(file)
+          }}
+          className={cn(
+            'relative block w-full overflow-hidden transition-colors disabled:cursor-not-allowed disabled:opacity-60',
+            paper ? 'paper-cover' : 'rounded-md border-2 border-dashed',
+            !paper && (value ? 'aspect-[3/4] max-w-[240px]' : 'min-h-36 p-8'),
+            !paper && (dragOver ? 'border-foreground bg-muted/50' : 'border-muted-foreground/25 hover:border-foreground/60'),
+            dragOver && 'ring-2 ring-cf-accent',
+          )}
+        >
+          {value ? (
+            <Image src={value} alt="Обложка релиза" fill sizes={paper ? '(max-width: 440px) 72px, (max-width: 700px) 85px, 100px' : '240px'} className="object-cover" unoptimized />
+          ) : (
+            <span className={cn('flex flex-col items-center justify-center gap-2 text-cf-text-3', paper && 'h-full px-2 text-xs')}>
+              <ImageIcon className={paper ? 'size-6' : 'size-8'} aria-hidden="true" />
+              <span>{paper ? 'Обложка' : 'Загрузите обложку'}</span>
+              {!paper && <span className="text-xs">PNG, JPG, WebP · до 10 МБ</span>}
+            </span>
+          )}
+          {uploading && (
+            <span className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-cf-bg/90 p-2" role="status">
+              <Loader2 className="size-5 animate-spin" aria-hidden="true" />
+              <span className="h-1 w-full overflow-hidden rounded-full bg-cf-bg-2">
+                <span className="block h-full bg-cf-accent" style={{ width: `${progress}%` }} />
+              </span>
+              <span className="text-xs">{progress}%</span>
+            </span>
+          )}
+        </button>
+        {paper && value && (
+          <Button type="button" size="icon-sm" variant="outline" className="paper-cover-remove" onClick={() => { onChange(null); setError(null) }} disabled={busy} aria-label="Удалить обложку">
+            <X className="size-3" aria-hidden="true" />
+          </Button>
         )}
       </div>
-
-      {value && !uploading && (
+      {paper ? (
+        <Button type="button" variant="outline" className="paper-button paper-cover-change" onClick={chooseFile} disabled={busy}>
+          <Upload className="size-3" aria-hidden="true" />{value ? 'Изменить' : 'Загрузить'}
+        </Button>
+      ) : value && !uploading ? (
         <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={handleReplace}
-            disabled={disabled}
-            className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md border bg-background text-xs font-medium transition-colors hover:bg-muted disabled:opacity-50"
-          >
-            <Upload className="h-3.5 w-3.5" />
-            Заменить
-          </button>
-          <button
-            type="button"
-            onClick={handleRemove}
-            disabled={disabled}
-            className="flex h-9 items-center justify-center gap-1.5 rounded-md border px-3 text-xs font-medium text-muted-foreground transition-colors hover:border-destructive hover:text-destructive disabled:opacity-50"
-            aria-label="Удалить обложку"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
+          <Button type="button" variant="outline" className="flex-1" onClick={chooseFile} disabled={busy}><Upload aria-hidden="true" />Заменить</Button>
+          <Button type="button" variant="outline" size="icon" onClick={() => { onChange(null); setError(null) }} disabled={busy} aria-label="Удалить обложку"><X aria-hidden="true" /></Button>
         </div>
-      )}
+      ) : null}
+      {error && <p role="alert" className={paper ? 'paper-error' : 'text-xs text-cf-accent'}>{error}</p>}
     </div>
   )
 }

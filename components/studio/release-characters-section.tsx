@@ -1,11 +1,16 @@
 'use client'
 
-import { useState, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
-import { isRedirectError } from 'next/dist/client/components/redirect-error'
+import { useState, type FormEvent } from 'react'
+import { unstable_rethrow } from 'next/navigation'
+import { Plus, X } from 'lucide-react'
 import { toast } from 'sonner'
-import type { ReleaseCharacter } from '@/lib/releases-types'
+import type { ReleaseCharacter, ReleaseCharacterRole } from '@/lib/releases-types'
 import { updateReleaseCharactersAction } from '@/lib/actions/studio'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ReleaseSaveBar } from '@/components/studio/release-save-bar'
 
 interface Character {
   id: string
@@ -14,122 +19,101 @@ interface Character {
   avatar: string | null
 }
 
-const ROLE_LABELS: Record<string, string> = {
-  main: 'Главный',
-  supporting: 'Второстепенный',
-  cameo: 'Камео',
+type CharacterLink = Pick<ReleaseCharacter, 'character_id' | 'role'>
+const ROLE_LABELS: Record<ReleaseCharacterRole, string> = { main: 'Главный', supporting: 'Второстепенный', cameo: 'Камео' }
+
+function signature(links: CharacterLink[]) {
+  return JSON.stringify([...links].sort((left, right) => left.character_id.localeCompare(right.character_id)))
 }
 
-export function ReleaseCharactersSection({
-  releaseId,
-  characters,
-  releaseCharacters,
-}: {
+export function ReleaseCharactersSection({ releaseId, characters, releaseCharacters }: {
   releaseId: string
   characters: Character[]
   releaseCharacters: ReleaseCharacter[]
 }) {
-  const router = useRouter()
-  const [selected, setSelected] = useState<{ character_id: string; role: string }[]>(
-    releaseCharacters.map(rc => ({ character_id: rc.character_id, role: rc.role })),
-  )
+  const [selected, setSelected] = useState<CharacterLink[]>(() => releaseCharacters.map(({ character_id, role }) => ({ character_id, role })))
+  const [baseline, setBaseline] = useState(() => signature(selected))
+  const [candidate, setCandidate] = useState('')
   const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const available = characters.filter(character => !selected.some(link => link.character_id === character.id))
+  const dirty = signature(selected) !== baseline
 
-  const toggle = (characterId: string, role: string) => {
-    setSelected(prev => {
-      const existing = prev.find(c => c.character_id === characterId)
-      if (existing) {
-        if (existing.role === role) {
-          return prev.filter(c => c.character_id !== characterId)
-        }
-        return prev.map(c => (c.character_id === characterId ? { ...c, role } : c))
-      }
-      return [...prev, { character_id: characterId, role }]
-    })
-  }
-
-  const handleSave = useCallback(async () => {
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (saving || !dirty) return
+    const submitted = selected
     setSaving(true)
+    setError(null)
     try {
-      await updateReleaseCharactersAction(releaseId, selected)
+      await updateReleaseCharactersAction(releaseId, submitted)
+      setBaseline(signature(submitted))
+      setSaved(true)
       toast.success('Персонажи сохранены')
-      router.refresh()
-    } catch (error) {
-      if (isRedirectError(error)) throw error
-      toast.error('Ошибка сохранения')
+    } catch (cause) {
+      unstable_rethrow(cause)
+      setError('Не удалось сохранить персонажей. Попробуйте ещё раз.')
     } finally {
       setSaving(false)
     }
-  }, [releaseId, selected, router])
+  }
 
   return (
-    <div className="space-y-4">
-      <p className="font-mono text-[10px] uppercase leading-relaxed tracking-[0.12em] text-cf-text-3">
-        Персонажи привязаны к релизу, а не к изданию. Один каст на все форматы.
-      </p>
-
-      {characters.length === 0 ? (
-        <div className="border border-dashed border-cf-text-1/15 py-10 text-center">
-          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-cf-text-3">
-            Персонажи пока не добавлены
-          </p>
-        </div>
-      ) : (
-        <div className="grid gap-px border border-cf-text-1/10 bg-cf-text-1/10 sm:grid-cols-2">
-          {characters.map(character => {
-            const current = selected.find(c => c.character_id === character.id)
-            const isSelected = Boolean(current)
+    <form onSubmit={save} aria-label="Персонажи релиза" aria-busy={saving}>
+      <div className="paper-section-heading">
+        <div><h2>Персонажи</h2><p className="paper-help">Общий состав для всех изданий этого релиза.</p></div>
+        <span className="paper-help">Выбрано: {selected.length}</span>
+      </div>
+      <fieldset disabled={saving}>
+        <div className="paper-character-list">
+          {selected.length === 0 && <p className="paper-empty">Пока нет связанных персонажей.</p>}
+          {selected.map(link => {
+            const character = characters.find(item => item.id === link.character_id)
+            if (!character) return null
             return (
-              <div
-                key={character.id}
-                className="flex items-start gap-3 bg-cf-bg-2 px-3 py-3 transition-colors hover:bg-cf-bg-3"
-              >
-                <input
-                  type="checkbox"
-                  checked={isSelected}
-                  onChange={() => toggle(character.id, current?.role ?? 'supporting')}
-                  className="mt-1 size-4 cursor-pointer accent-cf-accent"
-                />
-                <div className="min-w-0 flex-1">
-                  <span className="block truncate font-[family-name:var(--font-cormorant)] text-base font-semibold text-cf-text-heading">
-                    {character.name}
-                  </span>
-                  <span className="block truncate font-mono text-[10px] uppercase tracking-[0.14em] text-cf-text-4">
-                    /{character.slug}
-                  </span>
-                </div>
-                {isSelected && (
-                  <select
-                    value={current?.role ?? 'supporting'}
-                    onChange={e => toggle(character.id, e.target.value)}
-                    className="h-8 border border-cf-text-1/15 bg-cf-bg px-2 font-mono text-[10px] uppercase tracking-[0.12em] text-cf-text-1"
-                  >
-                    {Object.entries(ROLE_LABELS).map(([value, label]) => (
-                      <option key={value} value={value}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                )}
+              <div className="paper-character" key={link.character_id}>
+                <Avatar className="paper-avatar">
+                  {character.avatar && <AvatarImage src={character.avatar} alt="" />}
+                  <AvatarFallback>{character.name.slice(0, 1)}</AvatarFallback>
+                </Avatar>
+                <div className="paper-character-name"><h3>{character.name}</h3><p>/{character.slug}</p></div>
+                <Select value={link.role} disabled={saving} onValueChange={value => {
+                  setSelected(previous => previous.map(item => item.character_id === link.character_id ? { ...item, role: value as ReleaseCharacterRole } : item))
+                  setError(null)
+                }}>
+                  <SelectTrigger className="paper-role" aria-label={`Роль: ${character.name}`}><SelectValue /></SelectTrigger>
+                  <SelectContent className="paper-theme paper-select">
+                    {Object.entries(ROLE_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Button type="button" variant="ghost" size="icon-sm" className="paper-unlink" aria-label={`Отвязать персонажа ${character.name}`} onClick={() => {
+                  setSelected(previous => previous.filter(item => item.character_id !== link.character_id))
+                  setError(null)
+                }}><X className="size-4" aria-hidden="true" /></Button>
               </div>
             )
           })}
         </div>
-      )}
-
-      <div className="flex items-center justify-between gap-3 border-t border-cf-text-1/10 pt-4">
-        <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-cf-text-3">
-          Выбрано: {selected.length}
-        </span>
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={saving}
-          className="inline-flex h-10 items-center justify-center gap-2 bg-cf-accent px-4 text-xs font-black uppercase tracking-[0.08em] text-white transition-colors hover:bg-[#b81e1e] disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {saving ? 'Сохраняю...' : 'Сохранить персонажей'}
-        </button>
-      </div>
-    </div>
+        <div className="paper-character-picker">
+          <div className="paper-field">
+            <Label htmlFor="release-character">Связать персонажа</Label>
+            <Select value={candidate} onValueChange={setCandidate} disabled={saving || available.length === 0}>
+              <SelectTrigger id="release-character"><SelectValue placeholder={available.length ? 'Выберите из существующих' : 'Нет доступных персонажей'} /></SelectTrigger>
+              <SelectContent className="paper-theme paper-select">
+                {available.map(character => <SelectItem key={character.id} value={character.id}>{character.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button type="button" variant="outline" className="paper-button" disabled={!candidate || saving} onClick={() => {
+            if (!candidate || selected.some(link => link.character_id === candidate)) return
+            setSelected(previous => [...previous, { character_id: candidate, role: 'supporting' }])
+            setCandidate('')
+            setError(null)
+          }}><Plus className="size-4" aria-hidden="true" />Связать</Button>
+        </div>
+      </fieldset>
+      <ReleaseSaveBar dirty={dirty} saving={saving} saved={saved} error={error} label="Сохранить персонажей" />
+    </form>
   )
 }
