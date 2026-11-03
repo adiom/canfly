@@ -8,7 +8,7 @@ import {
   updateCharacter,
   updatePassport,
 } from '@/lib/server/characters'
-import { json, notFound, pick, toolError } from '@/lib/mcp/tool-result'
+import { json, notFound, pick, toolError, withToolCatch } from '@/lib/mcp/tool-result'
 
 const uuid = z.uuid()
 
@@ -30,14 +30,14 @@ export function registerCharactersTools(server: McpServer) {
       }),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async ({ limit, offset }) => {
+    withToolCatch(async ({ limit, offset }) => {
       const all = await fetchAllCharactersList()
       const filtered = all.filter((c) => c.character_type === 'person')
       return json({
         total: filtered.length,
         items: filtered.slice(offset, offset + limit).map((c) => pick(c, characterListFields)),
       })
-    },
+    }),
   )
 
   server.registerTool(
@@ -52,7 +52,7 @@ export function registerCharactersTools(server: McpServer) {
       }),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async ({ id, slug }) => {
+    withToolCatch(async ({ id, slug }) => {
       if (id) {
         const character = await fetchCharacterById(id)
         return character ? json(character) : notFound('Персонаж', id)
@@ -62,7 +62,7 @@ export function registerCharactersTools(server: McpServer) {
         return result ? json(result) : toolError(`Персонаж со slug="${slug}" не найден`)
       }
       return toolError('Нужно указать id или slug')
-    },
+    }),
   )
 
   server.registerTool(
@@ -90,7 +90,7 @@ export function registerCharactersTools(server: McpServer) {
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
-    async (data) => json(await createCharacter(data)),
+    withToolCatch(async (data) => json(await createCharacter(data))),
   )
 
   server.registerTool(
@@ -119,10 +119,10 @@ export function registerCharactersTools(server: McpServer) {
       }),
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     },
-    async ({ id, ...data }) => {
+    withToolCatch(async ({ id, ...data }) => {
       const character = await updateCharacter(id, data)
       return character ? json(character) : notFound('Персонаж', id)
-    },
+    }),
   )
 
   server.registerTool(
@@ -136,9 +136,9 @@ export function registerCharactersTools(server: McpServer) {
       }),
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     },
-    async ({ id, passport }) => {
+    withToolCatch(async ({ id, passport }) => {
       const character = await updatePassport(id, passport)
       return character ? json(character) : notFound('Персонаж', id)
-    },
+    }),
   )
 }

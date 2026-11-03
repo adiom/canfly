@@ -2,6 +2,43 @@
 
 ---
 
+## [3 ноября 2026] MCP: OAuth 2.1, новые операции Studio и исправления
+
+### Что изменено
+
+- `/api/mcp` теперь принимает два вида доступа: статический `MCP_TOKEN` и OAuth
+  2.1 access token. OAuth пускает только действующего администратора, чей email
+  явно указан в `MCP_OAUTH_ALLOWED_EMAILS`. Роль проверяется на каждом запросе.
+- Добавлены discovery-эндпоинты `/.well-known/oauth-protected-resource` и
+  `/.well-known/oauth-authorization-server`, регистрация клиента, обмен кода с
+  PKCE и отзыв токена. Поддержаны Dynamic Client Registration и Client ID
+  Metadata Document — это нужно ChatGPT и Claude.
+- Добавлена страница согласия `/oauth/mcp/authorize`. Согласие запрашивается
+  каждый раз, грант фиксирован на 30 дней; access token живёт час, refresh
+  ротируется, повторное использование отзывает грант.
+- Новые операции Studio: `canfly_update_edition`, `canfly_reorder_chapters`,
+  CRUD серий без удаления, привязки персонажей, серий и мест к релизу, привязки
+  мест к персонажу. Новых удалений релизов, изданий, глав, персонажей и серий нет.
+- Исправлен откат версии главы: теперь сохраняется текущий текст, а не
+  восстанавливаемая версия, и обе операции идут в одной транзакции.
+- HTML глав очищается при записи, а не только при чтении. Создание релиза
+  подбирает свободный slug с числовым суффиксом. Поиск получил `limit`/`offset`,
+  `total` и `has_more`. Списки персонажей, мест, релизов и серий получили
+  пагинацию, а тулы — единый `withToolCatch`.
+
+### Как использовать
+
+1. Примените миграцию `postgres/031_mcp_oauth_clients.sql`.
+2. Для OAuth задайте `AUTH_SECRET`, `NEXT_PUBLIC_BASE_URL` и
+   `MCP_OAUTH_ALLOWED_EMAILS` (плюс при необходимости
+   `MCP_OAUTH_EXTRA_REDIRECT_URIS` и `MCP_OAUTH_CLIENT_METADATA_HOSTS`).
+3. Подключите `https://<домен>/api/mcp` в ChatGPT или Claude. Для локальной
+   отладки, CI и Inspector оставьте `MCP_TOKEN`.
+
+Полная инструкция и каталог тулов — `docs/MCP.md`.
+
+---
+
 ## [3 ноября 2026] SEO reader: основная страница произведения — Release
 
 ### Что изменено

@@ -34,6 +34,9 @@ export interface SearchResults {
   characters: SearchResultCharacter[]
   news: SearchResultNews[]
   total: number
+  has_more: boolean
+  limit: number
+  offset: number
   query: string
 }
 
@@ -46,10 +49,15 @@ export interface AutocompleteItem {
   image: string | null
 }
 
-export async function searchAll(q: string): Promise<SearchResults> {
+export async function searchAll(
+  q: string,
+  options: { limit?: number; offset?: number } = {},
+): Promise<SearchResults> {
   const trimmed = q.trim()
   const pattern = `%${trimmed}%`
   const prefix = `${trimmed}%`
+  const limit = Math.min(Math.max(options.limit ?? 50, 1), 50)
+  const offset = Math.max(options.offset ?? 0, 0)
 
   const rows = await dbQuery<{
     kind: string
@@ -66,9 +74,12 @@ export async function searchAll(q: string): Promise<SearchResults> {
     tag: string | null
     snippet: string | null
     view_count: number | null
+    total_count: number
   }>(
     `
-    SELECT
+    SELECT *, COUNT(*) OVER ()::integer AS total_count
+    FROM (
+      SELECT
       'release'       AS kind,
       id::text,
       title,
@@ -162,10 +173,11 @@ export async function searchAll(q: string): Promise<SearchResults> {
         OR word_similarity($2, title) >= 0.4
       )
 
+    ) AS ranked
     ORDER BY rank ASC, view_count DESC NULLS LAST, title ASC
-    LIMIT 50
+    LIMIT $4 OFFSET $5
     `,
-    [pattern, trimmed, prefix],
+    [pattern, trimmed, prefix, limit, offset],
   )
 
   const releases: SearchResultRelease[] = []
@@ -209,7 +221,10 @@ export async function searchAll(q: string): Promise<SearchResults> {
     releases,
     characters,
     news,
-    total: releases.length + characters.length + news.length,
+    total: rows[0]?.total_count ?? 0,
+    has_more: offset + rows.length < (rows[0]?.total_count ?? 0),
+    limit,
+    offset,
     query: q,
   }
 }

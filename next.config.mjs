@@ -55,6 +55,21 @@ const nextConfig = {
     // работают как папки. Публичные адреса сохраняются через rewrite на
     // внутренние route handlers без суффикса.
     return [
+      // OAuth discovery (RFC 8414 / RFC 9728). Держим реальные handlers под
+      // /api/oauth/mcp, а публичные .well-known адреса отдаём rewrite'ами:
+      // так маршруты не зависят от того, как Next трактует папку с точкой.
+      {
+        source: '/.well-known/oauth-protected-resource',
+        destination: '/api/oauth/mcp/resource-metadata',
+      },
+      {
+        source: '/.well-known/oauth-protected-resource/:path*',
+        destination: '/api/oauth/mcp/resource-metadata',
+      },
+      {
+        source: '/.well-known/oauth-authorization-server',
+        destination: '/api/oauth/mcp/authorization-server-metadata',
+      },
       {
         source: '/vvvvv/:slug.md',
         destination: '/api/edition-markdown/:slug',

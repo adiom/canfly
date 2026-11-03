@@ -83,7 +83,15 @@
 
 | Метод | URL | Описание |
 |-------|-----|----------|
-| GET, POST, DELETE | `/api/mcp` | MCP-сервер (защищён MCP_TOKEN). Тулы: characters, chapters, releases, search |
+| GET, POST, DELETE | `/api/mcp` | MCP-сервер. Доступ: `MCP_TOKEN` или OAuth access token (только admin + allowlist). Тулы: characters, places, chapters, releases, editions, series, search |
+| GET | `/.well-known/oauth-protected-resource` | RFC 9728, метаданные ресурса MCP (rewrite) |
+| GET | `/.well-known/oauth-authorization-server` | RFC 8414, метаданные authorization server (rewrite) |
+| POST | `/api/oauth/mcp/register` | Dynamic Client Registration (RFC 7591) |
+| GET | `/oauth/mcp/authorize` | Страница согласия; выдаёт `code` после входа администратора |
+| POST | `/api/oauth/mcp/token` | Обмен `code` + PKCE и обновление по `refresh_token` |
+| POST | `/api/oauth/mcp/revoke` | Отзыв access/refresh token (RFC 7009) |
+
+Подробная настройка и подключение клиентов — `docs/MCP.md`.
 
 ## Cron
 

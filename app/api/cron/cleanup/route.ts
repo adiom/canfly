@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getPool } from '@/lib/db'
+import { cleanupMcpOAuth } from '@/lib/server/mcp-oauth'
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization')
@@ -14,7 +15,15 @@ export async function GET(request: Request) {
      WHERE used = true OR expires_at < NOW() - INTERVAL '1 day'`,
   )
 
+  let mcpOAuth: Awaited<ReturnType<typeof cleanupMcpOAuth>> | null = null
+  try {
+    mcpOAuth = await cleanupMcpOAuth()
+  } catch (error) {
+    console.error('[cron] MCP OAuth cleanup failed', error)
+  }
+
   return NextResponse.json({
     deleted: result.rowCount ?? 0,
+    mcpOAuth,
   })
 }

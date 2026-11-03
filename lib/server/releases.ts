@@ -1,5 +1,6 @@
 import { dbQuery, dbQueryOne, dbUpdatePartial, withTransaction } from '@/lib/db'
 import type { UpdatableColumn } from '@/lib/db'
+import { generateSlug } from '@/lib/slug-utils'
 import type {
   Release,
   ReleaseStatus,
@@ -40,33 +41,52 @@ export async function fetchReleaseBySlug(slug: string) {
   )
 }
 
+/**
+ * Создание релиза. Если slug передан явно (Studio), конфликт остаётся ошибкой:
+ * автор должен увидеть, что адрес занят. Если slug не передан (MCP), основа
+ * генерируется из title, а при конфликте добавляется числовой суффикс.
+ */
 export async function createRelease(data: Record<string, unknown>) {
-  return dbQueryOne<Release>(
-    `INSERT INTO releases (
-      title, slug, description, cover_image, genre,
-      release_date, isbn, authors, annotation, editor_notes,
-      status, show_in_catalog
-    ) VALUES (
-      $1, $2, $3, $4, $5,
-      $6, $7, $8::jsonb, $9, $10,
-      $11::release_status, $12
+  const explicitSlug = typeof data.slug === 'string' ? data.slug.trim() : ''
+  const baseSlug = explicitSlug ||
+    generateSlug(String(data.title ?? '')).trim() ||
+    `release-${Date.now()}`
+
+  const attempts = explicitSlug ? 1 : 20
+
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const slug = attempt === 0 ? baseSlug : `${baseSlug}-${attempt + 1}`
+    const row = await dbQueryOne<Release>(
+      `INSERT INTO releases (
+        title, slug, description, cover_image, genre,
+        release_date, isbn, authors, annotation, editor_notes,
+        status, show_in_catalog
+      ) VALUES (
+        $1, $2, $3, $4, $5,
+        $6, $7, $8::jsonb, $9, $10,
+        $11::release_status, $12
+      )
+      ON CONFLICT (slug) DO NOTHING
+      RETURNING ${releaseColumns}`,
+      [
+        data.title,
+        slug,
+        data.description ?? null,
+        data.cover_image ?? null,
+        data.genre ?? null,
+        data.release_date ?? null,
+        data.isbn ?? null,
+        JSON.stringify(data.authors ?? []),
+        data.annotation ?? null,
+        data.editor_notes ?? null,
+        data.status ?? 'draft',
+        data.show_in_catalog ?? true,
+      ],
     )
-    RETURNING ${releaseColumns}`,
-    [
-      data.title,
-      data.slug,
-      data.description ?? null,
-      data.cover_image ?? null,
-      data.genre ?? null,
-      data.release_date ?? null,
-      data.isbn ?? null,
-      JSON.stringify(data.authors ?? []),
-      data.annotation ?? null,
-      data.editor_notes ?? null,
-      data.status ?? 'draft',
-      data.show_in_catalog ?? true,
-    ],
-  )
+    if (row) return row
+  }
+
+  throw new Error(`Не удалось подобрать свободный slug для «${baseSlug}»`)
 }
 
 const releaseUpdatable: Record<string, UpdatableColumn> = {

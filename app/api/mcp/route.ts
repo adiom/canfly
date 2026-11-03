@@ -2,12 +2,19 @@ import { createHash, timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { createMcpHandler } from 'mcp-handler'
 import { checkRateLimit, rateLimitResponse } from '@/lib/server/rate-limit'
+import {
+  authenticateMcpOAuthToken,
+  mcpOAuthConfig,
+  mcpOAuthEnabled,
+} from '@/lib/server/mcp-oauth'
+import { MCP_CONTENT_SCOPE } from '@/lib/schemas/mcp-oauth'
 import { registerCharactersTools } from '@/lib/mcp/tools/characters'
 import { registerCharacterRelationshipsTools } from '@/lib/mcp/tools/character-relationships'
 import { registerChaptersTools } from '@/lib/mcp/tools/chapters'
 import { registerReleasesTools } from '@/lib/mcp/tools/releases'
 import { registerSearchTools } from '@/lib/mcp/tools/search'
 import { registerPlacesTools } from '@/lib/mcp/tools/places'
+import { registerSeriesTools } from '@/lib/mcp/tools/series'
 
 /**
  * Локальная проекция McpEvent — `parameters` типизирован как `unknown`
@@ -29,7 +36,16 @@ type AuditorEvent = {
  * Имена тулов, которые что-то меняют в БД. Только их успехи пишем в лог,
  * чтобы не плодить шум от read-тулов. Источник правды по префиксам имён.
  */
-const WRITE_TOOL_PREFIXES = ['canfly_create_', 'canfly_update_', 'canfly_delete_', 'canfly_upsert_'] as const
+const WRITE_TOOL_PREFIXES = [
+  'canfly_create_',
+  'canfly_update_',
+  'canfly_delete_',
+  'canfly_upsert_',
+  'canfly_publish_',
+  'canfly_restore_',
+  'canfly_set_',
+  'canfly_reorder_',
+] as const
 
 function isWriteTool(name: string | undefined): boolean {
   if (!name || typeof name !== 'string') return false
@@ -83,6 +99,7 @@ const mcpHandler = createMcpHandler(
     registerReleasesTools(server)
     registerSearchTools(server)
     registerPlacesTools(server)
+    registerSeriesTools(server)
   },
   {
     serverInfo: { name: 'canfly', version: '2.0.0' },
@@ -126,16 +143,26 @@ function readBearer(request: Request): string | null {
 }
 
 /**
- * 401 намеренно БЕЗ заголовка WWW-Authenticate. С ним клиенты (MCP Inspector,
- * mcp-remote) читают ответ как приглашение к OAuth и уходят в регистрацию
- * клиента по RFC 9728 — а authorization server здесь нет, токен статический.
- * Без челленджа клиент просто сообщает об отказе, и его достаточно настроить на
- * передачу заголовка.
+ * Если OAuth включён, 401 обязан нести resource_metadata: по нему ChatGPT,
+ * Claude и mcp-remote находят authorization server и начинают OAuth. Если
+ * OAuth выключен, оставляем прежний ответ без челленджа, чтобы статические
+ * клиенты не уходили в несуществующую регистрацию.
  */
 function unauthorized(): NextResponse {
+  const config = mcpOAuthEnabled() ? mcpOAuthConfig() : null
+  const headers: Record<string, string> = { 'Cache-Control': 'no-store' }
+  if (config) {
+    headers['WWW-Authenticate'] =
+      `Bearer resource_metadata="${config.resourceMetadataUrl}", scope="${MCP_CONTENT_SCOPE}"`
+  }
+
   return NextResponse.json(
-    { error: 'Unauthorized: передайте заголовок Authorization: Bearer <MCP_TOKEN>' },
-    { status: 401 },
+    {
+      error: config
+        ? 'Unauthorized: требуется OAuth access token или MCP_TOKEN'
+        : 'Unauthorized: передайте заголовок Authorization: Bearer <MCP_TOKEN>',
+    },
+    { status: 401, headers },
   )
 }
 
@@ -155,19 +182,35 @@ async function rateLimited(token: string): Promise<Response | null> {
 }
 
 /**
- * Без MCP_TOKEN сервер отвечает 503, а не открывается всем: пустой токен не
- * должен по недосмотру превращаться в публичный write-эндпоинт.
+ * Два способа доступа: статический MCP_TOKEN (локально, CI, Inspector) и
+ * OAuth access token (ChatGPT, Claude, Cursor, OpenCode). OAuth-токен
+ * проверяется на каждом запросе, включая живой статус администратора и
+ * allowlist, поэтому отзыв роли действует немедленно.
  */
 async function handler(request: Request): Promise<Response> {
   const expected = process.env.MCP_TOKEN
-  if (!expected) {
+  const oauth = mcpOAuthEnabled()
+  if (!expected && !oauth) {
     return NextResponse.json({ error: 'MCP endpoint is not configured' }, { status: 503 })
   }
 
   if (originRejected(request)) return unauthorized()
 
   const provided = readBearer(request)
-  if (!provided || !tokensMatch(provided, expected)) return unauthorized()
+  if (!provided) return unauthorized()
+
+  let authenticated = false
+  if (expected && tokensMatch(provided, expected)) {
+    authenticated = true
+  } else if (oauth) {
+    try {
+      authenticated = !!(await authenticateMcpOAuthToken(provided))
+    } catch (error) {
+      console.error('[mcp] OAuth token check failed', error)
+    }
+  }
+
+  if (!authenticated) return unauthorized()
 
   const limited = await rateLimited(provided)
   if (limited) return limited

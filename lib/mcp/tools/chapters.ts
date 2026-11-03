@@ -9,9 +9,11 @@ import {
   createChapterVersion,
   fetchChapterVersions,
   restoreChapterVersion,
+  reorderChapters,
 } from '@/lib/server/chapters'
+import { fetchEditionById } from '@/lib/server/editions'
 import { countWords } from '@/lib/mcp/word-count'
-import { json, notFound, toolError } from '@/lib/mcp/tool-result'
+import { json, notFound, toolError, withToolCatch } from '@/lib/mcp/tool-result'
 
 const uuid = z.uuid()
 
@@ -27,7 +29,7 @@ export function registerChaptersTools(server: McpServer) {
       inputSchema: z.object({ edition_id: uuid.describe('UUID издания') }),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async ({ edition_id }) => json(await fetchChaptersByEdition(edition_id)),
+    withToolCatch(async ({ edition_id }) => json(await fetchChaptersByEdition(edition_id))),
   )
 
   server.registerTool(
@@ -39,10 +41,10 @@ export function registerChaptersTools(server: McpServer) {
       inputSchema: z.object({ id: uuid.describe('UUID главы') }),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async ({ id }) => {
+    withToolCatch(async ({ id }) => {
       const chapter = await fetchChapterById(id)
       return chapter ? json(chapter) : notFound('Глава', id)
-    },
+    }),
   )
 
   server.registerTool(
@@ -50,17 +52,26 @@ export function registerChaptersTools(server: McpServer) {
     {
       title: 'Создать главу',
       description:
-        'Создать новую черновую главу в издании. chapter_index — порядковый номер (1-based). content — HTML.',
+        'Создать новую черновую главу в издании. chapter_index — порядковый номер (1-based). content — HTML, перед записью очищается.',
       inputSchema: z.object({
         edition_id: uuid.describe('UUID издания'),
-        title: z.string().describe('Название главы'),
+        title: z.string().min(1).describe('Название главы'),
         content: z.string().optional().describe('HTML-контент главы'),
         chapter_index: z.number().int().min(1).describe('Порядковый номер (1-based)'),
         status: chapterStatus.optional().describe('Статус (по умолчанию draft)'),
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
-    async (data) => json(await createChapter({ ...data, word_count: countWords(data.content) })),
+    withToolCatch(async (data) => {
+      const edition = await fetchEditionById(data.edition_id)
+      if (!edition) return notFound('Издание', data.edition_id)
+
+      const chapter = await createChapter({
+        ...data,
+        word_count: countWords(data.content),
+      })
+      return chapter ? json(chapter) : toolError('Не удалось создать главу')
+    }),
   )
 
   server.registerTool(
@@ -68,7 +79,7 @@ export function registerChaptersTools(server: McpServer) {
     {
       title: 'Обновить главу',
       description:
-        'Обновить главу. Апдейт частичный: непереданные поля (включая аудио) сохраняют текущее значение. Если контент меняется и там уже был текст, старая версия автоматически уходит в chapter_versions.',
+        'Обновить главу. Апдейт частичный: непереданные поля (включая аудио) сохраняют текущее значение. Если контент меняется и там уже был текст, старая версия автоматически уходит в chapter_versions. HTML очищается перед записью.',
       inputSchema: z.object({
         id: uuid.describe('UUID главы'),
         title: z.string().optional().describe('Название главы'),
@@ -79,11 +90,11 @@ export function registerChaptersTools(server: McpServer) {
       }),
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     },
-    async ({ id, ...data }) => {
+    withToolCatch(async ({ id, ...data }) => {
       const existing = await fetchChapterById(id)
       if (!existing) return notFound('Глава', id)
 
-      if (data.content && existing.content && data.content !== existing.content) {
+      if (data.content !== undefined && existing.content && data.content !== existing.content) {
         await createChapterVersion(id, existing.content)
       }
 
@@ -93,8 +104,30 @@ export function registerChaptersTools(server: McpServer) {
         // счётчик разъедется с содержимым при апдейте одного заголовка.
         ...(data.content === undefined ? {} : { word_count: countWords(data.content) }),
       })
-      return json(updated)
+      return updated ? json(updated) : notFound('Глава', id)
+    }),
+  )
+
+  server.registerTool(
+    'canfly_reorder_chapters',
+    {
+      title: 'Порядок глав',
+      description:
+        'Переупорядочить все главы издания. chapter_ids — полный список UUID в новом порядке; индексы станут 1..N.',
+      inputSchema: z.object({
+        edition_id: uuid.describe('UUID издания'),
+        chapter_ids: z.array(uuid.describe('UUID главы')).min(1).max(1000)
+          .describe('Все главы издания в новом порядке'),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     },
+    withToolCatch(async ({ edition_id, chapter_ids }) => {
+      const edition = await fetchEditionById(edition_id)
+      if (!edition) return notFound('Издание', edition_id)
+
+      await reorderChapters(edition_id, chapter_ids)
+      return json({ ok: true, total: chapter_ids.length })
+    }),
   )
 
   server.registerTool(
@@ -105,10 +138,10 @@ export function registerChaptersTools(server: McpServer) {
       inputSchema: z.object({ id: uuid.describe('UUID главы') }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     },
-    async ({ id }) => {
+    withToolCatch(async ({ id }) => {
       const chapter = await publishChapter(id)
       return chapter ? json(chapter) : notFound('Глава', id)
-    },
+    }),
   )
 
   server.registerTool(
@@ -120,7 +153,7 @@ export function registerChaptersTools(server: McpServer) {
       inputSchema: z.object({ chapter_id: uuid.describe('UUID главы') }),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async ({ chapter_id }) => json(await fetchChapterVersions(chapter_id)),
+    withToolCatch(async ({ chapter_id }) => json(await fetchChapterVersions(chapter_id))),
   )
 
   server.registerTool(
@@ -135,9 +168,9 @@ export function registerChaptersTools(server: McpServer) {
       }),
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
     },
-    async ({ chapter_id, version_id }) => {
+    withToolCatch(async ({ chapter_id, version_id }) => {
       const restored = await restoreChapterVersion(chapter_id, version_id)
       return restored ? json(restored) : toolError('Версия не найдена или не принадлежит главе')
-    },
+    }),
   )
 }

@@ -8,8 +8,11 @@ import {
   updatePlace,
   deletePlace,
   fetchPlaceCharacters,
+  fetchPlacesByCharacter,
+  setCharacterPlaces,
 } from '@/lib/server/places'
-import { json, notFound, pick, toolError } from '@/lib/mcp/tool-result'
+import { fetchCharacterById } from '@/lib/server/characters'
+import { json, notFound, pick, toolError, withToolCatch } from '@/lib/mcp/tool-result'
 
 const uuid = z.uuid()
 
@@ -28,13 +31,13 @@ export function registerPlacesTools(server: McpServer) {
       }),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async ({ limit, offset }) => {
+    withToolCatch(async ({ limit, offset }) => {
       const all = await fetchAllPlaces()
       return json({
         total: all.length,
         items: all.slice(offset, offset + limit).map((p) => pick(p, placeListFields)),
       })
-    },
+    }),
   )
 
   server.registerTool(
@@ -48,7 +51,7 @@ export function registerPlacesTools(server: McpServer) {
       }),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async ({ id, slug }) => {
+    withToolCatch(async ({ id, slug }) => {
       if (id) {
         const place = await fetchPlaceById(id)
         return place ? json(place) : notFound('Место', id)
@@ -58,7 +61,7 @@ export function registerPlacesTools(server: McpServer) {
         return place ? json(place) : toolError(`Место со slug="${slug}" не найдено`)
       }
       return toolError('Нужно указать id или slug')
-    },
+    }),
   )
 
   server.registerTool(
@@ -78,7 +81,7 @@ export function registerPlacesTools(server: McpServer) {
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
-    async (data) => json(await createPlace(data)),
+    withToolCatch(async (data) => json(await createPlace(data))),
   )
 
   server.registerTool(
@@ -99,10 +102,10 @@ export function registerPlacesTools(server: McpServer) {
       }),
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     },
-    async ({ id, ...data }) => {
+    withToolCatch(async ({ id, ...data }) => {
       const place = await updatePlace(id, data)
       return place ? json(place) : notFound('Место', id)
-    },
+    }),
   )
 
   server.registerTool(
@@ -115,12 +118,12 @@ export function registerPlacesTools(server: McpServer) {
       }),
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     },
-    async ({ id }) => {
+    withToolCatch(async ({ id }) => {
       const place = await fetchPlaceById(id)
       if (!place) return notFound('Место', id)
       await deletePlace(id)
       return json({ ok: true, deleted: place.name })
-    },
+    }),
   )
 
   server.registerTool(
@@ -133,9 +136,46 @@ export function registerPlacesTools(server: McpServer) {
       }),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async ({ id }) => {
+    withToolCatch(async ({ id }) => {
       const chars = await fetchPlaceCharacters(id)
       return json({ total: chars.length, items: chars })
+    }),
+  )
+
+  server.registerTool(
+    'canfly_list_character_places',
+    {
+      title: 'Места персонажа',
+      description: 'Места, привязанные к персонажу.',
+      inputSchema: z.object({
+        character_id: uuid.describe('UUID персонажа'),
+      }),
+      annotations: { readOnlyHint: true, openWorldHint: false },
     },
+    withToolCatch(async ({ character_id }) => {
+      const items = await fetchPlacesByCharacter(character_id)
+      return json({ total: items.length, items })
+    }),
+  )
+
+  server.registerTool(
+    'canfly_set_character_places',
+    {
+      title: 'Привязать места к персонажу',
+      description:
+        'Атомарно заменить список мест персонажа. Пустой массив очищает связи.',
+      inputSchema: z.object({
+        character_id: uuid.describe('UUID персонажа'),
+        place_ids: z.array(uuid.describe('UUID места')).max(200).describe('Полный новый список мест'),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    },
+    withToolCatch(async ({ character_id, place_ids }) => {
+      const character = await fetchCharacterById(character_id)
+      if (!character) return notFound('Персонаж', character_id)
+
+      await setCharacterPlaces(character_id, place_ids)
+      return json({ ok: true, total: place_ids.length })
+    }),
   )
 }

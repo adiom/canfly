@@ -13,6 +13,20 @@ function withSafeContent<T extends { content?: string | null }>(row: T): T {
   return { ...row, content: sanitizeChapterHtml(row.content) }
 }
 
+/** Пишем в БД уже очищенный HTML: Studio и MCP идут через один слой. */
+function safeContent(value: unknown): string | null {
+  if (value === null || value === undefined) return null
+  return sanitizeChapterHtml(typeof value === 'string' ? value : String(value))
+}
+
+function countChapterWords(html: string | null | undefined): number {
+  if (!html) return 0
+  return html
+    .replace(/<[^>]*>/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean).length
+}
+
 const chapterColumns = `
   id, edition_id, title, content, audio_url, audio_blob_path, duration_seconds,
   audio_metadata, audio_content_type, audio_file_size_bytes, audio_uploaded_at, chapter_index,
@@ -118,7 +132,7 @@ export async function createChapter(data: Record<string, unknown>) {
     [
       data.edition_id,
       data.title,
-      data.content ?? null,
+      safeContent(data.content),
       data.audio_url ?? null,
       data.audio_blob_path ?? null,
       data.duration_seconds ?? null,
@@ -162,10 +176,15 @@ const chapterUpdatable: Record<string, UpdatableColumn> = {
  * главы (audio_url, duration_seconds и остальные пять).
  */
 export async function updateChapter(id: string, data: Record<string, unknown>) {
+  const patch = { ...data }
+  if (patch.content !== undefined) {
+    patch.content = safeContent(patch.content)
+  }
+
   return dbUpdatePartial<Chapter>({
     table: 'chapters',
     id,
-    data,
+    data: patch,
     columns: chapterUpdatable,
     returning: chapterColumns,
   })
@@ -230,7 +249,7 @@ export async function createChapterVersion(chapterId: string, content: string) {
     `INSERT INTO chapter_versions (chapter_id, content, version_number)
      VALUES ($1, $2, $3)
      RETURNING id, chapter_id, content, version_number, created_at`,
-    [chapterId, content, nextVersion],
+    [chapterId, sanitizeChapterHtml(content), nextVersion],
   )
 }
 
@@ -252,16 +271,49 @@ export async function fetchChapterVersion(versionId: string) {
   )
 }
 
+/**
+ * Откат к версии. Перед перезаписью сохраняем именно текущий текст главы, а не
+ * выбранную версию: иначе откат уничтожал бы последнюю редакцию без следа.
+ * Обе операции — в одной транзакции, чтобы параллельное сохранение не вклинилось
+ * между снимком и обновлением.
+ */
 export async function restoreChapterVersion(chapterId: string, versionId: string) {
-  const version = await fetchChapterVersion(versionId)
-  if (!version || version.chapter_id !== chapterId) return null
+  return withTransaction(async (client) => {
+    const versionResult = await client.query<{ content: string; chapter_id: string }>(
+      `SELECT content, chapter_id FROM chapter_versions WHERE id = $1 FOR SHARE`,
+      [versionId],
+    )
+    const version = versionResult.rows[0]
+    if (!version || version.chapter_id !== chapterId) return null
 
-  await createChapterVersion(chapterId, version.content)
+    const currentResult = await client.query<{ content: string | null }>(
+      'SELECT content FROM chapters WHERE id = $1 FOR UPDATE',
+      [chapterId],
+    )
+    const current = currentResult.rows[0]
+    if (!current) return null
 
-  return dbQueryOne<Chapter>(
-    `UPDATE chapters SET content = $2, word_count = $3
-     WHERE id = $1
-     RETURNING ${chapterColumns}`,
-    [chapterId, version.content, version.content.split(/\s+/).filter(Boolean).length],
-  )
+    if (current.content) {
+      const last = await client.query<{ version_number: number }>(
+        `SELECT version_number FROM chapter_versions
+         WHERE chapter_id = $1 ORDER BY version_number DESC LIMIT 1`,
+        [chapterId],
+      )
+      const nextVersion = (last.rows[0]?.version_number ?? 0) + 1
+      await client.query(
+        `INSERT INTO chapter_versions (chapter_id, content, version_number)
+         VALUES ($1, $2, $3)`,
+        [chapterId, sanitizeChapterHtml(current.content), nextVersion],
+      )
+    }
+
+    const content = sanitizeChapterHtml(version.content)
+    const updated = await client.query<Chapter>(
+      `UPDATE chapters SET content = $2, word_count = $3
+       WHERE id = $1
+       RETURNING ${chapterColumns}`,
+      [chapterId, content, countChapterWords(content)],
+    )
+    return updated.rows[0] ?? null
+  })
 }
