@@ -1,3 +1,6 @@
+import { publicSourceSQL, WorkshopError } from './highlight-workshop'
+import { chapterPlainText, highlightSource, sourceRevision } from './highlight-source'
+import { normalizeHighlightText, resolveAnchor } from '@/lib/highlights/anchor'
 import { dbQuery, dbQueryOne, withTransaction } from '@/lib/db'
 import { sanitizePlainText } from '@/lib/sanitize'
 import type { ChapterHighlight, ChapterHighlightInput, ChapterEditorialNote, EditorialNoteStatus } from '@/lib/releases-types'
@@ -9,7 +12,7 @@ const highlightColumns = `
   h.client_request_id, h.start_offset, h.end_offset,
   h.source_chapter_updated_at,
   h.note, h.is_public, h.likes_count,
-  h.created_at, h.updated_at, h.ai_artifacts,
+  h.created_at, h.updated_at, h.anchor, h.publication,
   u.display_name AS user_name,
   u.avatar AS user_avatar
 `
@@ -43,15 +46,15 @@ export async function fetchChapterHighlights(options: FetchHighlightsOptions): P
   // из-за чего публичный GET /api/chapter-highlights отдавал приватные
   // цитаты и заметки всех пользователей.
   if (options.publicOnly || !options.currentUserId) {
-    where.push(`h.is_public = true`)
+    where.push(`(h.is_public = true AND h.publication IS NOT NULL AND ${publicSourceSQL})`)
   } else {
     // Публичные + собственные приватные
     params.push(options.currentUserId)
-    where.push(`(h.is_public = true OR h.user_id = $${params.length})`)
+    where.push(`((h.is_public = true AND h.publication IS NOT NULL AND ${publicSourceSQL}) OR h.user_id = $${params.length})`)
   }
 
   const whereClause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''
-  const limitClause = options.limit ? `LIMIT ${Math.max(1, Math.min(200, options.limit))}` : ''
+  const limitClause = `LIMIT ${Number.isFinite(options.limit) ? Math.max(1, Math.min(200, Math.floor(options.limit!))) : 200}`
 
   const rows = await dbQuery<ChapterHighlight>(
     `SELECT ${highlightColumns}
@@ -72,10 +75,10 @@ export async function fetchChapterHighlights(options: FetchHighlightsOptions): P
       [options.currentUserId, ids],
     )
     const likedSet = new Set(likeRows.map(r => r.highlight_id))
-    return rows.map(r => ({ ...r, is_liked_by_me: likedSet.has(r.id) }))
+    return rows.map(r => ({ ...visibleHighlight(r, options.currentUserId), is_liked_by_me: likedSet.has(r.id) }))
   }
 
-  return rows.map(r => ({ ...r, is_liked_by_me: false }))
+  return rows.map(r => ({ ...visibleHighlight(r, null), is_liked_by_me: false }))
 }
 
 export async function fetchPublicHighlightsByRelease(releaseId: string, limit = 6): Promise<ChapterHighlight[]> {
@@ -89,12 +92,12 @@ export async function fetchPublicHighlightsByRelease(releaseId: string, limit = 
      JOIN chapters ch ON ch.id = h.chapter_id
      JOIN editions e ON e.id = ch.edition_id
      JOIN releases r ON r.id = e.release_id
-     WHERE e.release_id = $1 AND h.is_public = true
+     WHERE e.release_id = $1 AND h.is_public = true AND h.publication IS NOT NULL AND ${publicSourceSQL}
      ORDER BY h.likes_count DESC, h.created_at DESC
      LIMIT ${safeLimit}`,
     [releaseId],
   )
-  return rows.map(r => ({ ...r, is_liked_by_me: false }))
+  return rows.map(r => ({ ...visibleHighlight(r, null), is_liked_by_me: false }))
 }
 
 export async function fetchChapterHighlightById(id: string, currentUserId: string | null): Promise<ChapterHighlight | null> {
@@ -102,13 +105,13 @@ export async function fetchChapterHighlightById(id: string, currentUserId: strin
     `SELECT ${highlightColumns}
      FROM chapter_highlights h
      LEFT JOIN users u ON u.id = h.user_id
-     WHERE h.id = $1 LIMIT 1`,
-    [id],
+     WHERE h.id = $1 AND (h.user_id=$2 OR (h.is_public AND h.publication IS NOT NULL AND ${publicSourceSQL})) LIMIT 1`,
+    [id, currentUserId],
   )
   if (!row) return null
   // Приватная цитата видна только владельцу
   if (!row.is_public && row.user_id !== currentUserId) return null
-  return { ...row, is_liked_by_me: false }
+  return { ...visibleHighlight(row, currentUserId), is_liked_by_me: false }
 }
 
 export async function fetchUserHighlights(userId: string, limit = 100): Promise<ChapterHighlight[]> {
@@ -138,7 +141,24 @@ export async function fetchUserHighlights(userId: string, limit = 100): Promise<
 }
 
 export async function createChapterHighlight(userId: string, data: ChapterHighlightInput): Promise<ChapterHighlight | null> {
-  const textContent = sanitizePlainText(data.text_content)
+  const source = await highlightSource(data.chapter_id, userId)
+  if (!source?.allowed) throw new WorkshopError('Глава недоступна', 403)
+  const plain = chapterPlainText(source.content ?? '')
+  const textContent = normalizeHighlightText(data.text_content)
+  let anchor = data.anchor
+  if (anchor) {
+    if (anchor.revision !== sourceRevision(plain) || anchor.exact !== textContent ||
+        plain.slice(anchor.start, anchor.end) !== anchor.exact) {
+      throw new WorkshopError('Текст главы изменился. Выделите фрагмент заново.', 409)
+    }
+    anchor = { ...anchor, prefix: plain.slice(Math.max(0, anchor.start - 80), anchor.start), suffix: plain.slice(anchor.end, anchor.end + 80) }
+  } else {
+    const found = resolveAnchor(plain, { exact: textContent, start: -1, end: -1, prefix: data.context_before ?? '', suffix: data.context_after ?? '' })
+    if (!found) throw new WorkshopError('Выделите фрагмент заново: точное место не найдено.', 409)
+    anchor = { version: 2, exact: textContent, start: found.start, end: found.end,
+      prefix: plain.slice(Math.max(0, found.start - 80), found.start), suffix: plain.slice(found.end, found.end + 80), revision: sourceRevision(plain) }
+  }
+  if (data.is_public && !source.available) throw new WorkshopError('Источник не опубликован', 403)
   const note = data.note == null ? null : sanitizePlainText(data.note)
   const contextBefore = data.context_before == null ? null : sanitizePlainText(data.context_before)
   const contextAfter = data.context_after == null ? null : sanitizePlainText(data.context_after)
@@ -147,10 +167,11 @@ export async function createChapterHighlight(userId: string, data: ChapterHighli
        chapter_id, user_id, text_content,
        paragraph_index, context_before, context_after,
        client_request_id, start_offset, end_offset, source_chapter_updated_at,
-       note, is_public
+       note, is_public, anchor, publication
      )
-     SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, ch.updated_at, $10, $11
-     FROM chapters ch WHERE ch.id = $1
+     SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, ch.updated_at, $10, $11, $12::jsonb,
+       CASE WHEN $11 THEN jsonb_build_object('note', $10::text, 'materials', '[]'::jsonb, 'published_at', NOW()) ELSE NULL END
+     FROM chapters ch WHERE ch.id = $1 AND ch.content IS NOT DISTINCT FROM $13
      ON CONFLICT (user_id, client_request_id) WHERE client_request_id IS NOT NULL
      DO UPDATE SET client_request_id = EXCLUDED.client_request_id
      RETURNING id, chapter_id, user_id, text_content, paragraph_index,
@@ -168,9 +189,11 @@ export async function createChapterHighlight(userId: string, data: ChapterHighli
       data.end_offset ?? null,
       note,
       data.is_public,
+      JSON.stringify(anchor),
+      source.content,
     ],
   )
-  if (!row) return null
+  if (!row) throw new WorkshopError('Текст главы изменился. Выделите фрагмент заново.', 409)
   return fetchChapterHighlightById(row.id, userId)
 }
 
@@ -190,12 +213,19 @@ export async function updateChapterHighlight(id: string, userId: string, isAdmin
     fields.push(`note = $${params.length}`)
   }
   if (data.is_public !== undefined) {
+    if (data.is_public) {
+      const allowed = await dbQueryOne(`SELECT id FROM chapter_highlights h WHERE h.id=$1 AND ${publicSourceSQL}`, [id])
+      if (!allowed) throw new WorkshopError('Источник не опубликован', 403)
+    }
+    fields.push(data.is_public
+      ? "publication = COALESCE(publication, jsonb_build_object('note', NULL, 'materials', '[]'::jsonb, 'published_at', NOW()))"
+      : 'publication = NULL')
     params.push(data.is_public)
     fields.push(`is_public = $${params.length}`)
   }
   if (fields.length === 0) return fetchChapterHighlightById(id, userId)
 
-  await dbQuery(`UPDATE chapter_highlights SET ${fields.join(', ')} WHERE id = $1`, params)
+  await dbQuery(`UPDATE chapter_highlights SET ${fields.join(', ')}, version=version+1 WHERE id = $1`, params)
   return fetchChapterHighlightById(id, userId)
 }
 
@@ -215,7 +245,7 @@ export async function deleteChapterHighlight(id: string, userId: string, isAdmin
 export async function setHighlightLike(highlightId: string, userId: string, liked?: boolean): Promise<{ liked: boolean; likes_count: number } | null> {
   return withTransaction(async client => {
     const highlightResult = await client.query<{ user_id: string; is_public: boolean }>(
-      `SELECT user_id, is_public FROM chapter_highlights WHERE id = $1 FOR UPDATE`,
+      `SELECT user_id, (is_public AND publication IS NOT NULL AND ${publicSourceSQL}) AS is_public FROM chapter_highlights h WHERE id = $1 FOR UPDATE`,
       [highlightId],
     )
     const highlight = highlightResult.rows[0]
@@ -396,4 +426,10 @@ export async function deleteEditorialNote(
     [id],
   )
   return rows.length > 0
+}
+
+function visibleHighlight(row: ChapterHighlight, userId?: string | null): ChapterHighlight {
+  if (row.user_id === userId) return row
+  const { publication, ...visible } = row
+  return { ...visible, note: publication?.note ?? null, client_request_id: undefined, source_chapter_updated_at: undefined, context_before: null, context_after: null }
 }

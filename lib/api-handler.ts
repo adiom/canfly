@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { WorkshopError } from '@/lib/server/highlight-workshop'
 
 type HandlerFn = (
   request: NextRequest,
@@ -42,6 +43,7 @@ export function apiHandler(
       }
       return result
     } catch (error) {
+      if (error instanceof WorkshopError) return NextResponse.json({ error: error.message }, { status: error.status })
       // redirect() из ownership-проверок — это управляющий поток, а не сбой:
       // пробрасываем, иначе он превращается в 500 с мусорным digest.
       if (isNextControlFlow(error)) throw error

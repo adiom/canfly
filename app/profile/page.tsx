@@ -6,7 +6,6 @@ import type { ChapterHighlight } from '@/lib/releases-types'
 import { fetchReaderProfileSummary } from '@/lib/server/users'
 import { getCurrentUser } from '@/lib/server/session'
 import { Button } from '@/components/ui/button'
-import { HighlightVisibilityToggle } from '@/components/profile/highlight-visibility-toggle'
 
 export const dynamic = 'force-dynamic'
 
@@ -157,10 +156,7 @@ export default async function ProfilePage() {
                       <p className="mt-2 text-sm text-cf-text-1">{highlight.note}</p>
                     )}
                     <div className="mt-3 flex items-center justify-between">
-                      <HighlightVisibilityToggle
-                        highlightId={highlight.id}
-                        initialIsPublic={highlight.is_public}
-                      />
+                      <Link href={`/highlight/${highlight.id}`} className="underline">Открыть мастерскую</Link>
                       <div className="flex items-center gap-3">
                         {highlight.likes_count > 0 && (
                           <span className="text-[10px] uppercase tracking-[0.18em] text-cf-accent">

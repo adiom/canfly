@@ -263,6 +263,8 @@ export interface HighlightAiArtifacts {
 }
 
 export interface ChapterHighlight {
+  anchor?: import("@/lib/highlights/types").TextAnchor | null
+  publication?: import("@/lib/highlights/types").HighlightPublication | null
   id: string
   chapter_id: string
   user_id: string
@@ -289,6 +291,7 @@ export interface ChapterHighlight {
 }
 
 export interface ChapterHighlightInput {
+  anchor?: import("@/lib/highlights/types").TextAnchor | null
   chapter_id: string
   text_content: string
   paragraph_index?: number | null

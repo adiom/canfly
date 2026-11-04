@@ -10,25 +10,26 @@ import { lastPageStart, chapterProgress } from '@/lib/reader/pagination'
 import { captureReadingPosition, pageForReadingPosition, type ReadingPosition } from '@/lib/reader/reading-position'
 import { useEditorialNotes } from '@/lib/reader/use-editorial-notes'
 import {
-  collectParagraphs,
-  clearHighlightMarks,
-  wrapHighlight,
-  wrapEditorialNote,
-  pageOfElement,
   findTextRange,
-  PARAGRAPH_TAGS,
 } from '@/lib/reader/highlights-dom'
-import { BookmarksPanel } from '@/components/bookmarks-panel'
-import { HighlightArtifact } from '@/components/highlight-artifact'
+import dynamic from 'next/dynamic'
+import { readerRange, captureReaderSelection } from '@/lib/reader/highlight-anchor'
+import { useHighlightRanges } from '@/lib/reader/use-highlight-ranges'
+import { useChapterHighlights } from '@/lib/reader/use-chapter-highlights'
+import type { TextAnchor } from '@/lib/highlights/types'
+const HighlightArtifact = dynamic(() => import('@/components/highlight-artifact').then(m => m.HighlightArtifact))
+const HighlightWorkshopView = dynamic(() => import('@/components/highlights/workshop').then(m => m.HighlightWorkshopView))
+const HighlightCollectionPanel = dynamic(() => import('@/components/highlights/collection-panel').then(m => m.HighlightCollectionPanel))
 import { useReaderPreferences, READER_THEMES, READER_FONTS } from '@/lib/reader/reader-preferences'
 import type { ReaderThemeId } from '@/lib/reader/reader-preferences'
-import type { Release, Edition, Chapter, ChapterHighlight, ChapterEditorialNote } from '@/lib/releases-types'
+import type { Release, Edition, Chapter, ChapterHighlight } from '@/lib/releases-types'
 
 export type ReaderUserRole = 'reader' | 'author' | 'editor' | 'admin'
 
 // ─── Типы ─────────────────────────────────────────────────────────────────────
 
 interface SelectionData {
+  anchor?: TextAnchor
   text: string
   rect: DOMRect
   paragraphIndex: number
@@ -46,6 +47,8 @@ export interface SpreadReaderProps {
   initialHighlights: ChapterHighlight[]
   userRole: ReaderUserRole | null
   userName: string | null
+  canManageNotes?: boolean
+  initialHighlightId?: string
   initialChapterIndex?: number
   initialPosition?: ReadingPosition | null
   initialProgressPercent?: number
@@ -60,14 +63,15 @@ export function SpreadReader({
   chapters,
   currentUserId,
   initialHighlights,
-  userRole,
+  canManageNotes = false,
+  initialHighlightId,
   initialChapterIndex = 0,
   initialPosition = null,
   initialProgressPercent = 0,
   initialProgressUpdatedAt = 0,
 }: SpreadReaderProps) {
   const accent = release.design_config?.accent_color ?? '#d52525'
-  const isEditor = userRole === 'editor' || userRole === 'admin'
+  const isEditor = canManageNotes
 
   const {
     mounted,
@@ -105,7 +109,6 @@ export function SpreadReader({
   const [showFonts, setShowFonts] = useState(false)
 
   // Навигация к закладке из другой главы
-  const [pendingHighlightNav, setPendingHighlightNav] = useState<{ paragraphIndex: number; chapterId: string } | null>(null)
   // При переходе назад — хотим открыть последнюю страницу главы
   const [pendingLastPage, setPendingLastPage] = useState(false)
 
@@ -117,7 +120,7 @@ export function SpreadReader({
   const readingAnchor = useRef<{ chapterId: string; position: ReadingPosition } | null>(
     initialPosition && chapters[initialChapterIndex] ? { chapterId: chapters[initialChapterIndex].id, position: initialPosition } : null,
   )
-  const resumed = useRef(false)
+  const resumed = useRef(Boolean(initialHighlightId))
   const latestProgress = useRef<{ editionId: string; chapterId: string; progressPercent: number; position: ReadingPosition } | null>(null)
   const floatingMenuRef = useRef<HTMLDivElement>(null)
 
@@ -199,85 +202,8 @@ export function SpreadReader({
   const intraChapter = chapterProgress(currentPage, pageCount, isSpread)
   const progress = Math.round(((currentIndex + intraChapter) / chapters.length) * 100)
 
-  // ── Загрузка хайлайтов при смене главы ──
-  useEffect(() => {
-    if (!currentChapter) return
-    if (highlights.some(h => h.chapter_id === currentChapter.id)) return
-    let cancelled = false
-    const controller = new AbortController()
-    fetch(`/api/chapter-highlights?chapterId=${currentChapter.id}`, { signal: controller.signal })
-      .then(res => res.ok ? res.json() : null)
-      .then(data => {
-        if (cancelled || !data?.data) return
-        setHighlights(prev => {
-          const ids = new Set(prev.map(h => h.id))
-          return [...prev, ...data.data.filter((h: ChapterHighlight) => !ids.has(h.id))]
-        })
-      })
-      .catch(error => {
-        if (error instanceof DOMException && error.name === 'AbortError') return
-        toast.error('Не удалось загрузить цитаты главы')
-      })
-    return () => { cancelled = true; controller.abort() }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- highlights refetch only on chapter change
-  }, [currentChapter?.id])
-
-  // ── Применяем хайлайты к DOM ──
-  useEffect(() => {
-    const root = contentRef.current
-    if (!root || !currentChapter) return
-    clearHighlightMarks(root)
-    const paragraphs = collectParagraphs(root)
-    const hlByParagraph = new Map<number, ChapterHighlight[]>()
-    for (const hl of chapterHighlights) {
-      if (hl.paragraph_index == null) continue
-      const arr = hlByParagraph.get(hl.paragraph_index) ?? []
-      arr.push(hl)
-      hlByParagraph.set(hl.paragraph_index, arr)
-    }
-    paragraphs.forEach((p, idx) => {
-      const list = hlByParagraph.get(idx)
-      if (!list) return
-      for (const hl of list) wrapHighlight(p, hl, currentUserId, accent)
-    })
-
-    // Редакторские правки поверх — только для команды
-    if (isEditor && chapterEditorialNotes.length > 0) {
-      const enByParagraph = new Map<number, ChapterEditorialNote[]>()
-      for (const en of chapterEditorialNotes) {
-        if (en.paragraph_index == null) continue
-        const arr = enByParagraph.get(en.paragraph_index) ?? []
-        arr.push(en)
-        enByParagraph.set(en.paragraph_index, arr)
-      }
-      paragraphs.forEach((p, idx) => {
-        const list = enByParagraph.get(idx)
-        if (!list) return
-        for (const en of list) wrapEditorialNote(p, en)
-      })
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- DOM highlight sync, avoids re-render loop
-  }, [currentChapter?.id, chapterHighlights, chapterEditorialNotes, currentIndex, accent, currentUserId, isEditor, mounted])
-
-  // ── Клик по <mark> ──
-  useEffect(() => {
-    const root = contentRef.current
-    if (!root) return
-    const onClick = (e: MouseEvent) => {
-      const target = e.target as HTMLElement
-      if (target.tagName !== 'MARK') return
-      if (target.dataset.cfHl) {
-        const hl = chapterHighlights.find(h => h.id === target.dataset.cfHl)
-        if (hl) setActiveHighlight(hl)
-      } else if (target.dataset.cfEn) {
-        const en = chapterEditorialNotes.find(n => n.id === target.dataset.cfEn)
-        if (en) setActiveEditorialNote(en)
-      }
-    }
-    root.addEventListener('click', onClick)
-    return () => root.removeEventListener('click', onClick)
-    // mounted: до гидрации contentRef пуст, без него подписка не встала бы
-  }, [chapterHighlights, chapterEditorialNotes, setActiveEditorialNote, mounted])
+  useChapterHighlights(currentChapter?.id, setHighlights)
+  useHighlightRanges(contentRef, chapterHighlights, chapterEditorialNotes, setActiveHighlight, setActiveEditorialNote, mounted)
 
   // ── Сохранение прогресса ──
   useLayoutEffect(() => {
@@ -385,24 +311,22 @@ export function SpreadReader({
     setPendingLastPage(false)
   }, [pendingLastPage, pageCount, isSpread, setCurrentPage, pagination.measured, pagination.chapterKey, currentChapter?.id])
 
-  // ── После смены главы: навигация к закладке ──
+  const openedHighlight = useRef(false)
   useEffect(() => {
-    if (!pendingHighlightNav) return
-    if (currentChapter?.id !== pendingHighlightNav.chapterId) return
-    const timer = setTimeout(() => {
-      const root = contentRef.current
-      const track = trackRef.current
-      if (!root || !track) { setPendingHighlightNav(null); return }
-      const paragraphs = collectParagraphs(root)
-      const el = paragraphs[pendingHighlightNav.paragraphIndex]
-      if (el) {
-        const page = pageOfElement(el, track, pageWidth, gutter, isSpread)
-        setCurrentPage(page)
-      }
-      setPendingHighlightNav(null)
-    }, 350)
-    return () => clearTimeout(timer)
-  }, [currentChapter?.id, pendingHighlightNav, pageWidth, gutter, isSpread, setCurrentPage])
+    const root = contentRef.current
+    const track = trackRef.current
+    const target = chapterHighlights.find(item => item.id === initialHighlightId)
+    if (openedHighlight.current || !target || !root || !track || !pagination.measured) return
+    const range = readerRange(root, target.anchor ?? {
+      exact: target.text_content, prefix: '', suffix: '', start: -1, end: -1,
+    })
+    openedHighlight.current = true
+    const rect = range?.getClientRects()[0]
+    if (!rect) return
+    const step = pageWidth + gutter
+    const page = Math.max(0, Math.floor((rect.left - track.getBoundingClientRect().left) / step))
+    setCurrentPage(isSpread ? page - page % 2 : page)
+  }, [chapterHighlights, initialHighlightId, pagination.measured, pageWidth, gutter, isSpread, setCurrentPage])
 
   // ── Навигация ──
   const goNext = useCallback(() => {
@@ -489,95 +413,17 @@ export function SpreadReader({
   }, [goNext, goPrev, mounted])
 
   // ── Выделение текста → хайлайт ──
-  const handleMouseUp = useCallback(() => {
-    if (!currentUserId) return
-    if (floatingMenuRef.current?.contains(document.activeElement)) return
-    const sel = window.getSelection()
-    if (!sel || sel.rangeCount === 0) return
-    const text = sel.toString().trim()
-    if (text.length < 3) { setSelection(null); return }
-    if (!contentRef.current?.contains(sel.anchorNode)) return
-
-    const range = sel.getRangeAt(0)
-    const rect = range.getBoundingClientRect()
-
-    let node: Node | null = sel.anchorNode
-    let paragraphEl: HTMLElement | null = null
-    while (node && node !== contentRef.current) {
-      if (node instanceof HTMLElement && PARAGRAPH_TAGS.includes(node.tagName.toLowerCase())) {
-        paragraphEl = node; break
-      }
-      node = node.parentNode
-    }
-
-    let paragraphIndex = -1
-    if (paragraphEl && contentRef.current) {
-      const paragraphs = collectParagraphs(contentRef.current)
-      paragraphIndex = paragraphs.indexOf(paragraphEl)
-    }
-
-    const fullText = paragraphEl?.textContent ?? ''
-    const offset = fullText.indexOf(text)
-    const contextBefore = offset >= 0 ? fullText.slice(Math.max(0, offset - 30), offset) : ''
-    const contextAfter = offset >= 0 ? fullText.slice(offset + text.length, offset + text.length + 30) : ''
-
-    setSelection({ text, rect, paragraphIndex, contextBefore, contextAfter, startOffset: Math.max(0, offset), endOffset: Math.max(0, offset) + text.length })
-  }, [currentUserId])
+  const handleMouseUp = useCallback(async () => {
+    if (!currentUserId || !contentRef.current || artifactOpen) return
+    const captured = await captureReaderSelection(contentRef.current)
+    setSelection(captured)
+  }, [currentUserId, artifactOpen])
 
   // Mobile WebKit фиксирует финальный Range после pointerup, поэтому читаем
   // Selection в следующей задаче очереди.
   const handleSelectionEnd = useCallback(() => {
     window.setTimeout(handleMouseUp, 0)
   }, [handleMouseUp])
-
-  // ── Навигация к закладке ──
-  const scrollToHighlight = useCallback((paragraphIndex: number, chapterId: string) => {
-    const targetIndex = chapters.findIndex(ch => ch.id === chapterId)
-    if (targetIndex === -1) return
-
-    if (targetIndex === currentIndex) {
-      // Та же глава — просто перелистать к нужной странице
-      const root = contentRef.current
-      const track = trackRef.current
-      if (root && track) {
-        const paragraphs = collectParagraphs(root)
-        const el = paragraphs[paragraphIndex]
-        if (el) {
-          const page = pageOfElement(el, track, pageWidth, gutter, isSpread)
-          setCurrentPage(page)
-        }
-      }
-    } else {
-      setPendingHighlightNav({ paragraphIndex, chapterId })
-      setCurrentIndex(targetIndex)
-      setCurrentPage(0)
-      setShowBookmarks(false)
-    }
-  }, [chapters, currentIndex, pageWidth, gutter, isSpread, setCurrentPage])
-
-  const deleteHighlight = useCallback(async (id: string) => {
-    const res = await fetch(`/api/chapter-highlights/${id}`, { method: 'DELETE' })
-    if (res.ok) setHighlights(prev => prev.filter(h => h.id !== id))
-  }, [])
-
-  const updateHighlight = useCallback(
-    async (id: string, patch: { note?: string | null; is_public?: boolean }) => {
-      const res = await fetch(`/api/chapter-highlights/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(patch),
-      })
-      const data = await res.json().catch(() => null)
-      if (!res.ok || !data?.data) {
-        toast.error(data?.error ?? 'Не удалось обновить цитату')
-        return
-      }
-      const updated = data.data as ChapterHighlight
-      setHighlights(prev => prev.map(h => (h.id === id ? updated : h)))
-      setActiveHighlight(prev => (prev?.id === id ? updated : prev))
-    },
-    [],
-  )
 
   const toggleLike = async (id: string) => {
     if (!currentUserId) { toast.error('Войдите чтобы ставить лайки'); return }
@@ -1149,6 +995,7 @@ export function SpreadReader({
       {/* ── Артефакт ── */}
       {selection && currentChapter && (
         <HighlightArtifact
+          key={selection.anchor ? selection.anchor.revision + selection.anchor.start : selection.text}
           open={artifactOpen}
           text={selection.text}
           chapterTitle={currentChapter.title}
@@ -1158,11 +1005,12 @@ export function SpreadReader({
           paragraphIndex={selection.paragraphIndex}
           contextBefore={selection.contextBefore}
           contextAfter={selection.contextAfter}
+          anchor={selection.anchor}
           startOffset={selection.startOffset}
           endOffset={selection.endOffset}
           currentUserId={currentUserId}
           onSaved={hl => {
-            setHighlights(prev => [hl, ...prev])
+            setHighlights(prev => [hl, ...prev.filter(h => h.id !== hl.id)])
             window.getSelection()?.removeAllRanges()
           }}
           onClose={() => {
@@ -1177,6 +1025,7 @@ export function SpreadReader({
           onSaveEditorial={async noteText => {
             if (!selection) return
             const ok = await createEditorialNote(selection, noteText)
+            if (!ok) throw new Error('Не удалось сохранить замечание')
             if (ok) {
               setArtifactOpen(false)
               setSelection(null)
@@ -1288,7 +1137,8 @@ export function SpreadReader({
       )}
 
       {/* ── Попап хайлайта ── */}
-      {activeHighlight && (
+      {activeHighlight && activeHighlight.user_id === currentUserId && <HighlightWorkshopView id={activeHighlight.id} onClose={() => setActiveHighlight(null)} />}
+      {activeHighlight && activeHighlight.user_id !== currentUserId && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4"
           onClick={() => setActiveHighlight(null)}
@@ -1400,20 +1250,7 @@ export function SpreadReader({
       )}
 
       {/* ── Закладки ── */}
-      {currentUserId && (
-        <BookmarksPanel
-          open={showBookmarks}
-          onClose={() => setShowBookmarks(false)}
-          highlights={myHighlights}
-          currentChapterId={currentChapter?.id ?? ''}
-          onDelete={deleteHighlight}
-          onUpdate={updateHighlight}
-          onScrollTo={scrollToHighlight}
-          accent={accent}
-          bg={t.bg2}
-          textColor={t.text}
-        />
-      )}
+      {currentUserId && showBookmarks && <HighlightCollectionPanel editionId={edition.id} onClose={() => setShowBookmarks(false)} />}
     </div>
   )
 }

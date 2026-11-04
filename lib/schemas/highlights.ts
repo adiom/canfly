@@ -1,9 +1,11 @@
 import { z } from 'zod'
+import { textAnchorSchema } from './highlight-workshop'
 
 const uuid = z.string().uuid()
 const nullableText = (max: number) => z.string().trim().max(max).nullable().optional()
 
 export const createHighlightSchema = z.object({
+  anchor: textAnchorSchema.nullable().optional(),
   chapter_id: uuid,
   client_request_id: uuid.optional(),
   text_content: z.string().trim().min(3).max(5000),

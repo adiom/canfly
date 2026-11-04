@@ -46,6 +46,7 @@ export default async function UserDashboardPage() {
     <main className="min-h-screen bg-cf-bg text-cf-text-1">
       <SiteHeader activePath="/user" />
 
+      <div className="mx-auto max-w-5xl px-5 pt-4"><Link className="underline" href="/user/highlights">Коллекция highlights</Link></div>
       <SignatureBand theme={theme} caption="Главный кадр" />
 
       <div className="pb-12 pt-10 md:pb-16">

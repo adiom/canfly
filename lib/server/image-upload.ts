@@ -45,7 +45,7 @@ const SIGNATURES: { ext: string; mime: string; match: (b: Uint8Array) => boolean
   },
 ]
 
-function detectImage(bytes: Uint8Array) {
+export function detectImage(bytes: Uint8Array) {
   return SIGNATURES.find((sig) => sig.match(bytes)) ?? null
 }
 

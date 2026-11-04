@@ -6,12 +6,17 @@ import Link from 'next/link'
 import { getEditionLabel } from '@/lib/utils/editions'
 import { ChevronLeft, ChevronRight, X, AlignJustify, Heart, MessageCircle, Check, Bookmark, BookmarkPlus, Trash2, List, Type, Sun, Moon, Palette } from 'lucide-react'
 import { toast } from 'sonner'
-import type { Release, Edition, Chapter, ChapterHighlight, ChapterEditorialNote } from '@/lib/releases-types'
+import type { Release, Edition, Chapter, ChapterHighlight } from '@/lib/releases-types'
 import type { ReaderUserRole } from '@/components/spread-reader'
 import { useEditorialNotes } from '@/lib/reader/use-editorial-notes'
-import { BookmarksPanel } from '@/components/bookmarks-panel'
-import { HighlightArtifact } from '@/components/highlight-artifact'
-import { collectParagraphs, clearHighlightMarks, wrapHighlight, wrapEditorialNote, PARAGRAPH_TAGS } from '@/lib/reader/highlights-dom'
+import dynamic from 'next/dynamic'
+import { captureReaderSelection } from '@/lib/reader/highlight-anchor'
+import { useHighlightRanges } from '@/lib/reader/use-highlight-ranges'
+import { useChapterHighlights } from '@/lib/reader/use-chapter-highlights'
+import type { TextAnchor } from '@/lib/highlights/types'
+const HighlightArtifact = dynamic(() => import('@/components/highlight-artifact').then(m => m.HighlightArtifact))
+const HighlightWorkshopView = dynamic(() => import('@/components/highlights/workshop').then(m => m.HighlightWorkshopView))
+const HighlightCollectionPanel = dynamic(() => import('@/components/highlights/collection-panel').then(m => m.HighlightCollectionPanel))
 import { CATALOG_PATH } from '@/lib/nav'
 import { useReaderPreferences, READER_FONTS, READER_THEMES, READER_FONT_SIZE_MIN, READER_FONT_SIZE_MAX } from '@/lib/reader/reader-preferences'
 import type { ReaderThemeId } from '@/lib/reader/reader-preferences'
@@ -24,11 +29,13 @@ interface ReleaseBookReaderProps {
   initialHighlights: ChapterHighlight[]
   userRole: ReaderUserRole | null
   userName: string | null
+  canManageNotes?: boolean
   initialChapterIndex?: number
   otherBookEditions?: Edition[]
 }
 
 interface SelectionData {
+  anchor?: TextAnchor
   text: string
   rect: DOMRect
   paragraphIndex: number
@@ -44,12 +51,12 @@ export function ReleaseBookReader({
   chapters,
   currentUserId,
   initialHighlights,
-  userRole,
+  canManageNotes = false,
   initialChapterIndex = 0,
   otherBookEditions = [],
 }: ReleaseBookReaderProps) {
   const accent = release.design_config?.accent_color ?? '#d52525'
-  const isEditor = userRole === 'editor' || userRole === 'admin'
+  const isEditor = canManageNotes
 
   const {
     theme,
@@ -74,7 +81,6 @@ export function ReleaseBookReader({
   const [showBookmarks, setShowBookmarks] = useState(false)
   const [artifactOpen, setArtifactOpen] = useState(false)
   const [artifactRect, setArtifactRect] = useState<DOMRect | null>(null)
-  const [pendingScroll, setPendingScroll] = useState<{ paragraphIndex: number; chapterId: string } | null>(null)
 
   const contentRef = useRef<HTMLDivElement>(null)
   const floatingMenuRef = useRef<HTMLDivElement>(null)
@@ -110,78 +116,8 @@ export function ReleaseBookReader({
     [highlights, currentUserId],
   )
 
-  // Подгружаем highlights при смене главы
-  useEffect(() => {
-    if (!currentChapter) return
-    if (highlights.some(h => h.chapter_id === currentChapter.id)) return
-    let cancelled = false
-    const controller = new AbortController()
-    fetch(`/api/chapter-highlights?chapterId=${currentChapter.id}`, { signal: controller.signal })
-      .then(res => res.ok ? res.json() : null)
-      .then(data => {
-        if (cancelled || !data?.data) return
-        setHighlights(prev => {
-          const ids = new Set(prev.map(h => h.id))
-          return [...prev, ...data.data.filter((h: ChapterHighlight) => !ids.has(h.id))]
-        })
-      })
-      .catch(error => {
-        if (error instanceof DOMException && error.name === 'AbortError') return
-        toast.error('Не удалось загрузить цитаты главы')
-      })
-    return () => { cancelled = true; controller.abort() }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- highlights refetch only on chapter change
-  }, [currentChapter?.id])
-
-  // Применяем подсветки к DOM после рендера
-  useEffect(() => {
-    const root = contentRef.current
-    if (!root || !currentChapter) return
-
-    let cancelled = false
-
-    // Снимаем старые подсветки (highlights + editorial notes)
-    clearHighlightMarks(root)
-
-    // Собираем параграфы в порядке DOM
-    const paragraphs = collectParagraphs(root)
-    if (cancelled) return
-
-    // Группируем highlights по параграфу
-    const hlByParagraph = new Map<number, ChapterHighlight[]>()
-    for (const hl of chapterHighlights) {
-      if (hl.paragraph_index == null) continue
-      const arr = hlByParagraph.get(hl.paragraph_index) ?? []
-      arr.push(hl)
-      hlByParagraph.set(hl.paragraph_index, arr)
-    }
-
-    paragraphs.forEach((p, idx) => {
-      const list = hlByParagraph.get(idx)
-      if (!list) return
-      for (const hl of list) wrapHighlight(p, hl, currentUserId, accent)
-    })
-
-    // Группируем editorial notes по параграфу (editor/admin only)
-    if (isEditor && chapterEditorialNotes.length > 0) {
-      const enByParagraph = new Map<number, ChapterEditorialNote[]>()
-      for (const en of chapterEditorialNotes) {
-        if (en.paragraph_index == null) continue
-        const arr = enByParagraph.get(en.paragraph_index) ?? []
-        arr.push(en)
-        enByParagraph.set(en.paragraph_index, arr)
-      }
-
-      paragraphs.forEach((p, idx) => {
-        const list = enByParagraph.get(idx)
-        if (!list) return
-        for (const en of list) wrapEditorialNote(p, en)
-      })
-    }
-
-    return () => { cancelled = true }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- DOM highlight sync, avoids re-render loop
-  }, [currentChapter?.id, chapterHighlights, chapterEditorialNotes, currentIndex, isEditor])
+  useChapterHighlights(currentChapter?.id, setHighlights)
+  useHighlightRanges(contentRef, chapterHighlights, chapterEditorialNotes, setActiveHighlight, setActiveEditorialNote)
 
   // Сохраняем прогресс чтения на сервере (только для залогиненных).
   // Debounce 1.5с, чтобы не спамить при быстром перелистывании.
@@ -227,85 +163,11 @@ export function ReleaseBookReader({
     return () => window.removeEventListener('keydown', handler)
   }, [currentIndex, chapters.length])
 
-  // Клик по подсвеченному highlight/editorial note — открываем попап
-  useEffect(() => {
-    const root = contentRef.current
-    if (!root) return
-    const onClick = (e: MouseEvent) => {
-      const target = e.target as HTMLElement
-      if (target.tagName !== 'MARK') return
-      if (target.dataset.cfHl) {
-        const hlId = target.dataset.cfHl
-        const hl = chapterHighlights.find(h => h.id === hlId)
-        if (hl) setActiveHighlight(hl)
-      } else if (target.dataset.cfEn) {
-        const enId = target.dataset.cfEn
-        const en = chapterEditorialNotes.find(n => n.id === enId)
-        if (en) setActiveEditorialNote(en)
-      }
-    }
-    root.addEventListener('click', onClick)
-    return () => root.removeEventListener('click', onClick)
-  }, [chapterHighlights, chapterEditorialNotes, setActiveEditorialNote])
-
-  const handleMouseUp = useCallback(() => {
-    if (!currentUserId) return
-    if (floatingMenuRef.current?.contains(document.activeElement)) return
-    const sel = window.getSelection()
-    if (!sel || sel.rangeCount === 0) return
-    const text = sel.toString().trim()
-    if (text.length < 3) {
-      setSelection(null)
-      return
-    }
-    if (!contentRef.current?.contains(sel.anchorNode)) return
-
-    const range = sel.getRangeAt(0)
-    const rect = range.getBoundingClientRect()
-
-    // Находим индекс параграфа
-    let node: Node | null = sel.anchorNode
-    let paragraphIndex = -1
-    let paragraphEl: HTMLElement | null = null
-    while (node && node !== contentRef.current) {
-      if (node instanceof HTMLElement) {
-        const tag = node.tagName.toLowerCase()
-        if (PARAGRAPH_TAGS.includes(tag)) {
-          paragraphEl = node
-          break
-        }
-      }
-      node = node.parentNode
-    }
-
-    if (paragraphEl) {
-      const walker = document.createTreeWalker(contentRef.current, NodeFilter.SHOW_ELEMENT, {
-        acceptNode: (n) => {
-          if (!(n instanceof HTMLElement)) return NodeFilter.FILTER_REJECT
-          const t = n.tagName.toLowerCase()
-          if (PARAGRAPH_TAGS.includes(t)) {
-            return NodeFilter.FILTER_ACCEPT
-          }
-          return NodeFilter.FILTER_SKIP
-        },
-      })
-      let i = 0
-      let n: Node | null = walker.nextNode()
-      while (n) {
-        if (n === paragraphEl) { paragraphIndex = i; break }
-        i++
-        n = walker.nextNode()
-      }
-    }
-
-    const fullText = paragraphEl?.textContent ?? ''
-    const offset = fullText.indexOf(text)
-    const contextBefore = offset >= 0 ? fullText.slice(Math.max(0, offset - 30), offset) : ''
-    const contextAfter = offset >= 0 ? fullText.slice(offset + text.length, offset + text.length + 30) : ''
-
-    setSelection({ text, rect, paragraphIndex, contextBefore, contextAfter, startOffset: Math.max(0, offset), endOffset: Math.max(0, offset) + text.length })
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- currentUserId checked inside, stable callback
-  }, [])
+  const handleMouseUp = useCallback(async () => {
+    if (!currentUserId || !contentRef.current || artifactOpen) return
+    const captured = await captureReaderSelection(contentRef.current)
+    setSelection(captured)
+  }, [currentUserId, artifactOpen])
 
   // На touch-устройствах Selection обновляется после pointerup. Один кадр
   // ожидания позволяет прочитать уже финальный Range и не ломает mouse-flow.
@@ -313,70 +175,10 @@ export function ReleaseBookReader({
     window.setTimeout(handleMouseUp, 0)
   }, [handleMouseUp])
 
-  const scrollToParagraph = useCallback((paragraphIndex: number) => {
-    const root = contentRef.current
-    if (!root) return
-    const paragraphs = root.querySelectorAll('p')
-    const el = paragraphs[paragraphIndex] as HTMLElement | undefined
-    if (!el) return
-    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    el.classList.add('cf-scroll-flash')
-    setTimeout(() => el.classList.remove('cf-scroll-flash'), 1800)
-  }, [])
-
-  // Навигация к хайлайту — умеет переключать главы
-  const scrollToHighlight = useCallback((paragraphIndex: number, chapterId: string) => {
-    const targetIndex = chapters.findIndex(ch => ch.id === chapterId)
-    if (targetIndex === -1) return
-    if (targetIndex === currentIndex) {
-      scrollToParagraph(paragraphIndex)
-    } else {
-      setPendingScroll({ paragraphIndex, chapterId })
-      setCurrentIndex(targetIndex)
-      setShowBookmarks(false)
-    }
-  }, [chapters, currentIndex, scrollToParagraph])
-
-  // Срабатывает после смены главы — скроллит к нужному параграфу
-  useEffect(() => {
-    if (!pendingScroll) return
-    if (currentChapter?.id !== pendingScroll.chapterId) return
-    const timer = setTimeout(() => {
-      scrollToParagraph(pendingScroll.paragraphIndex)
-      setPendingScroll(null)
-    }, 350)
-    return () => clearTimeout(timer)
-  }, [currentChapter?.id, pendingScroll, scrollToParagraph])
-
-  const deleteHighlight = useCallback(async (id: string) => {
-    const res = await fetch(`/api/chapter-highlights/${id}`, { method: 'DELETE' })
-    if (res.ok) {
-      setHighlights(prev => prev.filter(h => h.id !== id))
-    }
-  }, [])
-
-  const updateHighlight = useCallback(
-    async (id: string, patch: { note?: string | null; is_public?: boolean }) => {
-      const res = await fetch(`/api/chapter-highlights/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(patch),
-      })
-      const data = await res.json().catch(() => null)
-      if (!res.ok || !data?.data) {
-        toast.error(data?.error ?? 'Не удалось обновить цитату')
-        return
-      }
-      const updated = data.data as ChapterHighlight
-      setHighlights(prev => prev.map(h => (h.id === id ? updated : h)))
-      setActiveHighlight(prev => (prev?.id === id ? updated : prev))
-    },
-    [],
-  )
-
   const saveEditorialFromArtifact = async (noteText: string) => {
     if (!selection || !currentChapter) return
     const ok = await createEditorialNote(selection, noteText)
+    if (!ok) throw new Error('Не удалось сохранить замечание')
     if (ok) {
       setSelection(null)
       window.getSelection()?.removeAllRanges()
@@ -726,6 +528,7 @@ export function ReleaseBookReader({
       {/* === Артефакт-карточка === */}
       {selection && currentChapter && (
         <HighlightArtifact
+          key={selection.anchor ? selection.anchor.revision + selection.anchor.start : selection.text}
           open={artifactOpen}
           text={selection.text}
           chapterTitle={currentChapter.title}
@@ -735,11 +538,12 @@ export function ReleaseBookReader({
           paragraphIndex={selection.paragraphIndex}
           contextBefore={selection.contextBefore}
           contextAfter={selection.contextAfter}
+          anchor={selection.anchor}
           startOffset={selection.startOffset}
           endOffset={selection.endOffset}
           currentUserId={currentUserId}
           onSaved={hl => {
-            setHighlights(prev => [hl, ...prev])
+            setHighlights(prev => [hl, ...prev.filter(h => h.id !== hl.id)])
             window.getSelection()?.removeAllRanges()
             // Карточка сама переходит в фазу инструментов — не закрываем
           }}
@@ -757,7 +561,8 @@ export function ReleaseBookReader({
       )}
 
       {/* Highlight detail popup */}
-      {activeHighlight && (
+      {activeHighlight && activeHighlight.user_id === currentUserId && <HighlightWorkshopView id={activeHighlight.id} onClose={() => setActiveHighlight(null)} />}
+      {activeHighlight && activeHighlight.user_id !== currentUserId && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4"
           onClick={() => setActiveHighlight(null)}
@@ -1004,20 +809,7 @@ export function ReleaseBookReader({
       )}
 
       {/* Bookmarks panel */}
-      {currentUserId && (
-        <BookmarksPanel
-          open={showBookmarks}
-          onClose={() => setShowBookmarks(false)}
-          highlights={myHighlights}
-          currentChapterId={currentChapter?.id ?? ''}
-          onDelete={deleteHighlight}
-          onUpdate={updateHighlight}
-          onScrollTo={scrollToHighlight}
-          accent={accent}
-          bg={bg}
-          textColor={textColor}
-        />
-      )}
+      {currentUserId && showBookmarks && <HighlightCollectionPanel editionId={edition.id} onClose={() => setShowBookmarks(false)} />}
 
       {/* Cross-linking to other editions */}
       {otherBookEditions && otherBookEditions.length > 0 && (

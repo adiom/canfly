@@ -5,7 +5,8 @@ import { fetchEditionByIdOrSlug } from '@/lib/server/editions'
 import { fetchReleaseById, fetchReleaseSeries } from '@/lib/server/releases'
 import { fetchPublishedChaptersByEdition } from '@/lib/server/chapters'
 import { getCurrentUser, getSystemRoles } from '@/lib/server/session'
-import { fetchChapterHighlights } from '@/lib/server/chapter-highlights'
+import { z } from 'zod'
+import { fetchChapterHighlightById, canManageChapterEditorialNotes, fetchChapterHighlights } from '@/lib/server/chapter-highlights'
 import { fetchReadingProgress } from '@/lib/server/reading-progress'
 import { SpreadReader } from '@/components/spread-reader'
 import type { ReaderUserRole } from '@/components/spread-reader'
@@ -67,8 +68,10 @@ export async function generateMetadata({
 
 export default async function VvvvvReaderPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>
+  searchParams: Promise<{ highlight?: string | string[] }>
 }) {
   const { slug } = await params
   const edition = await loadEdition(slug)
@@ -212,7 +215,11 @@ export default async function VvvvvReaderPage({
   const progressChapterIndex = progress
     ? chapters.findIndex(chapter => chapter.id === progress.chapter_id)
     : -1
-  const initialChapterIndex = progressChapterIndex >= 0 ? progressChapterIndex : 0
+  const requested = z.string().uuid().safeParse((await searchParams).highlight)
+  const target = requested.success ? await fetchChapterHighlightById(requested.data, user?.id ?? null) : null
+  const targetIndex = target ? chapters.findIndex(chapter => chapter.id === target.chapter_id) : -1
+  const initialChapterIndex = targetIndex >= 0 ? targetIndex : Math.max(0, progressChapterIndex)
+  const canManageNotes = user ? await canManageChapterEditorialNotes(chapters[initialChapterIndex].id, user.id, user.is_admin) : false
 
   const initialHighlights = await fetchChapterHighlights({
     chapterId: chapters[initialChapterIndex].id,
@@ -230,9 +237,11 @@ export default async function VvvvvReaderPage({
         edition={edition}
         chapters={chapters}
         initialChapterIndex={initialChapterIndex}
-        initialPosition={progress?.position ?? null}
-        initialProgressPercent={progress ? Number(progress.progress_percent) : 0}
-        initialProgressUpdatedAt={progress?.last_read_at ? new Date(progress.last_read_at).getTime() : 0}
+        canManageNotes={canManageNotes}
+        initialHighlightId={targetIndex >= 0 ? target?.id : undefined}
+        initialPosition={targetIndex < 0 ? progress?.position ?? null : null}
+        initialProgressPercent={targetIndex < 0 && progress ? Number(progress.progress_percent) : 0}
+        initialProgressUpdatedAt={targetIndex >= 0 ? 0 : progress?.last_read_at ? new Date(progress.last_read_at).getTime() : 0}
         currentUserId={user?.id ?? null}
         initialHighlights={initialHighlights}
         userRole={userRole}
