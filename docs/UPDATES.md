@@ -8,6 +8,23 @@
 
 ---
 
+## [3 ноября 2026] Агентский контур: скиллы и MCP
+
+- Добавлен `.mcp.json`: `next-devtools` (MCP-эндпоинт `/_next/mcp` живого
+  dev-сервера: ошибки, роуты, server actions) и `playwright` (`@playwright/mcp`,
+  headless) для браузерной проверки страниц.
+- В `.agents/skills/` добавлены `next-dev-loop` из `vercel/next.js` и проектные
+  скиллы `canfly-architecture`, `canfly-data-access`, `canfly-guardrails`,
+  `canfly-e2e`.
+  Папка в `.gitignore`, восстановление — `npx skills add vercel/next.js
+  --skill next-dev-loop -a pi --copy`.
+- В `AGENTS.md` добавлен раздел «Инструменты агента» с рабочим циклом
+  правка → проверка в браузере → `pnpm lint` + `pnpm build` → узкий e2e.
+- Глобально установлен `agent-browser` 0.41.1 (требование `next-dev-loop`).
+  Зависимости проекта, миграции и переменные окружения не менялись.
+
+---
+
 ## [3 ноября 2026] SEO: кластер персонажей
 
 - Хаб `/characters` открыт для индексации и добавлен в sitemap. `noindex`
