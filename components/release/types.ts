@@ -1,4 +1,5 @@
 import type { ChapterHighlight, Edition, Game, Release, Series } from '@/lib/releases-types'
+import type { Place } from '@/lib/types'
 
 export type ReleaseMeta = {
   chapterCount: number
@@ -12,6 +13,8 @@ export type ReleaseCharacter = {
   name: string
   slug: string
   avatar: string | null
+  bio: string | null
+  canChat: boolean
   role: string
 }
 
@@ -34,6 +37,7 @@ export type ReleasePagePublicProps = {
   meta: ReleaseMeta
   characters: ReleaseCharacter[]
   games: Game[]
+  places: Array<Pick<Place, 'id' | 'name' | 'slug' | 'bio'> & { role: string }>
   otherSeriesReleases: OtherSeriesRelease[]
   /**
    * Режим предпросмотра для непубличных релизов. `null` — обычная публикация.

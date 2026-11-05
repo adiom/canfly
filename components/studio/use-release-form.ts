@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import type { Release } from '@/lib/releases-types'
 import { generateSlug } from '@/lib/slug-utils'
 import { createReleaseAction, updateReleaseAction } from '@/lib/actions/studio'
+import { useUnsavedReleaseChanges } from '@/components/studio/use-unsaved-release-changes'
 
 export interface ReleaseDraft {
   title: string
@@ -45,6 +46,7 @@ export function useReleaseForm(release?: Release | null) {
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const dirty = JSON.stringify(draft) !== JSON.stringify(baseline)
+  useUnsavedReleaseChanges(dirty)
 
   function update<K extends keyof ReleaseDraft>(key: K, value: ReleaseDraft[K]) {
     setDraft(previous => ({ ...previous, [key]: value }))
@@ -81,11 +83,7 @@ export function useReleaseForm(release?: Release | null) {
       for (const [key, value] of Object.entries(submitted)) {
         formData.set(key, String(value))
       }
-      // Авторы не редактируются в этой форме, поэтому сохраняем их данные.
-      formData.set('authors', JSON.stringify(release?.authors ?? []))
       if (release) {
-        // Статус берём из последних серверных props, а не из снимка формы.
-        formData.set('status', release.status)
         await updateReleaseAction(release.id, formData)
         setBaseline(submitted)
         setSaved(true)

@@ -109,7 +109,7 @@ function releaseAuthors(release: Release) {
 }
 
 /**
- * Одно издание внутри `workExample` произведения.
+ * Одно медиавоплощение внутри `hasPart` релиза.
  *
  * Тип берётся из карты форматов, а не фиксируется как `Book`: комиксы,
  * аудиокниги, журналы и альбомы иначе не размечались вообще.
@@ -136,7 +136,6 @@ function editionExample(
     // isbn — свойство Book, не CreativeWork: на произведении он был невалиден.
     ...(edition.format === 'book' && release.isbn && { isbn: release.isbn }),
     ...(edition.external_url && { sameAs: edition.external_url }),
-    ...(meta && meta.chapterCount > 0 && { numberOfPages: meta.chapterCount }),
     ...(meta && !isAudio && meta.wordCount > 0 && { wordCount: meta.wordCount }),
     ...(meta &&
       !isAudio &&
@@ -160,8 +159,8 @@ function releaseGenres(formats: EditionFormat[], genre: string | null): string[]
 }
 
 /**
- * Произведение остаётся `CreativeWork` — это абстракция над изданиями.
- * Конкретные типы (`Book`, `ComicIssue`, `Audiobook`, …) живут в `workExample`
+ * Релиз остаётся `CreativeWork` — общей творческой идентичностью.
+ * Конкретные типы (`Book`, `ComicIssue`, `Audiobook`, …) живут в `hasPart`
  * и на собственных страницах изданий.
  *
  * Связи с персонажами:
@@ -189,7 +188,7 @@ export function generateReleaseSchema(opts: {
   const url = `${BASE_URL}/release/${release.slug}`
 
   const published = editions.filter(edition => edition.status === 'published')
-  const workExample = published.map(edition =>
+  const parts = published.map(edition =>
     editionExample(
       edition,
       release,
@@ -262,7 +261,7 @@ export function generateReleaseSchema(opts: {
     ...(persons.length > 0 && { character: persons }),
     ...(protagonistNode && { about: protagonistNode }),
     ...(contentLocation && contentLocation.length > 0 && { contentLocation }),
-    ...(workExample.length > 0 && { workExample }),
+    ...(parts.length > 0 && { hasPart: parts }),
     ...(release.view_count > 0 && {
       interactionStatistic: {
         '@type': 'InteractionCounter',

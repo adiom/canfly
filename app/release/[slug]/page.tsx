@@ -1,7 +1,8 @@
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
+import { cache } from 'react'
 import { fetchReleaseBySlug, fetchReleaseCharacters, fetchReleaseSeries } from '@/lib/server/releases'
-import { fetchEditionsByRelease } from '@/lib/server/editions'
+import { fetchEditionsByRelease, fetchReleaseChapterCounts } from '@/lib/server/editions'
 import { fetchPublishedChapterListByEdition } from '@/lib/server/chapters'
 import { fetchSeriesById, fetchSeriesWithReleases } from '@/lib/server/series'
 import { fetchCharactersList } from '@/lib/server/characters'
@@ -10,10 +11,35 @@ import { fetchPlacesByRelease } from '@/lib/server/places'
 import { fetchPublicHighlightsByRelease } from '@/lib/server/chapter-highlights'
 import { getReleaseViewer } from '@/lib/server/studio-auth'
 import { ReleasePagePublic } from '@/components/release-page'
-import { computeEditionMeta, getPrimaryEdition } from '@/lib/utils/editions'
+import { canOpenEdition, computeEditionMeta, getPrimaryEdition } from '@/lib/utils/editions'
 import { generateReleaseSchema } from '@/lib/seo/schema'
-import { buildMetadata, notFoundMetadata } from '@/lib/seo/metadata'
+import { notFoundMetadata } from '@/lib/seo/metadata'
+import { getReleaseMetadata } from '@/lib/seo/release-metadata'
 import { JsonLd } from '@/components/seo/json-ld'
+
+const getRelease = cache(fetchReleaseBySlug)
+const getViewer = cache(getReleaseViewer)
+
+async function getEditions(releaseId: string) {
+  const [editions, chapterCounts] = await Promise.all([
+    fetchEditionsByRelease(releaseId),
+    fetchReleaseChapterCounts(releaseId),
+  ])
+  const available = editions.filter(edition => canOpenEdition(edition, chapterCounts[edition.id] ?? 0))
+  const primary = getPrimaryEdition(available)
+  const chapters = primary ? await fetchPublishedChapterListByEdition(primary.id) : []
+  return { editions, available, primary, meta: computeEditionMeta(chapters) }
+}
+
+async function getSeries(releaseId: string) {
+  const [link] = await fetchReleaseSeries(releaseId)
+  const series = link ? await fetchSeriesById(link.series_id) : null
+  const seriesData = series ? await fetchSeriesWithReleases(series.slug) : null
+  return {
+    link: link && series ? { series, phase_number: link.phase_number } : null,
+    otherReleases: (seriesData?.releases ?? []).filter(release => release.id !== releaseId),
+  }
+}
 
 /**
  * Страница читается по сессии: черновик (draft) виден только команде релиза.
@@ -26,44 +52,19 @@ export const dynamic = 'force-dynamic'
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params
-  const release = await fetchReleaseBySlug(slug)
+  const release = await getRelease(slug)
   if (!release) return notFoundMetadata()
 
-  if (release.status === 'published') {
-    return buildMetadata({
-      title: `${release.title} | canfly`,
-      description: release.description ?? release.annotation ?? `«${release.title}» на canfly`,
-      path: `/release/${release.slug}`,
-      // og:image приходит из opengraph-image.tsx рядом — обложка «как есть» в
-      // 1200×630 обрезалась бы соцсетями.
-      generatedImage: true,
-      ogType: 'book',
-      publishedTime: release.release_date ?? release.created_at,
-      modifiedTime: release.updated_at,
-    })
-  }
-
   if (release.status === 'draft') {
-    const { canViewDraft } = await getReleaseViewer(release.id)
+    const { canViewDraft } = await getViewer(release.id)
     if (!canViewDraft) return notFoundMetadata()
-
-    return buildMetadata({
-      title: `${release.title} · черновик | canfly`,
-      description: `Черновик «${release.title}» — предпросмотр для команды релиза.`,
-      path: `/release/${release.slug}`,
-      generatedImage: true,
-      ogType: 'book',
-      noindex: true,
-    })
   }
-
-  // archived: на сайте публично нет, но в Studio остаётся.
-  return notFoundMetadata()
+  return getReleaseMetadata(release)
 }
 
 export default async function ReleasePublicPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
-  const release = await fetchReleaseBySlug(slug)
+  const release = await getRelease(slug)
   if (!release) notFound()
 
   // published — всем. draft — только команде релиза (owner/editor-коллаборант
@@ -72,7 +73,7 @@ export default async function ReleasePublicPage({ params }: { params: Promise<{ 
   let viewerCanEdit = false
   if (release.status !== 'published') {
     if (release.status === 'archived') notFound()
-    const viewer = await getReleaseViewer(release.id)
+    const viewer = await getViewer(release.id)
     if (!viewer.canViewDraft) notFound()
     preview = 'draft'
     // Кнопку «Открыть в Studio» показываем только тем, кто реально может
@@ -81,60 +82,29 @@ export default async function ReleasePublicPage({ params }: { params: Promise<{ 
     viewerCanEdit = viewer.canEdit
   }
 
-  const editions = await fetchEditionsByRelease(release.id)
-  const primaryEdition = getPrimaryEdition(editions)
-
-  let meta = { chapterCount: 0, wordCount: 0, readingMinutes: 0, durationSeconds: 0 }
-  if (primaryEdition) {
-    meta = computeEditionMeta(await fetchPublishedChapterListByEdition(primaryEdition.id))
-  }
-
-  const [releaseChars, allCharacters, seriesLinks, highlights, releasePlaces, games] = await Promise.all([
+  const [editionData, seriesData, releaseChars, allCharacters, highlights, releasePlaces, games] = await Promise.all([
+    getEditions(release.id),
+    getSeries(release.id),
     fetchReleaseCharacters(release.id),
     fetchCharactersList(),
-    fetchReleaseSeries(release.id),
-    fetchPublicHighlightsByRelease(release.id, 6),
+    preview ? [] : fetchPublicHighlightsByRelease(release.id, 12),
     fetchPlacesByRelease(release.id),
     fetchGamesByRelease(release.id),
   ])
+  const { editions, available: availableEditions, primary: primaryEdition, meta } = editionData
+  const { link: validSeriesLink, otherReleases: otherSeriesReleases } = seriesData
 
-  const characters = releaseChars
-    .map(rc => {
-      const ch = allCharacters.find(c => c.id === rc.character_id)
-      return ch ? { id: ch.id, name: ch.name, slug: ch.slug, avatar: ch.avatar ?? null, role: rc.role } : null
-    })
-    .filter(Boolean) as { id: string; name: string; slug: string; avatar: string | null; role: string }[]
-
-  const schemaCharacters = releaseChars
-    .map(rc => allCharacters.find(c => c.id === rc.character_id))
-    .filter(Boolean)
-    .map(ch => ({
-      name: ch!.name,
-      slug: ch!.slug,
-      avatar: ch!.avatar ?? null,
-    }))
+  const charactersById = new Map(allCharacters.map(character => [character.id, character]))
+  const characters = releaseChars.flatMap(({ character_id, role }) => {
+    const character = charactersById.get(character_id)
+    if (!character) return []
+    const { id, name, slug, avatar, bio, can_receive_messages, reply_mode } = character
+    return [{ id, name, slug, avatar: avatar ?? null, bio, role, canChat: can_receive_messages !== false && reply_mode !== 'disabled' }]
+  })
 
   // Карта slug → role. Используется в JSON-LD, чтобы выделить protagonist
   // (role = 'main') для поля `about`.
-  const characterRoles = new Map<string, string>()
-  for (const rc of releaseChars) {
-    const ch = allCharacters.find(c => c.id === rc.character_id)
-    if (ch) characterRoles.set(ch.slug, rc.role)
-  }
-
-  const seriesLink = seriesLinks.length > 0
-    ? { series: await fetchSeriesById(seriesLinks[0].series_id), phase_number: seriesLinks[0].phase_number }
-    : null
-
-  const validSeriesLink = seriesLink && seriesLink.series
-    ? { series: seriesLink.series, phase_number: seriesLink.phase_number }
-    : null
-
-  let otherSeriesReleases: Array<{ id: string; title: string; slug: string; annotation: string | null; cover_image: string | null; release_date: string | null; phase_number: number | null }> = []
-  if (validSeriesLink?.series) {
-    const seriesData = await fetchSeriesWithReleases(validSeriesLink.series.slug)
-    otherSeriesReleases = (seriesData?.releases ?? []).filter(r => r.id !== release.id)
-  }
+  const characterRoles = new Map(characters.map(character => [character.slug, character.role]))
 
   const formats = editions
     .filter(e => e.status === 'published')
@@ -144,7 +114,7 @@ export default async function ReleasePublicPage({ params }: { params: Promise<{ 
     release,
     editions,
     formats,
-    characters: schemaCharacters,
+    characters,
     characterRoles,
     places: releasePlaces.map(p => ({ name: p.name, slug: p.slug })),
     series: validSeriesLink?.series
@@ -173,13 +143,14 @@ export default async function ReleasePublicPage({ params }: { params: Promise<{ 
       {preview !== 'draft' && <JsonLd schemas={[releaseSchema]} />}
       <ReleasePagePublic
         release={release}
-        editions={editions}
+        editions={preview ? editions.filter(edition => edition.status !== 'archived') : availableEditions}
         primaryEditionSlug={primaryEdition?.slug ?? null}
         seriesLink={validSeriesLink}
         highlights={highlights}
         meta={meta}
         characters={characters}
         games={games}
+        places={releasePlaces}
         otherSeriesReleases={otherSeriesReleases}
         breadcrumbs={breadcrumbItems}
         preview={preview}

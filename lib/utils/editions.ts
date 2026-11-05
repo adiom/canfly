@@ -88,6 +88,29 @@ export function isDigitalFormat(format: EditionFormat): boolean {
   return format === 'digital'
 }
 
+export function isExternalEditionUrl(value: string | null): value is string {
+  if (!value) return false
+  try {
+    return ['https:', 'http:'].includes(new URL(value).protocol)
+  } catch {
+    return false
+  }
+}
+
+export function canOpenEdition(edition: Edition, publishedChapterCount: number): boolean {
+  if (edition.status !== 'published') return false
+  if (edition.format === 'digital') return isExternalEditionUrl(edition.external_url)
+  if (edition.format === 'artwork') return Boolean(edition.artwork_url)
+  return publishedChapterCount > 0
+}
+
+export function getEditionAction(edition: Edition): string {
+  if (isAudioFormat(edition.format)) return 'Слушать'
+  if (edition.format === 'artwork') return 'Смотреть'
+  if (edition.format === 'digital') return edition.platform ? `Открыть на ${edition.platform}` : 'Открыть издание'
+  return 'Читать в VVVVV'
+}
+
 export interface EditionMeta {
   chapterCount: number
   wordCount: number

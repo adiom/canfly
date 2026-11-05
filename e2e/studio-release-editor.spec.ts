@@ -67,6 +67,7 @@ test.describe('studio: paper release editor', () => {
       )
       releaseId = release.rows[0].id
       createdReleaseIds.push(releaseId)
+      await client.query('UPDATE releases SET design_config = $2::jsonb WHERE id = $1', [releaseId, JSON.stringify({ accent_color: '#28637a', layout: 'sidebar', show_series: false, hero_art: 'canvas' })])
       const edition = await client.query<{ id: string }>(
         `INSERT INTO editions (release_id, slug, format, status) VALUES ($1, $2, 'book', 'draft') RETURNING id`,
         [releaseId, `${slug}-book`],
@@ -85,7 +86,7 @@ test.describe('studio: paper release editor', () => {
   })
 
   test.beforeEach(async ({ page }, testInfo) => {
-    if (!testInfo.title.startsWith('сохраняет правки')) {
+    if (!testInfo.title.startsWith('сохраняет данные')) {
       await withDb(client => client.query("UPDATE releases SET title = $2, slug = $3, status = 'published' WHERE id = $1", [releaseId, `${title} — правки`, `${slug}-saved`]))
     }
     await login(page, credentials)
@@ -110,7 +111,7 @@ test.describe('studio: paper release editor', () => {
     }
   })
 
-  test('сохраняет правки между вкладками и независимо применяет данные, роли, оформление и публикацию', async ({ page }) => {
+  test('сохраняет данные, роли и публикацию; использует единый публичный дизайн', async ({ page }) => {
     test.setTimeout(240_000)
     const errors: string[] = []
     page.on('pageerror', error => errors.push(error.message))
@@ -127,18 +128,11 @@ test.describe('studio: paper release editor', () => {
     await page.getByText('ISBN и каталог', { exact: true }).click()
     await page.getByLabel('ISBN', { exact: true }).fill('978-1-234-56789-7')
 
-    await page.getByRole('tab', { name: /Персонажи/ }).click()
+    await page.getByRole('tab', { name: /Связи/ }).click()
     await choose(page, 'Связать персонажа', characterName)
     await page.getByRole('button', { name: 'Связать', exact: true }).click()
     await choose(page, `Роль: ${characterName}`, 'Главный')
-    await page.getByRole('tab', { name: 'Оформление', exact: true }).click()
-    await page.getByRole('button', { name: 'Светлый', exact: true }).click()
-    await page.getByLabel('Акцент', { exact: true }).fill('#28637a')
-    await page.getByText('Композиция и разделы', { exact: true }).click()
-    await choose(page, 'Ширина и структура', 'С боковой колонкой')
-    await page.getByLabel('Серия', { exact: true }).uncheck()
-    await expect(page.locator('.paper-preview')).toHaveCSS('background-color', 'rgb(244, 239, 229)')
-    await expect(page.locator('.paper-preview')).toHaveAttribute('data-layout', 'sidebar')
+    await expect(page.getByRole('tab', { name: 'Оформление', exact: true })).toHaveCount(0)
 
     await page.getByRole('tab', { name: 'Основное', exact: true }).click()
     await expect(page.getByLabel('Название', { exact: true })).toHaveValue(`${title} — правки`)
@@ -146,7 +140,7 @@ test.describe('studio: paper release editor', () => {
     await saveForm(page, 'Сохранить основные', 'Основные данные')
     await expect(page.getByRole('button', { name: 'Сохранить основные', exact: true })).toBeDisabled()
 
-    await page.getByRole('tab', { name: /Персонажи/ }).click()
+    await page.getByRole('tab', { name: /Связи/ }).click()
     await expect(page.getByRole('combobox', { name: `Роль: ${characterName}` })).toHaveText('Главный')
     await saveForm(page, 'Сохранить персонажей', 'Персонажи релиза')
     await expect(page.getByRole('button', { name: 'Сохранить персонажей', exact: true })).toBeDisabled()
@@ -156,10 +150,6 @@ test.describe('studio: paper release editor', () => {
       await saveForm(page, 'Сохранить персонажей', 'Персонажи релиза')
       await expect.poll(async () => withDb(async client => (await client.query('SELECT role FROM release_characters WHERE release_id = $1 AND character_id = $2', [releaseId, characterId])).rows[0]?.role)).toBe(value)
     }
-    await page.getByRole('tab', { name: 'Оформление', exact: true }).click()
-    await expect(page.getByLabel('Акцент', { exact: true })).toHaveValue('#28637a')
-    await saveForm(page, 'Сохранить оформление', 'Оформление релиза')
-    await expect(page.getByRole('button', { name: 'Сохранить оформление', exact: true })).toBeDisabled()
 
     await page.getByRole('button', { name: 'Публикация: Черновик' }).click()
     await choose(page, 'Статус', 'Опубликован')
@@ -191,7 +181,16 @@ test.describe('studio: paper release editor', () => {
     await page.reload()
     const stored = await withDb(async client => (await client.query('SELECT *, release_date::text AS date_text FROM releases WHERE id = $1', [releaseId])).rows[0])
     expect(stored).toMatchObject({ title: `${title} — правки`, status: 'published', authors, date_text: '2026-03-10', editor_notes: 'Личная заметка редактора', isbn: '978-1-234-56789-7', show_in_catalog: false })
-    expect(stored.design_config).toMatchObject({ accent_color: '#28637a', layout: 'sidebar', show_series: false })
+    expect(stored.design_config).toMatchObject({ accent_color: '#28637a', layout: 'sidebar', show_series: false, hero_art: 'canvas' })
+    await page.goto(`/release/${slug}-saved`)
+    const releaseSurface = page.locator('.release-surface')
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${title} — правки`)
+    await expect(page.getByRole('heading', { name: seriesName })).toBeVisible()
+    await expect.poll(() => releaseSurface.evaluate(element => {
+      const parent = element.parentElement
+      return parent ? getComputedStyle(element).getPropertyValue('--cf-accent').trim() === getComputedStyle(parent).getPropertyValue('--cf-accent').trim() : false
+    })).toBe(true)
+    await expect(page.locator('[data-release-art]')).toHaveCount(0)
     expect(errors).toEqual([])
   })
 
@@ -235,11 +234,11 @@ test.describe('studio: paper release editor', () => {
     await page.keyboard.press('ArrowRight')
     await expect(page.getByRole('tab', { name: /Издания/ })).toHaveAttribute('aria-selected', 'true')
     await page.keyboard.press('End')
-    await expect(page.getByRole('tab', { name: 'Оформление', exact: true })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByRole('tab', { name: 'Готовность', exact: true })).toHaveAttribute('aria-selected', 'true')
     await page.getByRole('tab', { name: 'Основное', exact: true }).click()
     for (const width of [1280, 805, 375, 320]) {
       await page.setViewportSize({ width, height: 900 })
-      for (const section of ['Основное', 'Издания', 'Персонажи', 'Оформление']) {
+      for (const section of ['Основное', 'Издания', 'Связи', 'Готовность']) {
         await page.getByRole('tab', { name: new RegExp(section) }).click()
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
         expect(overflow, `${section}, ${width}px`).toBeLessThanOrEqual(0)

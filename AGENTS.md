@@ -57,6 +57,12 @@ Route Handlers оборачивай в `apiHandler()`, если не требу�
 
 В интерфейсе переиспользуй токены `cf-*` из `app/globals.css` и существующие shadcn-компоненты. Новые строки с пользовательским HTML очищай на сервере до записи.
 
+## Инструменты агента
+
+- `.agents/skills/` — скиллы рабочей копии: `next-dev-loop` (официальный Vercel: правка → проверка в живом `next dev` через `/_next/mcp` и `agent-browser`), `canfly-architecture`, `canfly-data-access`, `canfly-guardrails`, `canfly-e2e`. Папка в `.gitignore`, на новой машине скиллы ставятся заново: `npx skills add vercel/next.js --skill next-dev-loop -a pi --copy`.
+- `.mcp.json` — MCP-серверы: `next-devtools` (ошибки, роуты, server actions работающего dev-сервера) и `playwright` (браузерная проверка страниц). `next-devtools` подключается только при запущенном `pnpm dev`.
+- Рабочий цикл: локальные доки Next → минимальная правка → проверка в браузере → `pnpm lint` + `pnpm build` → узкий e2e.
+
 ## Тесты, коммиты и PR
 
 Называй E2E-файлы `e2e/<feature>.spec.ts`, группируй проверки через `test.describe` и добавляй регрессионный тест для изменённого маршрута, доступа, редиректа или API. В истории используются короткие Conventional-стиль сообщения: `feat(reader): …`, `fix(auth): …`, `chore: …`, `docs: …`.

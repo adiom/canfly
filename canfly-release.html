@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Еще одна попытка Сони — Canfly</title>
+<style>
+:root{color-scheme:dark;--cf-void:#111210;--cf-charcoal:#1b1c19;--cf-manuscript:#f4efe5;--cf-orpiment:#dcb463;--cf-canfly:#6a9ab8;--cf-sey2sky:#9db5c8;--cf-deepsleep:#2f4f72;--line:#f4efe530;--muted:#bbbcb4;--paper:#f4efe5;--width:1280px}
+*{box-sizing:border-box}body{margin:0;background:var(--cf-void);color:var(--paper);font:16px/1.5 system-ui,sans-serif}button,a{-webkit-tap-highlight-color:transparent}a{color:inherit;text-decoration:none}a:hover{text-decoration:underline;text-underline-offset:4px}button{color:inherit;font:inherit;cursor:pointer}a:focus-visible,button:focus-visible,textarea:focus-visible{outline:3px solid var(--cf-sey2sky);outline-offset:5px}.wrap{width:min(var(--width),calc(100% - 112px));margin:auto}.top{border-bottom:1px solid var(--line)}.bar{height:70px;display:flex;align-items:center;justify-content:space-between;gap:1rem}.brand{display:flex;align-items:center;gap:11px;font-size:22px;letter-spacing:.06em;font-weight:800}.mark{width:23px;height:23px;background:var(--cf-canfly);display:grid;place-items:center}.mark:after{content:'';width:13px;height:2px;background:white;transform:rotate(-26deg)}.quiet,.meta{color:var(--muted)}.meta{font-size:12px;letter-spacing:.1em;text-transform:uppercase}.hero{padding:62px 0 54px;display:grid;grid-template-columns:1.04fr 1fr;gap:7%;align-items:center}.byline{color:var(--cf-sey2sky);margin:23px 0 16px}h1,h2,h3,p{margin:0}h1{font-size:clamp(46px,6.1vw,101px);line-height:.96;letter-spacing:-.079em;font-weight:720}h2{font-size:clamp(30px,4vw,59px);letter-spacing:-.055em;line-height:1.03}h3{font-size:clamp(27px,3.4vw,46px);line-height:1.04;letter-spacing:-.055em}.intro{max-width:40ch;color:var(--muted);margin-bottom:26px}.actions{display:flex;gap:10px;flex-wrap:wrap}.btn{min-height:47px;border:1px solid var(--line);padding:11px 15px;display:inline-flex;align-items:center;justify-content:center;gap:12px;font-weight:650;font-size:14px;background:transparent;border-radius:3px}.btn:hover{border-color:currentColor;text-decoration:none}.primary{background:var(--cf-orpiment);color:var(--cf-void);border-color:transparent}.frame{position:relative;min-width:0;aspect-ratio:1.36;background:radial-gradient(ellipse at 48% 48%,#2f4f72 0%,#202c31 46%,var(--cf-charcoal) 84%);border:1px solid var(--line);overflow:hidden;display:grid;grid-template-rows:1fr auto}.frame svg{position:absolute;width:100%;height:100%;inset:0}.frame.static svg{display:none}.frame.static{background:var(--cf-charcoal)}.frame svg path{vector-effect:non-scaling-stroke}.frame.playing .field{animation:drift 12s ease-in-out infinite alternate;transform-origin:center}@keyframes drift{to{transform:rotate(13deg) scale(1.08)}}.cover{isolation:isolate;align-self:center;justify-self:center;width:33%;min-width:120px;aspect-ratio:2/2.85;background:linear-gradient(125deg,#293c4a,var(--cf-void) 82%);border:1px solid var(--cf-sey2sky);box-shadow:0 10px 45px #111210bb;display:flex;flex-direction:column;justify-content:space-between;padding:10%;padding:clamp(10px,2vw,27px);line-height:.94}.cover strong{font-size:clamp(17px,2.7vw,40px);letter-spacing:-.07em}.cover small{font-size:10px;color:var(--cf-sey2sky);letter-spacing:.06em}.framebar{z-index:1;display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 12px;background:#111210c9}.framebar button{border:0;background:none;padding:9px 4px;font-size:12px}.framebar button:hover{text-decoration:underline}.strip{display:flex;align-items:center;gap:clamp(16px,4vw,58px);min-height:60px;border-block:1px solid var(--line);font-weight:650;font-size:14px}.strip a:first-child{color:var(--cf-orpiment)}section{scroll-margin-top:20px}.world{padding:52px 0 64px}.sectionhead{display:flex;justify-content:space-between;gap:20px;align-items:end;margin-bottom:28px}.sectionhead p{max-width:33ch;color:var(--muted)}.explorer{display:grid;grid-template-columns:minmax(230px,.86fr) minmax(0,1.5fr);border:1px solid var(--line);min-height:345px}.choices{padding:10px;background:var(--cf-charcoal);border-right:1px solid var(--line)}.choice{border:0;border-bottom:1px solid var(--line);background:none;width:100%;text-align:left;min-height:79px;padding:12px 14px;display:grid;grid-template-columns:30px 1fr auto;gap:10px;align-items:center}.choice:last-child{border-bottom:0}.choice:hover{background:#f4efe50d}.choice[aria-pressed=true]{background:#dcb46315;box-shadow:inset 2px 0 var(--cf-orpiment)}.choice .num{color:var(--cf-orpiment);font-size:12px;font-variant-numeric:tabular-nums}.choice strong,.choice small{display:block}.choice small{color:var(--muted);font-size:12px}.detail{padding:clamp(22px,4vw,52px);background:linear-gradient(145deg,#9db5c810,transparent 65%);display:flex;flex-direction:column;justify-content:center;gap:16px}.relation{color:var(--cf-orpiment);font-size:13px}.detail p:not(.relation){color:var(--muted);max-width:49ch}.participate{background:var(--cf-manuscript);color:var(--cf-void);padding:55px 0}.participate .meta{color:var(--cf-deepsleep);margin-bottom:12px}.join{display:grid;grid-template-columns:1fr 1fr;gap:35px;align-items:center}.join p:not(.meta){max-width:50ch;margin:0 0 15px}.join .btn{border-color:#11121055}.join .primary{background:var(--cf-void);color:var(--paper)}.editions{padding:55px 0}.edition{margin-top:23px;border-block:1px solid var(--line);padding:14px 0;display:flex;justify-content:space-between;align-items:center;gap:10px}.edition small{display:block;color:var(--muted)}footer{border-top:1px solid var(--line);padding:20px 0 30px;font-size:13px;color:var(--muted)}footer .wrap{display:flex;justify-content:space-between;gap:15px;flex-wrap:wrap}.skip{position:absolute;top:-100px}.skip:focus{top:10px;z-index:5;background:var(--cf-void);padding:12px}.static #motion{visibility:hidden}@media(max-width:850px){.wrap{width:calc(100% - 48px)}.hero{gap:4%;padding-top:40px}.frame{aspect-ratio:1.1}}@media(max-width:640px){.wrap{width:calc(100% - 36px)}.bar{height:58px}.hero,.join,.explorer{grid-template-columns:1fr}.hero{padding:35px 0 28px;gap:24px}h1{font-size:clamp(42px,12vw,68px);letter-spacing:-.07em}.byline{margin-top:15px}.intro{margin-bottom:18px}.frame{aspect-ratio:1.55}.cover{width:28%;min-width:89px}.cover strong{font-size:clamp(17px,5vw,27px)}.strip{gap:17px;font-size:13px}.world,.editions{padding:36px 0}.sectionhead{align-items:start;flex-direction:column;gap:10px}.choices{border-right:0;border-bottom:1px solid var(--line)}.choice{min-height:57px}.detail{min-height:270px}.participate{padding:34px 0}.join{gap:18px}.edition .btn{padding-inline:9px}}@media(prefers-reduced-motion:reduce){.frame.playing .field{animation:none}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">К произведению</a>
+<header class="top"><div class="wrap bar"><a class="brand" href="https://canfly.space/"><span class="mark" aria-hidden="true"></span>CANFLY</a><a class="quiet" href="https://canfly.space/releases">Все релизы ↗</a></div></header>
+<main id="main">
+<div class="wrap hero">
+<div><h1>Еще одна<br>попытка Сони</h1><p class="byline">Адиом Тимур <span aria-hidden="true">·</span> Книга</p><p class="intro">Откройте книгу в VVVVV, познакомьтесь с Соней или посмотрите, какую работу читатель сделал из фрагмента главы «Семьсот рублей».</p>
+<div class="actions"><a class="btn primary" href="https://canfly.space/vvvvv/sbornik-esche-odna-popytka-soni">Читать в VVVVV <span aria-hidden="true">↗</span></a><a class="btn" href="#world">Исследовать связи <span aria-hidden="true">↓</span></a></div></div>
+<div class="frame" id="frame"><svg viewBox="0 0 600 430" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><g class="field" fill="none" stroke="#9db5c8" stroke-opacity=".44"></g></svg><div class="cover" aria-label="Типографическая обложка прототипа"><small>АДИОМ ТИМУР</small><strong>Еще одна<br>попытка<br>Сони</strong><small>CANFLY</small></div>
+<div class="framebar"><span class="meta">Графика прототипа</span><div><button id="motion" type="button" aria-pressed="false">▶ Пуск</button> <button id="static" type="button" aria-pressed="false">Убрать графику</button></div></div></div>
+</div>
+<nav class="wrap strip" aria-label="На этой странице"><a href="#world">Связи</a><a href="#participate">Творчество</a><a href="#editions">Издания</a></nav>
+<section class="wrap world" id="world">
+<div class="sectionhead"><h2>Мир произведения</h2><p>Выберите связь, чтобы узнать, откуда она появилась и куда ведёт.</p></div>
+<div class="explorer"><div class="choices" role="group" aria-label="Связанные объекты">
+<button class="choice" type="button" data-item="sonya" aria-pressed="true" aria-controls="detail"><span class="num" aria-hidden="true">01</span><span><strong>Соня</strong><small>Персонаж книги</small></span><span aria-hidden="true">→</span></button>
+<button class="choice" type="button" data-item="highlight" aria-pressed="false" aria-controls="detail"><span class="num" aria-hidden="true">02</span><span><strong>Семьсот рублей</strong><small>Выделение в главе</small></span><span aria-hidden="true">→</span></button>
+<button class="choice" type="button" data-item="work" aria-pressed="false" aria-controls="detail"><span class="num" aria-hidden="true">03</span><span><strong>Работа read1</strong><small>Текст по мотивам фрагмента</small></span><span aria-hidden="true">→</span></button>
+</div><div id="detail" class="detail" aria-live="polite" aria-atomic="true">
+<p class="relation" id="relation">Книга → персонаж</p><h3 id="detail-title">Соня</h3><p id="detail-text">Соня участвует в этой книге. В её профиле можно посмотреть записи и связи. Некоторые диалоги с персонажами могут стать материалом для будущих книг.</p>
+<div class="actions" id="detail-actions"><a class="btn primary" href="https://canfly.space/characters/sonya/chat">Поговорить с Соней ↗</a><a class="btn" href="https://canfly.space/characters/sonya">Открыть профиль ↗</a></div></div></div>
+</section>
+<section class="participate" id="participate"><div class="wrap join"><div><p class="meta">Выдели и твори</p><h2>Напишите свою версию</h2></div><div><p>Откройте книгу в VVVVV и выделите фрагмент. Из него можно сделать заметку, цитату или переписать сцену. У читательской работы есть свой автор и ссылка на исходное место в книге.</p><div class="actions"><a class="btn primary" href="https://canfly.space/vvvvv/sbornik-esche-odna-popytka-soni">Перейти к чтению ↗</a><a class="btn" href="https://canfly.space/news/VYDELI-I-TVORI">Как это работает ↗</a></div></div></div></section>
+<section class="wrap editions" id="editions"><h2>Издания</h2><div class="edition"><div><strong>Еще одна попытка Сони</strong><small>Цифровое издание · VVVVV</small></div><a class="btn" href="https://canfly.space/vvvvv/sbornik-esche-odna-popytka-soni">Читать ↗</a></div></section>
+</main>
+<footer><div class="wrap"><span>Canfly · The Media Dimension for Interactive Interactions</span><a href="#main">К началу ↑</a></div></footer>
+<script>
+const base = 'https://canfly.space';
+const highlightId = '4afbafdf-2fbc-4a33-ba67-b003f4d5cd6f';
+const highlight = base + '/highlight/' + highlightId;
+const passage = base + '/vvvvv/sbornik-esche-odna-popytka-soni?highlight=' + highlightId;
+const connections = {
+  sonya: {
+    relation: 'Книга → персонаж', title: 'Соня',
+    description: 'Соня участвует в этой книге. В её профиле можно посмотреть записи и связи. Некоторые диалоги с персонажами могут стать материалом для будущих книг.',
+    links: [['Поговорить с Соней', base + '/characters/sonya/chat'], ['Открыть профиль', base + '/characters/sonya']],
+  },
+  highlight: {
+    relation: 'Издание → глава → выделение', title: 'Семьсот рублей',
+    description: 'В этой главе read1 выделил фрагмент. Ссылка ведёт к точному месту в издании, а карточка хайлайта открывает исходный фрагмент и созданные на его основе материалы.',
+    links: [['К выделению в VVVVV', passage], ['Открыть хайлайт', highlight]],
+  },
+  work: {
+    relation: 'Фрагмент → хайлайт → работа читателя', title: 'Работа read1',
+    description: 'Текст read1 по мотивам выделенного фрагмента. В карточке также есть материал с отметкой о создании с ИИ. Авторская версия книги доступна по ссылке на исходный фрагмент.',
+    links: [['Открыть работу', highlight], ['К исходному фрагменту', passage]],
+  },
+};
+
+const choices = [...document.querySelectorAll('.choice')];
+for (const choice of choices) {
+  choice.addEventListener('click', () => {
+    const item = connections[choice.dataset.item];
+    for (const button of choices) button.setAttribute('aria-pressed', String(button === choice));
+    document.querySelector('#relation').textContent = item.relation;
+    document.querySelector('#detail-title').textContent = item.title;
+    document.querySelector('#detail-text').textContent = item.description;
+    const links = item.links.map(([label, url], index) => {
+      const link = document.createElement('a');
+      link.className = index === 0 ? 'btn primary' : 'btn';
+      link.href = url;
+      link.textContent = label + ' ↗';
+      return link;
+    });
+    document.querySelector('#detail-actions').replaceChildren(...links);
+  });
+}
+
+const field = document.querySelector('.field');
+for (let index = 0; index < 24; index++) {
+  const curve = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  const offset = index * 13;
+  curve.setAttribute('d', 'M -30 ' + (42 + offset) + ' C 122 ' + (208 + offset / 4) + ' 230 ' + (435 - offset) + ' 358 ' + (224 - offset / 3) + ' S 552 ' + (8 + offset) + ' 650 ' + (162 + offset));
+  field.append(curve);
+}
+
+const frame = document.querySelector('#frame');
+const motion = document.querySelector('#motion');
+const toggle = document.querySelector('#static');
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+function setPlaying(playing) {
+  frame.classList.toggle('playing', playing);
+  motion.textContent = playing ? 'Ⅱ Пауза' : '▶ Пуск';
+  motion.setAttribute('aria-pressed', String(playing));
+}
+function respectMotionPreference() {
+  if (reducedMotion.matches) setPlaying(false);
+  motion.disabled = reducedMotion.matches;
+  motion.textContent = reducedMotion.matches ? 'Статично' : '▶ Пуск';
+}
+respectMotionPreference();
+reducedMotion.addEventListener('change', respectMotionPreference);
+motion.addEventListener('click', () => setPlaying(!frame.classList.contains('playing')));
+toggle.addEventListener('click', () => {
+  const hidden = frame.classList.toggle('static');
+  setPlaying(false);
+  if (reducedMotion.matches) motion.textContent = 'Статично';
+  toggle.textContent = hidden ? 'Вернуть графику' : 'Убрать графику';
+  toggle.setAttribute('aria-pressed', String(hidden));
+});
+</script>
+</body>
+</html>

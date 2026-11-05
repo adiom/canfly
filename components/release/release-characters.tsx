@@ -1,54 +1,41 @@
 import Image from 'next/image'
 import Link from 'next/link'
+import { ArrowRight, MessageCircle } from 'lucide-react'
 import type { ReleaseCharacter } from './types'
+import { ReleaseDescription } from './release-description'
+import styles from './release.module.css'
 
 const ROLE_LABELS: Record<string, string> = {
-  main: 'Главный',
-  supporting: 'Второстепенный',
-  cameo: 'Камео',
+  main: 'Главный герой', supporting: 'Второстепенный персонаж', cameo: 'Камео',
+}
+
+function CharacterRow({ character, featured }: { character: ReleaseCharacter; featured: boolean }) {
+  return <li className={styles.characterCard} data-featured={featured}>
+    {character.avatar ? <Link href={`/characters/${character.slug}`} className={styles.characterPortrait} aria-label={`Профиль ${character.name}`}>
+      <Image src={character.avatar} alt="" fill sizes={featured ? '112px' : '48px'} className="object-cover" />
+    </Link> : null}
+    <div className={styles.characterInfo}>
+      <p className={styles.characterRole}>{ROLE_LABELS[character.role] ?? character.role}</p>
+      <h3>{character.name}</h3>
+      {character.bio ? <ReleaseDescription text={character.bio} limit={featured ? 220 : 100} /> : null}
+      <div className={styles.characterActions}>
+        {character.canChat ? <Link className={featured ? styles.explorerLink : styles.textLink} href={`/characters/${character.slug}/chat`}>
+          <MessageCircle size={16} aria-hidden="true" />Поговорить
+        </Link> : null}
+        <Link className={styles.textLink} href={`/characters/${character.slug}`}>Профиль<ArrowRight size={16} aria-hidden="true" /></Link>
+      </div>
+    </div>
+  </li>
 }
 
 export function ReleaseCharacters({ characters }: { characters: ReleaseCharacter[] }) {
-  if (characters.length === 0) return null
-
-  return (
-    <section className="border-t border-cf-text-1/10">
-      <div className="mx-auto max-w-6xl px-5 py-10 md:px-8 md:py-14">
-        <p className="mb-6 text-[10px] font-black uppercase tracking-[0.22em] text-cf-accent">
-          персонажи
-        </p>
-        <div className="-mx-5 flex gap-4 overflow-x-auto px-5 pb-2 md:mx-0 md:flex-wrap md:overflow-visible md:px-0">
-          {characters.map(character => (
-            <Link
-              key={character.id}
-              href={`/characters/${character.slug}`}
-              className="group flex shrink-0 flex-col items-center gap-2 rounded-xl border border-cf-text-1/10 bg-cf-bg-2 p-4 transition-all hover:border-cf-warm/45 hover:shadow-lg hover:shadow-cf-warm/5 md:w-[140px]"
-            >
-              <div className="relative h-16 w-16 overflow-hidden rounded-full bg-cf-text-1/8 ring-2 ring-cf-text-1/10 transition-all group-hover:ring-cf-warm/45">
-                {character.avatar ? (
-                  <Image
-                    src={character.avatar}
-                    alt={character.name}
-                    fill
-                    sizes="64px"
-                    className="object-cover"
-                  />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-lg font-bold text-cf-text-3">
-                    {character.name.charAt(0)}
-                  </div>
-                )}
-              </div>
-              <span className="text-center text-sm font-bold leading-tight text-cf-text-heading transition-colors group-hover:text-cf-warm">
-                {character.name}
-              </span>
-              <span className="text-[10px] font-black uppercase tracking-[0.15em] text-cf-text-3">
-                {ROLE_LABELS[character.role] ?? character.role}
-              </span>
-            </Link>
-          ))}
-        </div>
-      </div>
-    </section>
-  )
+  const ordered = [...characters].sort((a, b) => Number(b.role === 'main') - Number(a.role === 'main'))
+  return <section aria-labelledby="release-characters-title">
+    <h2 id="release-characters-title" className={styles.sectionSubtitle}>Персонажи <span className={styles.count}>· {characters.length}</span></h2>
+    <ul className={styles.characterList}>{ordered.slice(0, 3).map((character, index) =>
+      <CharacterRow key={character.id} character={character} featured={index === 0} />)}</ul>
+    {ordered.length > 3 ? <details className={styles.more}><summary>Ещё персонажи · {ordered.length - 3}</summary>
+      <ul>{ordered.slice(3).map(character => <CharacterRow key={character.id} character={character} featured={false} />)}</ul>
+    </details> : null}
+  </section>
 }

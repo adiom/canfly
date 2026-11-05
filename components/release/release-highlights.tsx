@@ -1,66 +1,37 @@
-'use client'
-
-import { useState } from 'react'
 import Link from 'next/link'
-import { Heart } from 'lucide-react'
+import Image from 'next/image'
+import { ArrowRight } from 'lucide-react'
 import type { ChapterHighlight } from '@/lib/releases-types'
-import { pluralRu } from '@/lib/utils/format'
+import { ReleaseDescription } from './release-description'
+import styles from './release.module.css'
 
-export function ReleaseHighlights({
-  highlights,
-  accent,
-}: {
-  highlights: ChapterHighlight[]
-  accent: string
-}) {
-  const [showAllQuotes, setShowAllQuotes] = useState(false)
+function HighlightItem({ highlight }: { highlight: ChapterHighlight }) {
+  return <article className={styles.highlight}>
+    {highlight.chapter_title ? <p className={styles.characterRole}>Фрагмент главы «{highlight.chapter_title}»</p> : null}
+    <blockquote className={styles.quote}><ReleaseDescription text={highlight.text_content} limit={240} /></blockquote>
+    <p className={styles.caption}>Карточку создал(а): {highlight.user_name || 'Читатель'}</p>
+    {highlight.publication?.note ? <ReleaseDescription text={highlight.publication.note} /> : null}
+    {highlight.publication && highlight.publication.materials.length > 0 ? <details className={styles.description}>
+      <summary>Материалы работы · {highlight.publication.materials.length}</summary>
+      {highlight.publication.materials.map(material => <div className={styles.material} key={material.id}>
+        {material.kind === 'image' && material.image_url ?
+          <Image src={material.image_url} alt={material.content || 'Иллюстрация по мотивам фрагмента'} width={480} height={480} unoptimized className={styles.materialImage} /> : null}
+        {material.content ? <p>{material.content}</p> : null}
+      </div>)}
+    </details> : null}
+    <div className={styles.characterActions}>
+      <Link href={`/highlight/${highlight.id}`} className={styles.explorerLink}>Открыть работу<ArrowRight size={16} aria-hidden="true" /></Link>
+      {highlight.edition_slug ? <Link href={`/vvvvv/${highlight.edition_slug}?highlight=${highlight.id}`} className={styles.textLink}>Исходный фрагмент</Link> : null}
+    </div>
+  </article>
+}
 
-  if (highlights.length === 0) return null
-
-  const visibleQuotes = showAllQuotes ? highlights : highlights.slice(0, 2)
-
-  return (
-    <section className="border-t border-cf-text-1/10">
-      <div className="mx-auto max-w-6xl px-5 py-10 md:px-8 md:py-14">
-        <p className="mb-6 text-[10px] font-black uppercase tracking-[0.22em] text-cf-accent">
-          цитаты читателей
-        </p>
-        <div className="grid gap-6 md:grid-cols-2">
-          {visibleQuotes.map(highlight => (
-            <Link
-              key={highlight.id}
-              href={`/highlight/${highlight.id}`}
-              className="group block border-l-2 pl-5 transition-opacity hover:opacity-80"
-              style={{ borderColor: accent }}
-            >
-              <p className="font-[family-name:var(--font-ebgaramond)] text-lg italic leading-snug text-cf-text-caption">
-                «{highlight.text_content}»
-              </p>
-              <div className="mt-3 flex items-center gap-2 text-xs text-cf-text-3">
-                <span>{highlight.user_name ?? 'Читатель'}</span>
-                {highlight.likes_count > 0 && (
-                  <span className="inline-flex items-center gap-1">
-                    <Heart className="h-3 w-3" style={{ color: accent }} />
-                    {highlight.likes_count}
-                  </span>
-                )}
-              </div>
-            </Link>
-          ))}
-        </div>
-        {highlights.length > 2 && (
-          <button
-            type="button"
-            onClick={() => setShowAllQuotes(value => !value)}
-            className="mt-5 text-xs font-black uppercase tracking-[0.15em] opacity-60 transition-opacity hover:opacity-100"
-            style={{ color: accent }}
-          >
-            {showAllQuotes
-              ? 'Свернуть'
-              : `Ещё ${highlights.length - 2} ${pluralRu(highlights.length - 2, 'цитата', 'цитаты', 'цитат')}`}
-          </button>
-        )}
-      </div>
-    </section>
-  )
+export function ReleaseHighlights({ highlights }: { highlights: ChapterHighlight[] }) {
+  return <section aria-labelledby="release-highlights-title">
+    <h2 id="release-highlights-title" className={styles.sectionTitle}>Работы читателей</h2>
+    {highlights.slice(0, 2).map(highlight => <HighlightItem key={highlight.id} highlight={highlight} />)}
+    {highlights.length > 2 ? <details className={styles.more}><summary>Ещё работы · {highlights.length - 2}</summary>
+      {highlights.slice(2).map(highlight => <HighlightItem key={highlight.id} highlight={highlight} />)}
+    </details> : null}
+  </section>
 }

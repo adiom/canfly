@@ -131,6 +131,15 @@ export async function fetchGamesByRelease(
   )
 }
 
+export async function changeReleaseGameLink(releaseId: string, gameId: string, linked: boolean) {
+  await dbQuery(
+    linked
+      ? 'INSERT INTO release_games (release_id, game_id) VALUES ($1, $2) ON CONFLICT DO NOTHING'
+      : 'DELETE FROM release_games WHERE release_id = $1 AND game_id = $2',
+    [releaseId, gameId],
+  )
+}
+
 /** Полная замена связей игры с персонажами: один путь правки — форма игры. */
 export async function setGameCharacters(gameId: string, characterIds: string[]): Promise<void> {
   await withTransaction(async (client) => {
