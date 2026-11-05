@@ -17,7 +17,7 @@
 | `components/seo/json-ld.tsx` | `<JsonLd schemas={[...]} />` — один `<script>` с `@graph`. Все узлы страницы в одном графе, чтобы `{ '@id': ... }` резолвились. |
 | `app/layout.tsx` | Отдаёт полные узлы `Organization`, `Person` (автор) и `WebSite` **ровно один раз**. Остальные страницы ссылаются по `@id`. |
 | `app/robots.ts` | Правила индексации (см. матрицу ниже). |
-| `app/sitemap.ts` | Карта сайта: корень, каталог, новости, персонажи, серии, цвета, `/vvvvv`, все релизы, все издания (на `/vvvvv/[slug]`), все публичные персонажи, все серии. |
+| `app/sitemap.ts` | Карта сайта: индексируемые публичные хабы и опубликованные релизы, новости, персонажи, места, игры, серии с релизами и публичные авторы. Edition `/vvvvv/[slug]` исключены: их canonical ведёт на Release. Обновление каждые 5 минут. |
 
 ---
 
@@ -64,7 +64,9 @@ ${BASE_URL}/highlight/{id}#quote       — цитата (Quotation)
 |---------|--------|---------|
 | `/`, `/releases`, `/release/**`, `/series/**`, `/characters/**`, `/news/**` | `allow` | Публичный контент |
 | `/colors` | `allow` | Контентная страница вселенной (18 цветов с историями из `lib/canfly-colors.ts`), не дизайн-система. Покрыта e2e `seo.spec.ts`. |
-| `/vvvvv/[editionSlug]` | `allow` | Единый canonical для всех форматов (book, comic, magazine, audio). Легко потерять при рефакторинге — следи за `getEditionTocUrl`. |
+| `/vvvvv/[editionSlug]` | `allow` + `noindex, follow` | Страница Edition доступна обходу, canonical указывает на родительский Release. Edition не попадает в sitemap. |
+| `/games` | `noindex` | Хаб игр не индексируется; опубликованные игры имеют отдельные индексируемые страницы. |
+| `/series/[slug]` без опубликованных релизов | `noindex` | Пустая серия не включается в sitemap. |
 | `/hi/**`, `/studio-access-denied` | `noindex, nofollow` | Magic-link и служебная страница |
 | `/user/[slug]` | `noindex` при `profile_is_public = false` | Закрытый профиль. Реализовано в `generateMetadata` страницы через `noindex: !user.profile_is_public`. |
 | `/search`, `/profile`, `/studio/**`, `/admin/**` | `disallow` в robots.txt | Не публичные разделы |
@@ -89,12 +91,14 @@ ${BASE_URL}/highlight/{id}#quote       — цитата (Quotation)
 ## Sitemap
 
 `app/sitemap.ts` собирает:
-- Статические: корень (`LANDING_PATH`), каталог (`CATALOG_PATH` = `/releases`), `/news`, `/characters`, `/colors`, `/vvvvv`.
-- Релизы: все опубликованные, `priority: 0.9`, `changeFrequency: 'weekly'`, с `images` (обложка).
-- Издания: все опубликованные через `fetchPublishedEditionsForSitemap()`, URL — **всегда** `/vvvvv/[editionSlug]` (через `getEditionTocUrl`), `priority: 0.8`.
-- Новости: последние 100, `priority: 0.7`.
-- Персонажи: публичные, `priority: 0.6`.
-- Серии: все, `priority: 0.7`.
+- Статические индексируемые хабы: корень (`LANDING_PATH`), `/releases`, `/news`, `/characters`, `/colors`, `/vvvvv`.
+- Все опубликованные Release с `priority: 0.9` и обложкой, если она задана.
+- Все опубликованные новости без лимита в 100 записей.
+- Публичных персонажей, места, опубликованные игры, серии с опубликованными релизами и публичные профили авторов.
+- Не включает Edition `/vvvvv/[slug]`: это отдельная сущность с `noindex, follow` и canonical на Release.
+- `lastmod` задаётся только для сущностей с датой изменения; статическим страницам его не приписывают.
+
+Маршрут обновляется через ISR каждые 300 секунд, поэтому новая публикация попадёт в карту без ожидания следующего production build. При приближении к 50 000 URL карту нужно разделить.
 
 ---
 
@@ -187,8 +191,24 @@ curl -sS -o /dev/null -w "%{http_code}" http://localhost:3000/opengraph-image
 
 ## Проверки аудита (5 ноября 2026)
 
-Canonical /releases сохраняет query-параметры каталога. Sitemap обновляется раз в пять минут, содержит все опубликованные новости и исключает серии без опубликованных релизов. Пустые страницы серии остаются доступными, но получают noindex и не включаются в карту.
+Canonical `/releases` сохраняет query-параметры каталога. Sitemap обновляется
+раз в пять минут, содержит все опубликованные новости и исключает серии без
+опубликованных релизов. Пустые страницы серии остаются доступными, но получают
+`noindex` и не включаются в карту.
 
-Read-only аудит локального, preview или production-сайта: node scripts/seo-audit.mjs https://canfly.org --format=json. Скрипт обходит sitemap index, проверяет HTTP-статусы, canonical, robots, title, description, JSON-LD и дубликаты URL. Запросы ограничены origin сайта; внешний redirect не обходится. Полный HTML учитывает streaming metadata Next.js.
+Read-only аудит локального, preview или production-сайта:
 
-Проверяй sitemap, robots и изменённые URL после деплоя. Аудит не читает Search Console и Яндекс Вебмастер.
+```sh
+node scripts/seo-audit.mjs http://localhost:3000
+node scripts/seo-audit.mjs https://canfly.org --format=json
+node scripts/seo-audit.mjs https://preview.example --limit=25 --strict
+```
+
+Скрипт обходит sitemap index, проверяет HTTP-статусы, canonical, robots, title,
+description, JSON-LD и дубликаты URL. Запросы ограничены origin проверяемого
+сайта; внешний redirect не обходится. Полный HTML учитывает streaming metadata
+Next.js. `--format=text|json|both` выбирает отчёт; по умолчанию выводятся текст
+и JSON. Ошибки возвращают код 1, а `--strict` включает предупреждения.
+
+Проверяй `/sitemap.xml`, `/robots.txt` и изменённые URL после деплоя. Аудит не
+читает Search Console или Яндекс Вебмастер и не проверяет внешние ресурсы.
