@@ -70,6 +70,24 @@ function sitemapLocs(xml) {
   return [...xml.matchAll(/<loc[^>]*>([\s\S]*?)<\/loc>/gi)].map(match => decode(match[1].trim()))
 }
 
+function validateXml(xml, label) {
+  const stack = []
+  const tags = /<\/?([A-Za-z_][\w:.-]*)(?:\s[^<>]*?)?\s*\/?>/g
+  for (const match of xml.matchAll(tags)) {
+    const token = match[0]
+    const name = match[1]
+    if (token.startsWith('</')) {
+      if (stack.pop() !== name) throw new Error(`${label}: некорректно закрыт XML-тег </${name}>`)
+    } else if (!token.endsWith('/>')) {
+      stack.push(name)
+    }
+  }
+  if (stack.length > 0) throw new Error(`${label}: незакрытый XML-тег <${stack.at(-1)}>`)
+  if (/&(?!amp;|lt;|gt;|quot;|apos;|#\d+;|#x[\da-f]+;)/i.test(xml)) {
+    throw new Error(`${label}: некорректная XML-сущность`)
+  }
+}
+
 function localizeSitemapUrl(raw) {
   const url = new URL(raw, BASE)
   if (!['https:', 'http:'].includes(url.protocol)) throw new Error(`неподдерживаемая схема URL: ${url.protocol}`)
@@ -89,8 +107,10 @@ async function readSitemap(url, visited = new Set()) {
   const { response } = await getSameOrigin(url)
   if (!response.ok) throw new Error(`${url}: sitemap HTTP ${response.status}`)
   const xml = await response.text()
+  validateXml(xml, url)
   if (!/<(?:urlset|sitemapindex)\b/i.test(xml)) throw new Error(`${url}: ответ не похож на sitemap XML`)
   const locs = sitemapLocs(xml)
+  if (locs.length === 0) throw new Error(`${url}: sitemap не содержит элементов <loc>`)
   if (/<sitemapindex\b/i.test(xml)) {
     const urls = []
     for (const loc of locs) urls.push(...await readSitemap(localizeSitemapUrl(loc), visited))
@@ -103,9 +123,14 @@ function checkHtml(url, html, status) {
   const issues = []
   if (status !== 200) issues.push(`страница после редиректа ответила HTTP ${status}`)
   const title = /<title\b[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1]?.replace(/<[^>]*>/g, '').trim()
+  const titleCount = [...html.matchAll(/<title\b/gi)].length
   const description = getMeta(html, 'description')
   if (!title) issues.push('нет title')
+  if (titleCount > 1) issues.push(`найдено title-тегов: ${titleCount}`)
   if (!description?.trim()) issues.push('нет meta description')
+  const h1Count = [...html.matchAll(/<h1\b/gi)].length
+  if (h1Count === 0) pageWarning(url, 'нет H1')
+  if (h1Count > 1) pageWarning(url, `найдено H1: ${h1Count}`)
 
   const robots = [getMeta(html, 'robots'), getMeta(html, 'googlebot')].filter(Boolean).join(', ')
   if (/noindex/i.test(robots)) issues.push(`URL из sitemap закрыт от индексации (${robots})`)
@@ -124,6 +149,11 @@ function checkHtml(url, html, status) {
     }
   }
 
+  for (const key of ['og:title', 'og:description', 'og:url', 'og:image']) {
+    if (!getMeta(html, key)) pageWarning(url, `нет ${key}`)
+  }
+  if (!getMeta(html, 'twitter:card')) pageWarning(url, 'нет twitter:card')
+
   const blocks = [...html.matchAll(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)]
   if (blocks.length === 0) issues.push('нет JSON-LD')
   for (const [index, block] of blocks.entries()) {
@@ -134,6 +164,10 @@ function checkHtml(url, html, status) {
   if (canonicalCount > 1) issues.push(`найдено canonical-тегов: ${canonicalCount}`)
   for (const issue of issues) errors.push(`${url}: ${issue}`)
   return { url, status, title: title || null, description: description || null, canonical: href, robots: robots || null, jsonLdBlocks: blocks.length, issues }
+}
+
+function pageWarning(url, message) {
+  warnings.push(`${url}: ${message}`)
 }
 
 async function auditPage(url) {
