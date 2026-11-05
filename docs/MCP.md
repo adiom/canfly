@@ -226,6 +226,9 @@ admin-only авторизацию MCP; публичного API для стат�
 - `canfly_webmaster_queries` — поисковые запросы: показы, клики и позиции;
 - `canfly_webmaster_indexing` — история количества страниц в поиске;
 - `canfly_webmaster_diagnostics` — проблемы сайта, Sitemap, robots и SSL.
+- `canfly_webmaster_search_pages` — постраничные примеры URL в поиске с датами обхода.
+- `canfly_webmaster_excluded_pages` — исторические события исключения с причиной `excluded_url_status`; список событий не равен текущим исключениям.
+- `canfly_webmaster_description_audit` — проверка фактически отданного HTML до 20 URL за вызов; ищет непустой `meta name="description"`. Это текущий независимый аудит, а не выгрузка URL с проблемой из Яндекс Вебмастера.
 
 ### Подключение
 
