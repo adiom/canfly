@@ -15,7 +15,8 @@ export function EditionLink({ edition, primary = false, compact = false }: { edi
   const Icon = external ? ExternalLink : ArrowRight
   return <Link href={external && edition.external_url ? edition.external_url : `/vvvvv/${edition.slug}`}
     target={external ? '_blank' : undefined} rel={external ? 'noopener noreferrer' : undefined}
-    className={compact ? styles.textLink : styles.action} data-primary={primary}>
+    className={compact ? styles.textLink : styles.action} data-primary={primary}
+    data-metrika-goal={external ? 'external_edition_open' : 'edition_open'}>
     {label}<Icon size={compact ? 16 : 18} aria-hidden="true" />
   </Link>
 }
@@ -56,7 +57,7 @@ export function ReleaseExternalEditions({ editions }: { editions: Edition[] }) {
   return <section className={styles.external} aria-labelledby="release-external-title">
     <h2 id="release-external-title" className={styles.sectionSubtitle}>Выберите своё издание</h2>
     <ul>{external.map(edition => <li key={edition.id}>
-      <Link href={edition.external_url!} target="_blank" rel="noopener noreferrer">
+      <Link href={edition.external_url!} target="_blank" rel="noopener noreferrer" data-metrika-goal="external_edition_open">
         {edition.platform || 'Открыть издание'}<ExternalLink size={16} aria-hidden="true" />
       </Link>
     </li>)}</ul>
