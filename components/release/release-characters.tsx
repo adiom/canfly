@@ -19,7 +19,7 @@ function CharacterRow({ character, featured }: { character: ReleaseCharacter; fe
       <h3>{character.name}</h3>
       {character.bio ? <ReleaseDescription text={character.bio} limit={featured ? 220 : 100} /> : null}
       <div className={styles.characterActions}>
-        {character.canChat ? <Link className={featured ? styles.explorerLink : styles.textLink} href={`/characters/${character.slug}/chat`}>
+        {character.canChat ? <Link className={featured ? styles.explorerLink : styles.textLink} href={`/characters/${character.slug}/chat`} data-metrika-goal="character_chat_open">
           <MessageCircle size={16} aria-hidden="true" />Поговорить
         </Link> : null}
         <Link className={styles.textLink} href={`/characters/${character.slug}`}>Профиль<ArrowRight size={16} aria-hidden="true" /></Link>
