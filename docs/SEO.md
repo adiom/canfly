@@ -212,3 +212,20 @@ Next.js. `--format=text|json|both` выбирает отчёт; по умолч�
 
 Проверяй `/sitemap.xml`, `/robots.txt` и изменённые URL после деплоя. Аудит не
 читает Search Console или Яндекс Вебмастер и не проверяет внешние ресурсы.
+
+### Дополнение аудита 6 ноября 2026
+
+- Пустые фильтры `/releases?category=…` получают `noindex, follow`; заполненные
+  остаются индексируемыми и сохраняют собственный canonical.
+- Страница STILL ROAD — статический `public/games/still-road/index.html`.
+  Метаданные задаются в самом HTML, а `<base>` сохраняет корректную загрузку
+  стилей и игровых скриптов при открытии чистого URL `/games/still-road`.
+  Разметка `VideoGame` относится к самой игре; Release остаётся `CreativeWork`,
+  а Book размечается только для книжного Edition.
+- Аудитор читает page `<loc>` отдельно от image `<loc>`, отмечает все HTTP
+  4xx/5xx и ошибку, если URL из sitemap перенаправляется. Для Vercel Preview
+  принимает production canonical на `canfly.org`, если путь и query совпадают.
+  Проверяются также `og:url`, `X-Robots-Tag` и повторяющиеся корневые `@id`.
+- При работе с защищённым Preview используйте Vercel MCP для временного
+  авторизованного доступа; не отключайте Deployment Protection.
+
