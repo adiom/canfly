@@ -204,8 +204,8 @@ node scripts/seo-audit.mjs https://canfly.org --format=json
 node scripts/seo-audit.mjs https://preview.example --limit=25 --strict
 ```
 
-Скрипт обходит sitemap index, проверяет HTTP-статусы, canonical, robots, title,
-description, JSON-LD и дубликаты URL. Запросы ограничены origin проверяемого
+Скрипт обходит sitemap index, проверяет XML-структуру и URL, HTTP-статусы,
+canonical, robots, title, description, H1, Open Graph, Twitter Card, JSON-LD и дубликаты URL. Запросы ограничены origin проверяемого
 сайта; внешний redirect не обходится. Полный HTML учитывает streaming metadata
 Next.js. `--format=text|json|both` выбирает отчёт; по умолчанию выводятся текст
 и JSON. Ошибки возвращают код 1, а `--strict` включает предупреждения.
