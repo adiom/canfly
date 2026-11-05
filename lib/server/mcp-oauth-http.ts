@@ -32,6 +32,7 @@ export function oauthError(
   description?: string,
   status = 400,
 ): NextResponse {
+  console.warn(`[mcp-oauth] request rejected error=${error} status=${status}`)
   return NextResponse.json(
     description ? { error, error_description: description } : { error },
     {
