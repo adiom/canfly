@@ -211,9 +211,16 @@ async function loadCimdMetadata(clientId: string): Promise<McpOAuthClient | null
     if (Buffer.byteLength(text, 'utf8') > CIMD_MAX_BYTES) return null
 
     const parsed = mcpClientMetadataSchema.safeParse(JSON.parse(text))
-    if (!parsed.success) return null
+    if (!parsed.success) {
+      console.warn('[mcp-oauth] cimd rejected reason=invalid_metadata')
+      return null
+    }
     if (parsed.data.client_id !== clientId) return null
-    if (parsed.data.token_endpoint_auth_method && parsed.data.token_endpoint_auth_method !== 'none') return null
+    const methods = parsed.data.token_endpoint_auth_methods_supported
+    if (methods ? !methods.includes('none') : !!parsed.data.token_endpoint_auth_method && parsed.data.token_endpoint_auth_method !== 'none') {
+      console.warn('[mcp-oauth] cimd rejected reason=unsupported_auth_method')
+      return null
+    }
     if (parsed.data.grant_types && !parsed.data.grant_types.includes('authorization_code')) return null
     if (parsed.data.response_types && !parsed.data.response_types.includes('code')) return null
 
@@ -226,6 +233,7 @@ async function loadCimdMetadata(clientId: string): Promise<McpOAuthClient | null
     cimdCache.set(clientId, { expiresAt: Date.now() + CIMD_TTL_MS, metadata })
     return upsertCimdClient(clientId, metadata)
   } catch {
+    console.warn('[mcp-oauth] cimd rejected reason=fetch_or_parse_failed')
     return null
   }
 }
@@ -322,7 +330,10 @@ export async function registerMcpClient(input: unknown) {
 export async function validateMcpAuthorization(input: unknown) {
   const parsed = mcpAuthorizationSchema.safeParse(input)
   const config = mcpOAuthConfig()
-  if (!parsed.success || !config?.emails.length) return null
+  if (!parsed.success || !config?.emails.length) {
+    console.warn('[mcp-oauth] authorize rejected reason=invalid_request_or_configuration')
+    return null
+  }
 
   const resource = parsed.data.resource ?? config.resource
   if (resource !== config.resource) return null
@@ -331,7 +342,10 @@ export async function validateMcpAuthorization(input: unknown) {
   if (scope !== MCP_CONTENT_SCOPE) return null
 
   const client = await resolveMcpClient(parsed.data.client_id)
-  if (!client || !client.redirectUris.includes(parsed.data.redirect_uri)) return null
+  if (!client || !client.redirectUris.includes(parsed.data.redirect_uri)) {
+    console.warn('[mcp-oauth] authorize rejected reason=client_or_redirect')
+    return null
+  }
 
   return {
     request: { ...parsed.data, resource, scope: MCP_CONTENT_SCOPE } as McpAuthorization,

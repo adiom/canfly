@@ -194,10 +194,16 @@ async function handler(request: Request): Promise<Response> {
     return NextResponse.json({ error: 'MCP endpoint is not configured' }, { status: 503 })
   }
 
-  if (originRejected(request)) return unauthorized()
+  if (originRejected(request)) {
+    console.warn('[mcp-oauth] mcp rejected reason=origin')
+    return unauthorized()
+  }
 
   const provided = readBearer(request)
-  if (!provided) return unauthorized()
+  if (!provided) {
+    console.info('[mcp-oauth] mcp challenge reason=missing_bearer')
+    return unauthorized()
+  }
 
   let authenticated = false
   if (expected && tokensMatch(provided, expected)) {
@@ -210,7 +216,10 @@ async function handler(request: Request): Promise<Response> {
     }
   }
 
-  if (!authenticated) return unauthorized()
+  if (!authenticated) {
+    console.warn('[mcp-oauth] mcp rejected reason=invalid_bearer')
+    return unauthorized()
+  }
 
   const limited = await rateLimited(provided)
   if (limited) return limited

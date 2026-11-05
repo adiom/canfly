@@ -61,7 +61,7 @@ OAuth-таблицы и аудит создаются миграцией `postgr
 ### ChatGPT
 
 1. Включите OAuth-переменные и примените миграцию.
-2. Settings → Connectors → Add custom connector.
+2. В веб-версии ChatGPT откройте Plugins → Add custom MCP server и выберите OAuth.
 3. URL: `https://canfly.org/api/mcp`.
 4. Пройдите вход в canfly. Согласие запрашивается каждый раз, грант живёт
    30 дней. Отозвать доступ можно в настройках коннектора.
@@ -202,3 +202,6 @@ curl -s http://localhost:3000/api/mcp \
 | `invalid_grant` | код истёк, PKCE не совпал, refresh уже использован |
 | CIMD не читается | хост клиента не в `MCP_OAUTH_CLIENT_METADATA_HOSTS` |
 | `404` на `.well-known` | OAuth выключен или не задан `NEXT_PUBLIC_BASE_URL` |
+
+В Vercel Runtime Logs ищите `[mcp-oauth]` около времени попытки подключения.
+Строки содержат этап и код причины без токенов, email и параметров запроса.
