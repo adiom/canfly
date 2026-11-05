@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { fetchReleaseBySlug, fetchReleaseCharacters, fetchReleaseSeries } from '@/lib/server/releases'
-import { fetchEditionsByRelease } from '@/lib/server/editions'
+import { fetchEditionsByRelease, fetchReleaseChapterCounts } from '@/lib/server/editions'
 import { fetchPublishedChapterListByEdition } from '@/lib/server/chapters'
 import { fetchSeriesById, fetchSeriesWithReleases } from '@/lib/server/series'
 import { fetchCharactersList } from '@/lib/server/characters'
@@ -10,9 +10,10 @@ import { fetchPlacesByRelease } from '@/lib/server/places'
 import { fetchPublicHighlightsByRelease } from '@/lib/server/chapter-highlights'
 import { getReleaseViewer } from '@/lib/server/studio-auth'
 import { ReleasePagePublic } from '@/components/release-page'
-import { computeEditionMeta, getPrimaryEdition } from '@/lib/utils/editions'
+import { canOpenEdition, computeEditionMeta, getPrimaryEdition } from '@/lib/utils/editions'
 import { generateReleaseSchema } from '@/lib/seo/schema'
-import { buildMetadata, notFoundMetadata } from '@/lib/seo/metadata'
+import { notFoundMetadata } from '@/lib/seo/metadata'
+import { getReleaseMetadata } from '@/lib/seo/release-metadata'
 import { JsonLd } from '@/components/seo/json-ld'
 
 /**
@@ -29,36 +30,12 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const release = await fetchReleaseBySlug(slug)
   if (!release) return notFoundMetadata()
 
-  if (release.status === 'published') {
-    return buildMetadata({
-      title: `${release.title} | canfly`,
-      description: release.description ?? release.annotation ?? `«${release.title}» на canfly`,
-      path: `/release/${release.slug}`,
-      // og:image приходит из opengraph-image.tsx рядом — обложка «как есть» в
-      // 1200×630 обрезалась бы соцсетями.
-      generatedImage: true,
-      ogType: 'book',
-      publishedTime: release.release_date ?? release.created_at,
-      modifiedTime: release.updated_at,
-    })
-  }
-
   if (release.status === 'draft') {
     const { canViewDraft } = await getReleaseViewer(release.id)
     if (!canViewDraft) return notFoundMetadata()
 
-    return buildMetadata({
-      title: `${release.title} · черновик | canfly`,
-      description: `Черновик «${release.title}» — предпросмотр для команды релиза.`,
-      path: `/release/${release.slug}`,
-      generatedImage: true,
-      ogType: 'book',
-      noindex: true,
-    })
   }
-
-  // archived: на сайте публично нет, но в Studio остаётся.
-  return notFoundMetadata()
+  return getReleaseMetadata(release)
 }
 
 export default async function ReleasePublicPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -81,8 +58,12 @@ export default async function ReleasePublicPage({ params }: { params: Promise<{ 
     viewerCanEdit = viewer.canEdit
   }
 
-  const editions = await fetchEditionsByRelease(release.id)
-  const primaryEdition = getPrimaryEdition(editions)
+  const [editions, chapterCounts] = await Promise.all([
+    fetchEditionsByRelease(release.id),
+    fetchReleaseChapterCounts(release.id),
+  ])
+  const availableEditions = editions.filter(edition => canOpenEdition(edition, chapterCounts[edition.id] ?? 0))
+  const primaryEdition = getPrimaryEdition(availableEditions)
 
   let meta = { chapterCount: 0, wordCount: 0, readingMinutes: 0, durationSeconds: 0 }
   if (primaryEdition) {
@@ -173,13 +154,14 @@ export default async function ReleasePublicPage({ params }: { params: Promise<{ 
       {preview !== 'draft' && <JsonLd schemas={[releaseSchema]} />}
       <ReleasePagePublic
         release={release}
-        editions={editions}
+        editions={preview ? editions.filter(edition => edition.status !== 'archived') : availableEditions}
         primaryEditionSlug={primaryEdition?.slug ?? null}
         seriesLink={validSeriesLink}
         highlights={highlights}
         meta={meta}
         characters={characters}
         games={games}
+        places={releasePlaces}
         otherSeriesReleases={otherSeriesReleases}
         breadcrumbs={breadcrumbItems}
         preview={preview}

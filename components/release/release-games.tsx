@@ -12,7 +12,7 @@ export function ReleaseGames({ games }: { games: Game[] }) {
     <section className="border-t border-cf-text-1/10">
       <div className="mx-auto max-w-6xl px-5 py-10 md:px-8 md:py-14">
         <p className="mb-6 text-[10px] font-black uppercase tracking-[0.22em] text-cf-accent">
-          игры
+          Игры, связанные с произведением
         </p>
         <div className="-mx-5 flex gap-4 overflow-x-auto px-5 pb-2 md:mx-0 md:flex-wrap md:overflow-visible md:px-0">
           {games.map(game => (
@@ -39,6 +39,7 @@ export function ReleaseGames({ games }: { games: Game[] }) {
               <span className="text-sm font-bold leading-tight text-cf-text-heading transition-colors group-hover:text-cf-warm">
                 {game.title}
               </span>
+              <span className="text-xs font-semibold text-cf-text-2">Играть</span>
               {game.tagline ? (
                 <span className="line-clamp-2 text-[12px] leading-snug text-cf-text-3">
                   {game.tagline}

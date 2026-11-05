@@ -14,11 +14,15 @@ import * as releasesDb from '@/lib/server/releases'
 import * as editionsDb from '@/lib/server/editions'
 import * as chaptersDb from '@/lib/server/chapters'
 import * as seriesDb from '@/lib/server/series'
+import { changeReleaseGameLink } from '@/lib/server/games'
+import { changeReleasePlaceLink } from '@/lib/server/places'
 import { dbQuery } from '@/lib/db'
 import { parseAudioBlobMetadata } from '@/lib/server/audio-metadata'
 import type { QualityTier, ReleaseCharacterRole, ReleaseDesignConfig } from '@/lib/releases-types'
 import {
   releaseFormSchema,
+  releaseDesignSchema,
+  releaseWorldLinkSchema,
   editionFormSchema,
   chapterFormSchema,
   chapterUpdateSchema,
@@ -151,10 +155,8 @@ export async function updateReleaseAction(id: string, formData: FormData) {
     genre: data.genre,
     release_date: data.release_date,
     isbn: data.isbn,
-    authors: parseJsonArray(formData.get('authors')),
     annotation: data.annotation,
     editor_notes: data.editor_notes,
-    status: data.status,
     // Защита от бессознательного сброса: флаг в update меняется только когда
     // форма его прислала (ReleaseForm отправляет всегда, но контракт
     // show_in_catalog допускает частичный апдейт).
@@ -216,13 +218,26 @@ export async function deleteReleaseAction(id: string) {
 
 export async function updateReleaseDesignAction(id: string, config: ReleaseDesignConfig) {
   await requireReleaseOwnership(id)
-  await releasesDb.updateReleaseDesign(id, config as Record<string, unknown>)
+  await releasesDb.updateReleaseDesign(id, releaseDesignSchema.parse(config))
   revalidatePath(`/studio/releases/${id}`)
   // Инвалидируем публичную страницу по slug (раньше использовали UUID — не работало)
   const release = await releasesDb.fetchReleaseById(id)
   if (release?.slug) {
     revalidatePath(`/release/${release.slug}`)
   }
+}
+
+export async function changeReleaseWorldLinkAction(releaseId: string, input: unknown) {
+  const { session } = await requireReleaseOwnership(releaseId)
+  if (!session.isAdmin) throw new Error('Недостаточно прав для изменения этой связи')
+  const { kind, id, linked } = releaseWorldLinkSchema.parse(input)
+  if (kind === 'game') await changeReleaseGameLink(releaseId, id, linked)
+  else await changeReleasePlaceLink(releaseId, id, linked)
+  revalidatePath(`/studio/releases/${releaseId}`)
+  const release = await releasesDb.fetchReleaseById(releaseId)
+  if (release) revalidatePath(`/release/${release.slug}`)
+  if (kind === 'game') revalidatePath('/games/[slug]', 'page')
+  else revalidatePath('/places/[slug]', 'page')
 }
 
 // === Editions ===

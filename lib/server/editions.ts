@@ -21,6 +21,17 @@ export async function fetchEditionsByRelease(releaseId: string) {
   )
 }
 
+export async function fetchReleaseChapterCounts(releaseId: string): Promise<Record<string, number>> {
+  const rows = await dbQuery<{ edition_id: string; chapter_count: number }>(
+    `SELECT c.edition_id, COUNT(*)::integer AS chapter_count
+     FROM chapters c JOIN editions e ON e.id = c.edition_id
+     WHERE e.release_id = $1 AND c.status = 'published'
+     GROUP BY c.edition_id`,
+    [releaseId],
+  )
+  return Object.fromEntries(rows.map(row => [row.edition_id, row.chapter_count]))
+}
+
 export async function fetchEditionById(id: string) {
   return dbQueryOne<Edition>(
     `SELECT ${editionColumns} FROM editions WHERE id = $1 LIMIT 1`,

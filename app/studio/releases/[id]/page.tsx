@@ -1,27 +1,31 @@
 import { notFound } from 'next/navigation'
-import { dbQuery } from '@/lib/db'
-import {
-  getRelease,
-  getEditions,
-  getAllSeries,
-  getReleaseSeries,
-} from '@/lib/actions/studio'
-import { fetchReleaseCharacters } from '@/lib/server/releases'
+import { fetchReleaseById, fetchReleaseCharacters, fetchReleaseSeries } from '@/lib/server/releases'
+import { fetchEditionsByRelease, fetchReleaseChapterCounts } from '@/lib/server/editions'
+import { fetchAllSeries } from '@/lib/server/series'
+import { fetchAllCharactersList } from '@/lib/server/characters'
+import { fetchAllGames, fetchGamesByRelease } from '@/lib/server/games'
+import { fetchAllPlaces, fetchPlacesByRelease } from '@/lib/server/places'
+import { requireReleaseOwnership } from '@/lib/server/studio-auth'
+import { getReleaseMetadata } from '@/lib/seo/release-metadata'
 import { ReleasePageClient } from '@/components/studio/release-page-client'
 
 export default async function ReleaseDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const [release, editions, series, releaseSeries, characters, releaseCharacters] = await Promise.all([
-    getRelease(id),
-    getEditions(id),
-    getAllSeries(),
-    getReleaseSeries(id),
-    dbQuery<{ id: string; name: string; slug: string; avatar: string | null }>(
-      'SELECT id, name, slug, avatar FROM characters ORDER BY name ASC',
-    ),
-    fetchReleaseCharacters(id),
-  ])
+  const { session } = await requireReleaseOwnership(id)
+  const release = await fetchReleaseById(id)
   if (!release) notFound()
+  const [editions, chapterCounts, series, releaseSeries, characters, releaseCharacters, games, places, linkedGames, linkedPlaces] = await Promise.all([
+    fetchEditionsByRelease(id),
+    fetchReleaseChapterCounts(id),
+    fetchAllSeries(),
+    fetchReleaseSeries(id),
+    fetchAllCharactersList(),
+    fetchReleaseCharacters(id),
+    session.isAdmin ? fetchAllGames() : [],
+    session.isAdmin ? fetchAllPlaces() : [],
+    fetchGamesByRelease(id, { onlyPublished: !session.isAdmin }),
+    fetchPlacesByRelease(id),
+  ])
 
   return (
     <ReleasePageClient
@@ -30,8 +34,17 @@ export default async function ReleaseDetailPage({ params }: { params: Promise<{ 
       editions={editions}
       series={series}
       releaseSeries={releaseSeries}
-      characters={characters}
+      characters={characters.map(({ id, name, slug, avatar }) => ({ id, name, slug, avatar: avatar ?? null }))}
       releaseCharacters={releaseCharacters}
+      chapterCounts={chapterCounts}
+      metadata={getReleaseMetadata(release)}
+      world={{
+        canEdit: session.isAdmin,
+        games: (session.isAdmin ? games : linkedGames).map(game => ({ id: game.id, name: game.title, slug: game.slug, available: game.is_published })),
+        places: (session.isAdmin ? places : linkedPlaces).map(place => ({ id: place.id, name: place.name, slug: place.slug, available: true })),
+        linkedGameIds: linkedGames.map(game => game.id),
+        linkedPlaceIds: linkedPlaces.map(place => place.id),
+      }}
     />
   )
 }

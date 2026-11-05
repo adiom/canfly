@@ -1,3 +1,5 @@
+import type { ReleaseBlock } from '@/lib/release-design'
+
 export type ReleaseStatus = 'draft' | 'published' | 'archived'
 export type EditionStatus = 'draft' | 'published' | 'archived'
 export type EditionFormat = 'book' | 'comic' | 'audiobook' | 'audiorelease' | 'album' | 'magazine' | 'digital' | 'artwork'
@@ -15,6 +17,9 @@ export type HeroOverlay = 'dark' | 'gradient' | 'none'
 export type ReleaseLayout = 'wide' | 'narrow' | 'sidebar'
 
 export interface ReleaseDesignConfig {
+  block_order?: ReleaseBlock[]
+  hidden_blocks?: ReleaseBlock[]
+  cover_fit?: 'cover' | 'contain'
   accent_color?: string
   bg_color?: string
   text_color?: string
@@ -263,6 +268,7 @@ export interface HighlightAiArtifacts {
 }
 
 export interface ChapterHighlight {
+  edition_slug?: string
   anchor?: import("@/lib/highlights/types").TextAnchor | null
   publication?: import("@/lib/highlights/types").HighlightPublication | null
   id: string

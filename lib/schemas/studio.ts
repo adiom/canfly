@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { RELEASE_BLOCKS } from '@/lib/release-design'
 
 /**
  * Zod-схемы для Studio server actions (release / edition / chapter / series).
@@ -52,6 +53,31 @@ export const slugSchema = z
   )
 
 // --- Release ---
+
+const designColor = z.string().regex(/^#[a-f\d]{6}$/i)
+const releaseBlocks = z.array(z.enum(RELEASE_BLOCKS)).max(RELEASE_BLOCKS.length)
+  .refine(blocks => new Set(blocks).size === blocks.length)
+
+export const releaseDesignSchema = z.object({
+  block_order: releaseBlocks,
+  hidden_blocks: releaseBlocks,
+  cover_fit: z.enum(['cover', 'contain']),
+  accent_color: designColor,
+  bg_color: designColor,
+  text_color: designColor,
+  hero_style: z.enum(['full', 'centered', 'minimal']),
+  hero_overlay: z.enum(['dark', 'gradient', 'none']),
+  layout: z.enum(['wide', 'narrow', 'sidebar']),
+  show_toc: z.boolean(),
+  show_characters: z.boolean(),
+  show_series: z.boolean(),
+}).partial()
+
+export const releaseWorldLinkSchema = z.object({
+  id: z.string().uuid(),
+  kind: z.enum(['game', 'place']),
+  linked: z.boolean(),
+})
 
 export const releaseFormSchema = z.object({
   title: requiredString.max(300, 'Слишком длинное название'),

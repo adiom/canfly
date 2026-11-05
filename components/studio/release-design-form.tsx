@@ -7,6 +7,8 @@ import { ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Release, ReleaseDesignConfig } from '@/lib/releases-types'
 import { updateReleaseDesignAction } from '@/lib/actions/studio'
+import { RELEASE_BLOCK_LABELS, releaseBlockOrder, type ReleaseBlock } from '@/lib/release-design'
+import { useUnsavedReleaseChanges } from '@/components/studio/use-unsaved-release-changes'
 import { ReleaseSaveBar } from '@/components/studio/release-save-bar'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -20,6 +22,9 @@ import {
 } from '@/components/ui/select'
 
 const defaultConfig: Required<ReleaseDesignConfig> = {
+  block_order: releaseBlockOrder(),
+  hidden_blocks: [],
+  cover_fit: 'cover',
   accent_color: '#d52525',
   bg_color: '#111210',
   text_color: '#f4efe5',
@@ -68,11 +73,24 @@ type PreviewRelease = Pick<Release, 'title' | 'description' | 'annotation' | 'co
 
 export function ReleaseDesignForm({ release, preview = release }: { release: Release; preview?: PreviewRelease }) {
   const [config, setConfig] = useState<Required<ReleaseDesignConfig>>(() => ({ ...defaultConfig, ...release.design_config }))
+  const [viewport, setViewport] = useState<'desktop' | 'mobile'>('desktop')
   const [baseline, setBaseline] = useState(config)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const dirty = JSON.stringify(config) !== JSON.stringify(baseline)
+  useUnsavedReleaseChanges(dirty)
+  const order = releaseBlockOrder(config.block_order)
+
+  function moveBlock(block: ReleaseBlock, shift: number) {
+    const index = order.indexOf(block)
+    const target = index + shift
+    if (target < 0 || target >= order.length) return
+    const next = [...order]
+    next.splice(index, 1)
+    next.splice(target, 0, block)
+    update('block_order', next)
+  }
 
   function update<K extends keyof ReleaseDesignConfig>(key: K, value: Required<ReleaseDesignConfig>[K]) {
     setConfig(previous => ({ ...previous, [key]: value }))
@@ -109,12 +127,16 @@ export function ReleaseDesignForm({ release, preview = release }: { release: Rel
         <div><h2>Оформление</h2><p className="paper-help">Как читатели увидят страницу релиза.</p></div>
       </div>
       <figure className="paper-design-preview">
-        <figcaption><span>Предпросмотр страницы</span><span>Обновляется сразу</span></figcaption>
-        <div className="paper-preview" data-hero={config.hero_style} data-layout={config.layout} style={{ backgroundColor: background, color: text }}>
+        <figcaption><span>Эскиз оформления</span><span>Обновляется сразу</span></figcaption>
+        <div className="my-3 flex flex-wrap gap-2" aria-label="Размер эскиза">
+          <Button type="button" variant="outline" size="sm" aria-pressed={viewport === 'desktop'} onClick={() => setViewport('desktop')}>Компьютер</Button>
+          <Button type="button" variant="outline" size="sm" aria-pressed={viewport === 'mobile'} onClick={() => setViewport('mobile')}>Телефон</Button>
+        </div>
+        <div className="paper-preview mx-auto" data-hero={config.hero_style} data-layout={config.layout} style={{ backgroundColor: background, color: text, maxWidth: viewport === 'mobile' ? 360 : undefined }}>
           <div className="paper-preview-hero">
             {preview.cover_image && config.hero_style !== 'minimal' && (
               <div className="paper-preview-cover">
-                <Image src={preview.cover_image} alt="" fill sizes="(max-width: 440px) 240px, 740px" className="object-cover" unoptimized />
+                <Image src={preview.cover_image} alt="" fill sizes="(max-width: 440px) 240px, 740px" className={config.cover_fit === 'contain' ? 'object-contain' : 'object-cover'} unoptimized />
                 {config.hero_overlay !== 'none' && <span className="absolute inset-0" style={{ background: config.hero_overlay === 'dark' ? 'rgba(0, 0, 0, 0.5)' : `linear-gradient(to bottom, transparent, ${background})` }} />}
               </div>
             )}
@@ -125,7 +147,8 @@ export function ReleaseDesignForm({ release, preview = release }: { release: Rel
             </div>
           </div>
           <div className="paper-preview-sections" style={{ borderColor: accent }}>
-            {sectionFields.filter(field => config[field.key]).map(field => <span key={field.key}>{field.label}</span>)}
+            {order.filter(block => !config.hidden_blocks.includes(block) && (block !== 'characters' || config.show_characters) && (block !== 'series' || config.show_series))
+              .map(block => <span key={block}>{RELEASE_BLOCK_LABELS[block]}</span>)}
           </div>
         </div>
       </figure>
@@ -142,6 +165,7 @@ export function ReleaseDesignForm({ release, preview = release }: { release: Rel
             </Button>
           ))}
         </div>
+        <Button type="button" variant="outline" size="sm" onClick={() => { setConfig(defaultConfig); setError(null) }}>Сбросить оформление</Button>
         <div className="paper-colors">
           {colorFields.map(field => (
             <div className="paper-field" key={field.key}>
@@ -186,6 +210,32 @@ export function ReleaseDesignForm({ release, preview = release }: { release: Rel
                 </label>
               ))}
             </div>
+            <div className="paper-field">
+              <Label htmlFor="release-cover-fit">Композиция обложки</Label>
+              <Select value={config.cover_fit} onValueChange={value => update('cover_fit', value === 'contain' ? 'contain' : 'cover')}>
+                <SelectTrigger id="release-cover-fit"><SelectValue /></SelectTrigger>
+                <SelectContent className="paper-theme paper-select">
+                  <SelectItem value="cover">Заполнить рамку</SelectItem>
+                  <SelectItem value="contain">Показать целиком</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <ol aria-label="Порядок разделов" className="grid gap-2">
+              {order.map((block, index) => (
+                <li key={block} className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="paper-check">
+                    <input type="checkbox" checked={!config.hidden_blocks.includes(block)} onChange={event => update('hidden_blocks', event.target.checked
+                      ? config.hidden_blocks.filter(item => item !== block)
+                      : [...config.hidden_blocks, block])} />
+                    {RELEASE_BLOCK_LABELS[block]}
+                  </label>
+                  <div className="flex gap-2">
+                    <Button type="button" variant="outline" size="sm" disabled={index === 0} aria-label={`${RELEASE_BLOCK_LABELS[block]} выше`} onClick={() => moveBlock(block, -1)}>↑</Button>
+                    <Button type="button" variant="outline" size="sm" disabled={index === order.length - 1} aria-label={`${RELEASE_BLOCK_LABELS[block]} ниже`} onClick={() => moveBlock(block, 1)}>↓</Button>
+                  </div>
+                </li>
+              ))}
+            </ol>
           </div>
         </details>
       </fieldset>

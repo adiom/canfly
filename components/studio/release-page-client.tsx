@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import type { Metadata } from 'next'
 import { ArrowLeft, ArrowUpRight, Plus } from 'lucide-react'
 import type { Release, Edition, Series, ReleaseSeries, ReleaseCharacter } from '@/lib/releases-types'
 import { Button } from '@/components/ui/button'
@@ -13,29 +14,37 @@ import { ReleaseCharactersSection } from '@/components/studio/release-characters
 import { ReleaseDetailsForm } from '@/components/studio/release-details-form'
 import { ReleasePublicationMenu } from '@/components/studio/release-publication-menu'
 import { useReleaseForm } from '@/components/studio/use-release-form'
+import { ReleaseReadiness } from '@/components/studio/release-readiness'
+import { ReleaseWorldLinks, type WorldOption } from '@/components/studio/release-world-links'
 
 const SECTIONS = [
   { value: 'main', label: 'Основное' },
   { value: 'editions', label: 'Издания' },
-  { value: 'characters', label: 'Персонажи' },
+  { value: 'characters', label: 'Связи' },
   { value: 'design', label: 'Оформление' },
+  { value: 'readiness', label: 'Готовность' },
 ] as const
 
 type Section = typeof SECTIONS[number]['value']
 
-export function ReleasePageClient({ release, editions, series, releaseSeries, characters, releaseCharacters }: {
+export function ReleasePageClient({ release, editions, series, releaseSeries, characters, releaseCharacters, chapterCounts, metadata, world }: {
   release: Release
   editions: Edition[]
   series: Series[]
   releaseSeries: ReleaseSeries[]
   characters: { id: string; name: string; slug: string; avatar: string | null }[]
   releaseCharacters: ReleaseCharacter[]
+  chapterCounts: Record<string, number>
+  metadata: Metadata
+  world: { canEdit: boolean; games: WorldOption[]; places: WorldOption[]; linkedGameIds: string[]; linkedPlaceIds: string[] }
 }) {
   const form = useReleaseForm(release)
   const [activeSection, setActiveSection] = useState<Section>('main')
   const [visited, setVisited] = useState<Section[]>(['main'])
   const [publicationPending, setPublicationPending] = useState(false)
   const date = form.draft.release_date.split('-').reverse().join('.')
+  const connections = releaseCharacters.length + releaseSeries.length + world.linkedGameIds.length + world.linkedPlaceIds.length
+  const unavailableLinks = world.games.filter(game => !game.available && world.linkedGameIds.includes(game.id)).length
 
   function selectSection(value: string) {
     const section = value as Section
@@ -65,16 +74,16 @@ export function ReleasePageClient({ release, editions, series, releaseSeries, ch
             <h1>{form.draft.title || 'Без названия'}</h1>
             <div className="paper-header-actions">
               <ReleasePublicationMenu release={release} series={series} releaseSeries={releaseSeries} disabled={form.saving || form.uploading} onPendingChange={setPublicationPending} />
-              {release.status === 'published' && (
+              {release.status !== 'archived' && (
                 <a href={`/release/${release.slug}`} target="_blank" rel="noopener noreferrer" className="paper-text-link">
-                  Открыть на сайте<ArrowUpRight className="size-3.5" aria-hidden="true" />
+                  {release.status === 'draft' ? 'Предпросмотр черновика' : 'Открыть на сайте'}<ArrowUpRight className="size-3.5" aria-hidden="true" />
                 </a>
               )}
             </div>
           </div>
           <div className="paper-facts">
             <span>Изданий: {editions.length}</span>
-            <span>{release.view_count.toLocaleString('ru-RU')} просмотров</span>
+            <span>Связей: {connections}</span>
           </div>
         </header>
         <Tabs value={activeSection} onValueChange={selectSection} className="paper-tabs">
@@ -83,6 +92,7 @@ export function ReleasePageClient({ release, editions, series, releaseSeries, ch
               <TabsTrigger key={value} value={value}>
                 {label}
                 {value === 'editions' && <span className="paper-count">{editions.length}</span>}
+                {value === 'characters' && <span className="paper-count">{connections}</span>}
               </TabsTrigger>
             ))}
           </TabsList>
@@ -105,10 +115,21 @@ export function ReleasePageClient({ release, editions, series, releaseSeries, ch
             )}
           </TabsContent>
           <TabsContent value="characters" forceMount hidden={activeSection !== 'characters'} className="paper-sheet">
-            {visited.includes('characters') && <ReleaseCharactersSection releaseId={release.id} characters={characters} releaseCharacters={releaseCharacters} />}
+            {visited.includes('characters') && (
+              <>
+                <ReleaseCharactersSection releaseId={release.id} characters={characters} releaseCharacters={releaseCharacters} />
+                <ReleaseWorldLinks releaseId={release.id} kind="game" options={world.games} linkedIds={world.linkedGameIds} canEdit={world.canEdit} />
+                <ReleaseWorldLinks releaseId={release.id} kind="place" options={world.places} linkedIds={world.linkedPlaceIds} canEdit={world.canEdit} />
+                <p className="paper-help mt-5">Серия и номер фазы настраиваются в меню публикации.</p>
+              </>
+            )}
           </TabsContent>
           <TabsContent value="design" forceMount hidden={activeSection !== 'design'} className="paper-sheet">
             {visited.includes('design') && <ReleaseDesignForm release={release} preview={form.draft} />}
+          </TabsContent>
+          <TabsContent value="readiness" className="paper-sheet">
+            <ReleaseReadiness release={release} draft={form.draft} editions={editions} chapterCounts={chapterCounts}
+              unavailableLinks={unavailableLinks} metadata={metadata} onNavigate={selectSection} />
           </TabsContent>
         </Tabs>
       </div>

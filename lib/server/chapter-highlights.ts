@@ -86,6 +86,7 @@ export async function fetchPublicHighlightsByRelease(releaseId: string, limit = 
   const rows = await dbQuery<ChapterHighlight>(
     `SELECT ${highlightColumns},
             r.slug AS release_slug,
+            e.slug AS edition_slug,
             ch.title AS chapter_title
      FROM chapter_highlights h
      LEFT JOIN users u ON u.id = h.user_id

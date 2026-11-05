@@ -109,6 +109,15 @@ export async function setReleasePlaces(releaseId: string, placeIds: string[]): P
   })
 }
 
+export async function changeReleasePlaceLink(releaseId: string, placeId: string, linked: boolean) {
+  await dbQuery(
+    linked
+      ? 'INSERT INTO release_places (release_id, place_id) VALUES ($1, $2) ON CONFLICT DO NOTHING'
+      : 'DELETE FROM release_places WHERE release_id = $1 AND place_id = $2',
+    [releaseId, placeId],
+  )
+}
+
 // === Character ↔ Place ===
 
 export async function fetchPlaceCharacters(placeId: string): Promise<CharacterPlaceLink[]> {

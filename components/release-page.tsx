@@ -4,6 +4,7 @@ import { SiteFooter } from '@/components/site-footer'
 import { SiteHeader } from '@/components/site-header'
 import { Breadcrumbs } from '@/components/breadcrumbs'
 import { CATALOG_PATH } from '@/lib/nav'
+import { RELEASE_BLOCK_LABELS, releaseBlockOrder, type ReleaseBlock } from '@/lib/release-design'
 import { ReleaseCharacters } from './release/release-characters'
 import { ReleaseGames } from './release/release-games'
 import { ReleaseHighlights } from './release/release-highlights'
@@ -51,6 +52,7 @@ export function ReleasePagePublic({
   meta,
   characters,
   games,
+  places,
   otherSeriesReleases,
   breadcrumbs,
   preview = null,
@@ -59,6 +61,31 @@ export function ReleasePagePublic({
   const config = release.design_config ?? {}
   const accent = config.accent_color ?? '#d52525'
   const publishedEditions = editions.filter(edition => edition.status === 'published')
+  const blocks = {
+    characters: config.show_characters !== false && characters.length > 0 && <ReleaseCharacters characters={characters} />,
+    games: games.length > 0 && <ReleaseGames games={games} />,
+    places: places.length > 0 && (
+      <div className="mx-auto max-w-6xl border-t border-cf-text-1/10 px-5 py-10 md:px-8">
+        <h3 className="mb-5 text-sm font-bold text-cf-text-heading">Места в произведении</h3>
+        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {places.map(place => (
+            <li key={place.id}>
+              <Link href={`/places/${place.slug}`} className="block h-full rounded-xl border border-cf-text-1/10 bg-cf-bg-2 p-4 focus-visible:outline-2">
+                <span className="block font-bold">{place.name}</span>
+                <span className="mt-1 block text-sm text-cf-text-2">{place.role === 'location' ? 'Место действия или упоминания' : 'Связано с произведением'}</span>
+                {place.bio && <span className="mt-2 block text-sm text-cf-text-3">{place.bio}</span>}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </div>
+    ),
+    series: config.show_series !== false && seriesLink && <ReleaseSeries series={seriesLink.series} releases={otherSeriesReleases} />,
+    highlights: highlights.length > 0 && <ReleaseHighlights highlights={highlights} accent={accent} />,
+  } satisfies Record<ReleaseBlock, React.ReactNode>
+  const visibleBlocks = releaseBlockOrder(config.block_order)
+    .filter(block => !config.hidden_blocks?.includes(block) && Boolean(blocks[block]))
+  const readerEdition = !preview && editions.find(edition => edition.format === 'book' || edition.format === 'magazine')
 
   return (
     <div className="min-h-screen bg-cf-bg text-cf-text-1">
@@ -71,31 +98,43 @@ export function ReleasePagePublic({
         <DraftBanner releaseId={release.id} viewerCanEdit={viewerCanEdit} />
       )}
 
+      <main>
       <ReleaseHero
         release={release}
         editions={editions}
         primaryEditionSlug={primaryEditionSlug}
         seriesLink={seriesLink}
         meta={meta}
+        preview={preview === 'draft'}
       />
 
-      {config.show_characters !== false && <ReleaseCharacters characters={characters} />}
-
-      <ReleaseGames games={games} />
-
-      {config.show_series !== false && seriesLink && (
-        <ReleaseSeries series={seriesLink.series} releases={otherSeriesReleases} />
+      {visibleBlocks.length > 0 && (
+        <div id="release-world" className="mx-auto max-w-6xl px-5 pb-7 md:px-8">
+          <h2 className="font-serif text-3xl text-cf-text-heading">Мир произведения</h2>
+          <nav aria-label="Разделы мира произведения" className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm">
+            {visibleBlocks.map(block => <a key={block} className="underline underline-offset-4" href={`#release-${block}`}>{RELEASE_BLOCK_LABELS[block]}</a>)}
+          </nav>
+        </div>
+      )}
+      {visibleBlocks.map(block => <div key={block} id={`release-${block}`} className="scroll-mt-24">{blocks[block]}</div>)}
+      {readerEdition && !config.hidden_blocks?.includes('highlights') && (
+        <section className="mx-auto max-w-6xl px-5 py-10 md:px-8" aria-labelledby="release-create-title">
+          <div className="rounded-xl border border-cf-text-1/10 bg-cf-bg-2 p-5 md:p-8">
+            <h2 id="release-create-title" className="font-serif text-3xl text-cf-text-heading">Создайте свою интерпретацию</h2>
+            <p className="mt-2 text-sm text-cf-text-2">Откройте произведение в VVVVV, выделите фрагмент, создайте работу и поделитесь ею со ссылкой на источник.</p>
+            <Link href={`/vvvvv/${readerEdition.slug}`} className="mt-4 inline-flex min-h-11 items-center font-bold underline underline-offset-4">Перейти к чтению</Link>
+          </div>
+        </section>
       )}
 
-      <ReleaseHighlights highlights={highlights} accent={accent} />
-
-      {!publishedEditions.length && (
+      {!preview && !publishedEditions.length && (
         <div className="mx-auto max-w-6xl px-5 pb-24 md:px-8">
           <div className="border-t border-cf-text-1/10 py-16 text-center text-cf-text-3">
-            Издания пока не опубликованы
+            Пока нет доступных изданий
           </div>
         </div>
       )}
+      </main>
 
       <SiteFooter variant="simple" />
     </div>

@@ -11,14 +11,12 @@ export function ReleaseSeries({
   series: Series
   releases: OtherSeriesRelease[]
 }) {
-  if (releases.length === 0) return null
-
   return (
     <section className="border-t border-cf-text-1/10">
       <div className="mx-auto max-w-6xl px-5 py-10 md:px-8 md:py-14">
         <div className="mb-6">
           <p className="text-[10px] font-black uppercase tracking-[0.22em] text-cf-accent">
-            серия
+            Произведение входит в серию
           </p>
           <Link
             href={`/series/${series.slug}`}

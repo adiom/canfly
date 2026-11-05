@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { Heart } from 'lucide-react'
 import type { ChapterHighlight } from '@/lib/releases-types'
 import { pluralRu } from '@/lib/utils/format'
 
@@ -22,30 +21,26 @@ export function ReleaseHighlights({
   return (
     <section className="border-t border-cf-text-1/10">
       <div className="mx-auto max-w-6xl px-5 py-10 md:px-8 md:py-14">
-        <p className="mb-6 text-[10px] font-black uppercase tracking-[0.22em] text-cf-accent">
-          цитаты читателей
-        </p>
+        <h3 className="font-serif text-3xl text-cf-text-heading">Работы читателей</h3>
+        <p className="mb-6 mt-2 text-sm text-cf-text-2">Интерпретации аудитории с указанием автора и исходного фрагмента.</p>
         <div className="grid gap-6 md:grid-cols-2">
           {visibleQuotes.map(highlight => (
-            <Link
+            <article
               key={highlight.id}
-              href={`/highlight/${highlight.id}`}
-              className="group block border-l-2 pl-5 transition-opacity hover:opacity-80"
+              className="rounded-r-xl border-l-2 bg-cf-bg-2 p-5"
               style={{ borderColor: accent }}
             >
-              <p className="font-[family-name:var(--font-ebgaramond)] text-lg italic leading-snug text-cf-text-caption">
+              <p className="mb-2 text-sm font-semibold">{highlight.user_name ?? 'Читатель'}</p>
+              {highlight.chapter_title && <p className="mb-2 text-xs text-cf-text-3">Глава «{highlight.chapter_title}»</p>}
+              <blockquote className="line-clamp-4 font-[family-name:var(--font-ebgaramond)] text-lg italic leading-snug text-cf-text-caption">
                 «{highlight.text_content}»
-              </p>
-              <div className="mt-3 flex items-center gap-2 text-xs text-cf-text-3">
-                <span>{highlight.user_name ?? 'Читатель'}</span>
-                {highlight.likes_count > 0 && (
-                  <span className="inline-flex items-center gap-1">
-                    <Heart className="h-3 w-3" style={{ color: accent }} />
-                    {highlight.likes_count}
-                  </span>
-                )}
+              </blockquote>
+              {highlight.publication?.note && <p className="mt-3 line-clamp-3 text-sm">{highlight.publication.note}</p>}
+              <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-sm">
+                <Link href={`/highlight/${highlight.id}`} className="font-semibold underline underline-offset-4">Открыть работу</Link>
+                {highlight.edition_slug && <Link href={`/vvvvv/${highlight.edition_slug}?highlight=${highlight.id}`} className="underline underline-offset-4">Исходный фрагмент</Link>}
               </div>
-            </Link>
+            </article>
           ))}
         </div>
         {highlights.length > 2 && (
@@ -57,7 +52,7 @@ export function ReleaseHighlights({
           >
             {showAllQuotes
               ? 'Свернуть'
-              : `Ещё ${highlights.length - 2} ${pluralRu(highlights.length - 2, 'цитата', 'цитаты', 'цитат')}`}
+              : `Ещё ${highlights.length - 2} ${pluralRu(highlights.length - 2, 'работа', 'работы', 'работ')}`}
           </button>
         )}
       </div>
