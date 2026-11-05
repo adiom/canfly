@@ -46,19 +46,21 @@ function canonical(html) {
 function statusIssue(url, status, redirectTo) {
   const item = { url, status, ...(redirectTo ? { redirectTo } : {}) }
   results.push(item)
-  if (status >= 500 || status === 404) errors.push(`${url}: HTTP ${status}`)
+  if (status >= 400) errors.push(`${url}: HTTP ${status}`)
   else if (status >= 300 && status < 400) warnings.push(`${url}: HTTP ${status}${redirectTo ? ` → ${redirectTo}` : ''}`)
 }
 
 async function getSameOrigin(url) {
   let current = new URL(url)
+  const redirects = []
   for (let count = 0; count < 6; count += 1) {
     if (current.origin !== BASE) throw new Error(`запрос за пределы проверяемого домена запрещён: ${current.origin}`)
     const response = await fetch(current, { redirect: 'manual', signal: AbortSignal.timeout(20000) })
-    if (![301, 302, 303, 307, 308].includes(response.status)) return { response, url: current.toString() }
+    if (![301, 302, 303, 307, 308].includes(response.status)) return { response, url: current.toString(), redirects }
     const location = response.headers.get('location')
-    if (!location) return { response, url: current.toString() }
+    if (!location) return { response, url: current.toString(), redirects }
     const next = new URL(location, current)
+    redirects.push({ status: response.status, from: current.toString(), to: next.toString() })
     statusIssue(current.toString(), response.status, next.toString())
     if (next.origin !== BASE) throw new Error(`внешний redirect заблокирован: ${next.origin}`)
     current = next
@@ -66,8 +68,12 @@ async function getSameOrigin(url) {
   throw new Error('слишком много редиректов')
 }
 
-function sitemapLocs(xml) {
-  return [...xml.matchAll(/<loc[^>]*>([\s\S]*?)<\/loc>/gi)].map(match => decode(match[1].trim()))
+function sitemapLocs(xml, index = false) {
+  const itemTag = index ? 'sitemap' : 'url'
+  return [...xml.matchAll(new RegExp(`<${itemTag}\\b[^>]*>([\\s\\S]*?)<\\/${itemTag}>`, 'gi'))]
+    .map(([, item]) => /<loc\b[^>]*>([\s\S]*?)<\/loc>/i.exec(item)?.[1])
+    .filter(Boolean)
+    .map(value => decode(value.trim()))
 }
 
 function validateXml(xml, label) {
@@ -104,14 +110,16 @@ function localizeSitemapUrl(raw) {
 async function readSitemap(url, visited = new Set()) {
   if (visited.has(url)) throw new Error(`цикл sitemap: ${url}`)
   visited.add(url)
-  const { response } = await getSameOrigin(url)
+  const { response, redirects } = await getSameOrigin(url)
+  if (redirects.length > 0) throw new Error(`${url}: sitemap redirect — URL должен отвечать без перенаправления`)
   if (!response.ok) throw new Error(`${url}: sitemap HTTP ${response.status}`)
   const xml = await response.text()
   validateXml(xml, url)
   if (!/<(?:urlset|sitemapindex)\b/i.test(xml)) throw new Error(`${url}: ответ не похож на sitemap XML`)
-  const locs = sitemapLocs(xml)
+  const isIndex = /<sitemapindex\b/i.test(xml)
+  const locs = sitemapLocs(xml, isIndex)
   if (locs.length === 0) throw new Error(`${url}: sitemap не содержит элементов <loc>`)
-  if (/<sitemapindex\b/i.test(xml)) {
+  if (isIndex) {
     const urls = []
     for (const loc of locs) urls.push(...await readSitemap(localizeSitemapUrl(loc), visited))
     return urls
@@ -140,12 +148,38 @@ function checkHtml(url, html, status) {
   else {
     try {
       const canonicalUrl = new URL(href, url)
-      if (canonicalUrl.origin !== BASE) issues.push(`canonical вне проверяемого домена: ${canonicalUrl.origin}`)
-      if (canonicalUrl.href.replace(/\/$/, '') !== new URL(url).href.replace(/\/$/, '')) {
+      const expectedUrl = new URL(url)
+      const canonicalMatchesExpectedPath =
+        canonicalUrl.pathname === expectedUrl.pathname && canonicalUrl.search === expectedUrl.search
+      const isProductionCanonicalForPreview =
+        baseUrl.hostname.endsWith('.vercel.app') &&
+        canonicalUrl.origin === 'https://canfly.org' &&
+        canonicalMatchesExpectedPath
+      if (canonicalUrl.origin !== BASE && !isProductionCanonicalForPreview) {
+        issues.push(`canonical вне проверяемого домена: ${canonicalUrl.origin}`)
+      }
+      if (!canonicalMatchesExpectedPath || (!isProductionCanonicalForPreview && canonicalUrl.origin !== BASE)) {
         issues.push(`canonical не совпадает с URL sitemap: ${canonicalUrl.href}`)
       }
     } catch {
       issues.push(`canonical некорректен: ${href}`)
+    }
+  }
+
+  const ogUrl = getMeta(html, 'og:url')
+  if (ogUrl) {
+    try {
+      const actualOgUrl = new URL(ogUrl, url)
+      const expectedUrl = new URL(url)
+      if (
+        actualOgUrl.pathname !== expectedUrl.pathname ||
+        actualOgUrl.search !== expectedUrl.search ||
+        (actualOgUrl.origin !== BASE && !(baseUrl.hostname.endsWith('.vercel.app') && actualOgUrl.origin === 'https://canfly.org'))
+      ) {
+        issues.push(`og:url противоречит URL страницы: ${actualOgUrl.href}`)
+      }
+    } catch {
+      issues.push(`og:url некорректен: ${ogUrl}`)
     }
   }
 
@@ -156,8 +190,19 @@ function checkHtml(url, html, status) {
 
   const blocks = [...html.matchAll(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)]
   if (blocks.length === 0) issues.push('нет JSON-LD')
+  const schemaIds = new Set()
   for (const [index, block] of blocks.entries()) {
-    try { JSON.parse(block[1]) } catch { issues.push(`JSON-LD #${index + 1} не парсится`) }
+    try {
+      const parsed = JSON.parse(block[1])
+      const definitions = Array.isArray(parsed?.['@graph']) ? parsed['@graph'] : [parsed]
+      for (const definition of definitions) {
+        if (typeof definition?.['@id'] !== 'string') continue
+        if (schemaIds.has(definition['@id'])) issues.push(`JSON-LD содержит дублирующий @id: ${definition['@id']}`)
+        schemaIds.add(definition['@id'])
+      }
+    } catch {
+      issues.push(`JSON-LD #${index + 1} не парсится`)
+    }
   }
 
   const canonicalCount = [...html.matchAll(/<link\b[^>]*rel=["'][^"']*canonical[^"']*["'][^>]*>/gi)].length
@@ -172,8 +217,9 @@ function pageWarning(url, message) {
 
 async function auditPage(url) {
   try {
-    const { response, url: finalUrl } = await getSameOrigin(url)
+    const { response, url: finalUrl, redirects } = await getSameOrigin(url)
     const status = response.status
+    if (redirects.length > 0) errors.push(`${url}: URL из sitemap перенаправляет (${redirects.map(item => `${item.status} → ${item.to}`).join('; ')})`)
     if (!response.ok) {
       statusIssue(url, status)
       results.push({ url, finalUrl, status, issues: [`HTTP ${status}`] })
@@ -186,7 +232,12 @@ async function auditPage(url) {
     }
     const html = await response.text() // includes metadata streamed after the initial shell
     const checked = checkHtml(url, html, status)
-    results.push({ ...checked, finalUrl })
+    const headerRobots = response.headers.get('x-robots-tag')
+    if (headerRobots && /noindex/i.test(headerRobots)) {
+      checked.issues.push(`URL из sitemap закрыт HTTP-заголовком (${headerRobots})`)
+      errors.push(`${url}: URL из sitemap закрыт HTTP-заголовком (${headerRobots})`)
+    }
+    results.push({ ...checked, finalUrl, redirects })
   } catch (error) {
     errors.push(`${url}: ${error.message}`)
     results.push({ url, issues: [error.message] })
@@ -234,3 +285,4 @@ main().catch(error => {
   console.error(error.message)
   process.exitCode = 1
 })
+
