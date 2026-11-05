@@ -1,5 +1,5 @@
-Warning: truncated output (original token count: 83546)
-Total output lines: 3512
+Warning: truncated output (original token count: 83603)
+Total output lines: 3514
 
 ## 4 ноября 2026 — мастерская highlights
 
@@ -30,6 +30,8 @@ Total output lines: 3512
 - Аудитор отделяет URL страниц от URL изображений, классифицирует все 4xx/5xx,
   выявляет перенаправления элементов sitemap и не считает production canonical
   ошибкой на Vercel Preview.
+- Добавлены изолированные Node.js-регрессии классификатора статусов, чтения
+  sitemap index/страниц и допустимого production canonical на Preview.
 - Добавлены регрессии canonical каталога и HTTPS/уникальности sitemap.
   Production-аудит и браузерные проверки выполняются только для чтения.
 
@@ -471,7 +473,522 @@ Console и проверьте переобход затронутых URL. Из�
   `'none'` и `DENY`: они запрещают встраивание вообще, включая наш же iframe).
   Остальные директивы и домены CSP не менялись; у файла игры добавлен
   `X-Robots-Tag: noindex` — канонический адрес это `/games/[slug]`.
-- **Шриф…63546 tokens truncated…шать релиз» + Disc3
+- **Шрифты вендорены** в `public/games/<slug>/fonts/` (`fonts.css` + `woff2`):
+  игры тянули Google Fonts и jsDelivr, а CSP разрешает только `'self'`.
+- **Studio**: раздел `/studio/games` (список, создание, карточка, форма,
+  удаление, пункт в сайдбаре). Форма проверяет наличие файла HEAD-запросом и не
+  даёт опубликовать игру со сломанной ссылкой; связи с релизами и персонажами
+  правятся только здесь.
+- **E2E**: `e2e/games.spec.ts` — файлы игр автономны (в запросах нет чужих
+  доменов), заголовки встраивания, каталог, страница игры, 404 на черновике и
+  реальный запуск игры в iframe; `/games` добавлен в smoke-набор.
+
+### Как использовать
+
+- Положите папку игры в `public/games/<slug>/` (конвенция описана в
+  `public/games/README.md`), затем создайте запись в `/studio/games`,
+  привяжите персонажей и релизы, включите «Опубликована».
+- Обновление игры — обычное копирование файлов и коммит: canfly ничего не
+  собирает. Если в игре внешние шрифты — скачайте `woff2` в её `fonts/` и
+  подключите локальный `fonts/fonts.css`.
+- Перед деплоем примените миграцию `postgres/026_games.sql` к базе.
+
+### Проверки
+
+`pnpm exec playwright test e2e/games.spec.ts`, `pnpm test:smoke`, `pnpm lint`,
+`pnpm build`, `git diff --check`.
+
+---
+
+## [24 сентября 2026] Стабильность деплоя: version skew, шум пула Postgres
+
+### Что изменено
+
+- `next.config.mjs` — добавлен `deploymentId` (`NEXT_DEPLOYMENT_ID` →
+  `VERCEL_DEPLOYMENT_ID` → `undefined`): клиент из старого билда получает
+  hard navigation вместо `Failed to find Server Action` (500 на POST `/`).
+- `lib/db.ts` — у `Pool` добавлены `connectionTimeoutMillis: 5000` и
+  `keepAlive: true`, обработчик `pool.on('error')`: обрыв TCP к Neon на
+  idle-клиенте раньше падал как uncaught exception и ронял процесс
+  (exit 129). Ретраев в `dbQuery` нет — сознательно, чтобы не выполнять
+  запись дважды при обрыве после отправки.
+- `app/error.tsx`, `app/global-error.tsx` — кнопка «Обновить страницу»
+  (`location.reload()`): `reset()` не подтягивает новый билд, а ошибка
+  Server Action в production приходит только с `digest` — опознать её
+  по сообщению нельзя.
+- `.env.example` — документирован `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`:
+  без него Next генерирует новый ключ на каждый билд и клиенты старого
+  деплоя ловят ту же ошибку.
+
+### Почему
+
+В логах Vercel за 2 недели: пачка из 7 × `Failed to find Server Action`
+(один пользователь со старой вкладкой), uncaught `Connection terminated
+unexpectedly` с exit 129. Остальные ошибки (`UnknownAction /api/auth/guest`
+— внешний сканер, одиночный `fetch failed` на Blob) правок не требуют.
+
+### Что сделать вручную
+
+- Задать `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` (одинаковый на всех
+  билдах/инстансах): `openssl rand -base64 32`.
+- Проверить в настройках Vercel-проекта, что Skew Protection включён
+  (для проектов старше 19.11.2024 включается вручную: Settings →
+  Advanced → Skew Protection).
+
+### Проверки
+
+`pnpm lint`, `pnpm build`.
+
+---
+
+## [24 сентября 2026] WebSite переехал в layout
+
+### Что изменено
+
+- `app/layout.tsx` — в `siteSchemas` добавлен `websiteNode()`: полные узлы
+  `Organization`, `Person` и `WebSite` теперь отдаются **ровно один раз** из
+  layout на каждой странице (вместо только Organization/Person).
+- `app/releases/page.tsx` — убран дублирующий `websiteNode()` из графа каталога;
+  остался только `CollectionPage`.
+- `lib/seo/entities.ts`, `lib/seo/schema.ts` — комментарии: WebSite отдаётся из
+  layout, а не «с корня».
+- `e2e/seo.spec.ts` — тесты: на `/` ожидаются `WebSite + WebPage`, на `/releases` —
+  `WebSite + CollectionPage`; старый тест «лендинг не дублирует WebSite» заменён
+  на проверку одного узла `WebSite` с одинаковым `@id` (склейка по `@id`, как у
+  Organization/Person); `gotoWithJsonLd` ждёт **минимум** 2 тега, а не ровно 2 —
+  `Breadcrumbs` отдаёт третий `<JsonLd>` с `BreadcrumbList` (это ломало тесты и
+  до правок); убраны устаревшие комментарии про `/releases`-307.
+- `docs/SEO.md` — `@id`-граф и таблица layout обновлены.
+
+### Почему
+
+`WebSite` жил только на `/releases`, из-за чего лендинг `/` не отдавал узел, на
+который ссылаются `isPartOf: ref(ID.website)` со страниц. В layout `WebSite`
+всегда в одном `@graph` с Organization/Person — ссылки резолвятся на любой
+странице, а Google склеивает сущность по стабильному `@id`.
+
+### Проверки
+
+`pnpm exec playwright test e2e/seo.spec.ts`, `pnpm lint`, `pnpm build`.
+
+---
+
+## [25 августа 2026] Чистка репозитория и рефакторинг /admin на серверную архитектуру
+
+### Что изменено
+
+**Мусор и мёртвый код удалены:**
+- `sonya-profile.png` в корне репо (не использовался), мёртвый маршрут `app/home/`
+  (proxy уже делал 301 `/home → /`), пустая `app/books/`, deprecated-компонент
+  `components/search/search-result-book.tsx`; почищены `.DS_Store`.
+- Убраны неиспользуемые `STUDIO_ROLES` в `header-auth.tsx`/`mobile-nav.tsx`, мёртвые
+  импорты в `lib/mcp/tools/places.ts`, добавлен `alt` + `eslint-disable` для `<img>` в
+  `lib/seo/og-shared.tsx` (satori OG — false-positive `no-img-element`).
+
+**Homepage slides — убран файловый fallback:**
+- `lib/homepage-slide-store.ts` теперь ходит только в БД; удалён dev-fallback через
+  `data/homepage-slides.json` (`readLocalHomepageSlides`/`writeLocalHomepageSlides`/
+  `withLocalSlidesFallback`/`defaultHomepageSlides`). ~330 → ~135 строк. Папка `data/`
+  удалена. Главная (`app/page.tsx`) уже ловит «таблица отсутствует» и рендерит empty-state.
+
+**/admin переведён с клиентского `useEffect`+`fetch('/api/admin/*')` на серверные
+компоненты + server actions:**
+- Удалены дублирующие studio разделы `app/admin/characters/`, `app/admin/news/` и их
+  API-хендлеры `app/api/admin/characters/`, `app/api/admin/news/` (CRUD персонажей и
+  новостей полностью в `/studio` — создание через `lib/actions/studio-create.ts`).
+- `app/admin/page.tsx` (613-строчный `'use client'`-монолит с 3 вкладками) → серверный
+  компонент: пользователи через `listAdminUsers()` + клиент-панель
+  `admin-users-panel.tsx`; мутации — server actions `lib/actions/admin-users.ts`.
+- `app/admin/slider` + `app/admin/homepage-slides/*` → серверные компоненты; мутации —
+  `lib/actions/admin-slides.ts`; форма слайда получает данные через props, без `fetch`.
+- Удалены ставшие лишними route-хендлеры `app/api/admin/users/`,
+  `app/api/admin/homepage-slides/`, мёртвый `app/api/admin/upload/`, и
+  `lib/api/normalizers.ts` (использовался только admin-хендлерами).
+
+### Как использовать
+
+- Управление контентом — в `/studio`. В `/admin` остались: пользователи и роли
+  (`/admin`), слайды главной (`/admin/slider`, `/admin/homepage-slides/new`,
+  `/admin/homepage-slides/[id]/edit`).
+- API `/api/admin/*` больше нет — мутации идут через server actions. Загрузка картинок —
+  через `/api/studio/upload`.
+- E2E `e2e/admin.spec.ts` обновлён под оставшиеся admin-маршруты.
+
+### Проверки
+
+`pnpm lint` (0 ошибок), `pnpm build` (типы и сборка ОК).
+
+---
+
+## [25 августа 2026] Studio v2: orbital-редактор персонажа (`/studio/characters-v2/[id]`)
+
+### Что изменено
+
+Новый редактор персонажа в стиле orbital (`~/Canfly/2026/orbital/DESIGN.md`) —
+**полностью отдельный маршрут**. Старый редактор `/studio/characters/[id]` и
+всё, что с ним связано, **не изменены**.
+
+- **Единая страница-«дело»**: аспекты персонажа — glass-карточки orbital
+  (`rounded-[28px] bg-white/72 backdrop-blur-2xl ring-1 ring-white/70`,
+  мягкая тень) в одном вертикальном потоке. Сверху — floating control-bar pill
+  (имя, `@позывной`, метка «герой», density bar, удаление).
+- **Life-state как прогресс оживания дела** (signature): каждая секция несёт
+  точку+glow+caps-label по реальной заполненности — `тихо` / `родилось` /
+  `живёт` / `созревает`. В control-bar — density bar
+  (`linear-gradient(#38BDF8, #34D399, #A78BFA)`) и сводный лейбл. Считается
+  в `computeCharacterCompleteness` из данных персонажа.
+- **Inline autosave по узлам** вместо мегаформы-сабмита: каждое поле
+  сохраняется с debounce через `dbUpdatePartial` (репозиторий уже поддерживал),
+  индикатор «сохраняю / сохранено / ошибка» в шапке узла.
+- **Узлы**: Лицо · Голос · Поведение · Способности · Паспорт · Связи · Посты ·
+  Стена · Читатели. Все персонажи — люди; города живут отдельно в таблице
+  `places`, поэтому переключения типа в редакторе нет (см. ниже про чистку).
+- **Паспорт = markdown split-pane + версионность** (по образцу глав):
+  markdown-редактор слева + живой предпросмотр (`MarkdownRenderer`) справа,
+  единый шаблон персонажа. Версии — в новой таблице
+  `character_passport_versions` (миграция `025`): перед перезаписью паспорта
+  старое содержимое уходит в историю; восстановление — кнопкой «Версии» (Sheet).
+  Сам паспорт остаётся markdown в `characters.passport` — текущий общий для
+  старого и v2 редактора, поэтому они не расходятся.
+- **Связи и Читатели** — переиспользуют существующие редакторы
+  (`RelationshipsEditor`, `ReadersList`): их мутации не делают redirect, только
+  `revalidatePath` + `router.refresh`, поэтому корректно обновляют v2-страницу.
+- **Посты и Стена** — обзорные узлы (список + ссылка «Управление/Модерация»
+  на старый редактор): composer постов и модерация стены редиректят на старый
+  путь, поэтому их глубокий CRUD не дублировался — перенос в v2 отдельной
+  итерацией.
+- **Доступ** как в старом редакторе: мутации полей — admin-only; паспорт —
+  author+admin; чтение страницы — requireStudioSession. Гварды переиспользованы.
+
+### Зачем
+
+Старый редактор — безликая колонка секций с мегаформой-сабмитом, без обзора
+заполненности и без проверки, чего не хватает. v2 делает «дело, которое
+оживает»: писатель видит прогресс и редактирует по частям, не теряя контекст.
+
+### Чистка `city` из v2 (правка)
+
+В схеме `characters.character_type` исторически было `('person','city')`
+(миграция `006`), но миграция `023` уже вынесла города в отдельную таблицу
+`places` и перенесла туда данные. Значение `city` в `character_type` осталось
+мёртвым. Из v2-редактора убран переключатель `person|city`, серверный action
+`changeCharacterTypeAction`, шаблон паспорта города, поле «Карта» в узле
+«Лицо» и все `isCity`-ветки в `computeCharacterCompleteness` и узлах.
+Старый редактор и публичные страницы намеренно не тронуты (там ещё есть
+обработка `city`); БД-миграция enum тоже не делалась — значение `city`
+остаётся в типе, но v2 его не использует.
+
+### Как использовать
+
+Прямой URL `/studio/characters-v2/{id}` (входа-списка нет — старый список не
+меняется). Миграция `025` применяет `character_passport_versions`. Жизненные
+узлы (посты/стена) ссылаются на старый `/studio/characters/{id}#...`.
+
+### Файлы
+
+- **`app/studio/characters-v2/[id]/page.tsx`** — серверная страница: грузит
+  персонажа и «жизнь», считает completeness, рендерит поток узлов на orbital-канвасе.
+- **`app/studio/characters-v2/[id]/_components/`** — `control-bar`,
+  `character-node` (glass-обёртка), `life-state` (точка+glow+caps), `use-autosave`,
+  `shared` (StatusBadge/Field/inputClass), узлы `face/voice/conduct/abilities/
+  passport/passport-version-history/relations/posts/wall/readers`.
+- **`lib/actions/studio-characters-v2.ts`** — server actions частичных апдейтов
+  (`updateFaceAction`, `updateVoiceAction`, `updateConductAction`,
+  `updateAbilitiesAction`, `changeCharacterTypeAction`) + паспорт с версионностью
+  (`savePassportAction`, `listPassportVersionsAction`,
+  `restorePassportVersionAction`). Zod-валидация, гварды из `studio-auth`.
+- **`lib/server/character-passport-versions.ts`** — репозиторий версий паспорта
+  (по образцу `lib/server/chapters.ts`): `createPassportVersion`,
+  `fetchPassportVersions`, `fetchPassportVersion`, `restorePassportVersion`,
+  `hasPassportHistory`.
+- **`lib/server/character-completeness.ts`** — `computeCharacterCompleteness`:
+  life-state по секциям + density.
+- **`postgres/025_character_passport_versions.sql`** — таблица версий паспорта
+  (`id, character_id, content, version_number, created_at`), CASCADE, индексы.
+- **`e2e/studio-characters-v2.spec.ts`** — smoke: рендер v2-страницы без
+  runtime-ошибок и 404 на несуществующем id.
+
+### Не тронуто
+
+`app/studio/characters/**`, `lib/actions/studio-characters.ts`,
+`lib/server/characters.ts`, `components/studio/character-form.tsx`,
+`passport-editor.tsx`, `character-post-composer.tsx`, `relationships-editor.tsx`,
+`readers-list.tsx`, `app/studio/layout.tsx`, `proxy.ts`, схема `characters` —
+старый редактор работает идентично.
+
+---
+
+## [26 августа 2026] Релизы: draft виден команде, archived закрыт публично
+
+### Что изменено
+
+Раньше `/release/[slug]` показывал только `published` — и `draft`, и `archived`
+отдавали 404. Теперь у `release_status` три разных поведения на сайте:
+
+- **`published`** — видят все (без изменений);
+- **`draft`** — видит только команда релиза (админ или коллаборант с ролью
+  `owner`/`editor` в `release_collaborators`) с бейджем «Черновик» и `noindex`;
+  прочим — 404;
+- **`archived`** — публично 404; в Studio остаётся (выборки `listAll*`/
+  `list*ByAuthor` не фильтруют по статусу — изменений студии не требуется).
+
+Бейдж «Черновик» стоит между хлебными крошками и героем и объясняет, что версия
+видна только команде релиза и не попадает в каталог/поиск. При `canEdit` —
+рядом ссылка «Открыть в Studio» в `/studio/releases/[id]` (ее видят только owner
+и admin; editor-коллаборатор черновик видит, но в студию этого релиза не зайдёт).
+JSON-LD (`generateReleaseSchema`) для draft не выводится, метаданные —
+`noindex: true`, заголовок `«Название» · черновик | canfly`.
+
+Каталог `/releases` (`fetchReleasesPage`, `status='published'`), `app/sitemap.ts`
+(`fetchReleasesWithEditions({ status: 'published' })`) и ридер `/vvvvv/[slug]`
+не тронуты — draft там по-прежнему отсутствует. `opengraph-image.tsx` для draft
+ уже отдаёт `ogFallback()`.
+
+### Файлы
+
+- **`lib/server/studio-auth.ts`** — новый `getReleaseViewer(releaseId)`:
+  не-бросающая (без `redirect`) проверка доступа к draft. Возвращает
+  `{ session, canViewDraft, canEdit }`:
+  - `canViewDraft` …53603 tokens truncated…THUB_CLIENT_SECRET` в `.env.local`
+- Callback URL для GitHub OAuth App: `https://<домен>/api/auth/callback/github`
+- `avatars.githubusercontent.com` добавлен в `next.config.mjs` images.remotePatterns
+
+---
+
+## [17 июня 2026] Новая читалка-разворот `/reader/[editionId]`
+
+### Что изменено
+- **Новый маршрут** `app/reader/[editionId]/page.tsx` — загрузка издания по UUID
+- **Компонент разворота** `components/spread-reader.tsx` (2300+ строк):
+  - CSS multi-column пагинация: браузер режет контент на дискретные страницы по высоте
+  - Desktop: две страницы side-by-side (разворот), корешок с градиентной тенью
+  - Mobile: одна страница (автоматический режим на ширине <900px)
+  - Пролистывание: стрелки, клавиши ←/→/Space, свайп
+  - Highlights: выделение текста → floating pill → артефакт → закладки в panel
+  - Темы: тёмная/светлая/сепия с сохранением в localStorage
+  - Размер шрифта A-/A+ с якорированием позиции при remeasure
+  - Прогресс чтения: сохраняется на `/api/reading-progress`, resume-функционал
+- **Хук пагинации** `lib/reader/use-column-pagination.ts`:
+  - ResizeObserver с debounce для пересчёта при resize
+  - Автоматический clamp `currentPage` при смене layout (spread ↔ single)
+  - Готовность шрифтов: `document.fonts.ready` для корректного pageCount
+  - Загрузка картинок: img.onload → remeasure
+- **Утилиты highlights** `lib/reader/highlights-dom.ts`:
+  - Вынесены из `release-book-reader.tsx` (устранено дублирование ~150 строк)
+  - TreeWalker по параграфам, поиск текста (точный + контекстный fallback)
+  - `wrapHighlight` / `wrapEditorialNote` с `accent` параметром
+
+### Зачем
+- Книжный разворот — максимально естественный читательский опыт на desktop
+- Истинная пагинация (как в бумажной книге), а не бесконечный скролл
+- Переиспользование всей инфраструктуры highlights/progress/themes из Release-ридера
+- Новый URL `/reader/{editionId}` удобен для прямых ссылок и resume
+
+### Как использовать
+- Открыть `/reader/<UUID издания>` (напр. `/reader/550e8400-e29b-41d4-a716-446655440000`)
+- Desktop (ширина >900px): две страницы разворотом, стрелки по бокам, корешок видна
+- Узкий экран (<900px): одна страница, отсутствует корешок, стрелки всё ещё работают
+- Кнопки: A-/A+ (размер шрифта), ☰ (оглавление), 📖 (мои закладки), ☀️/🌙/🎨 (тема)
+- Выделить текст → кнопка «Артефакт» → создать highlight → видно в закладках (панель 📖)
+- Темы сохраняются в localStorage, автоматически восстанавливаются при перезагрузке
+- Прогресс чтения синхронизируется на сервер (debounce 1.5s); при обновлении откроется та же глава
+
+---
+
+## [17 июня 2026] Обновлён копирайт в футере
+
+### Что изменено
+- `components/site-footer.tsx`, `app/news/page.tsx`, `app/news/[id]/page.tsx` — текст копирайта
+  `© 2005-2026 canfly. Литературная вселенная Адиома Тимура.` → `© 2005-2026 canfly | культура твоего сознания.`
+- `docs/design-system.md`, `canfly-releases-snapshot.md` — синхронизирован эталон копирайта
+
+### Зачем
+- Единый слоган бренда «культура твоего сознания» во всех футерах
+
+### Как использовать
+- Ничего настраивать не нужно — текст применяется автоматически во всех футерах сайта
+
+---
+
+## [17 июня 2026] SEO-улучшения + редизайн /releases
+
+### Что изменено
+
+**SEO (14 файлов):**
+- `app/layout.tsx` — добавлены `metadataBase`, корневой `openGraph`, `twitter: summary_large_image`
+- `app/page.tsx` — OG + twitter + canonical + `WebSite` JSON-LD с SearchAction
+- `app/releases/page.tsx`, `app/characters/page.tsx`, `app/books/page.tsx`, `app/colors/page.tsx` — добавлены OG, twitter, canonical
+- `app/release/[slug]/[editionSlug]/[chapterIndex]/page.tsx` — новый `generateMetadata` (title/description/OG/twitter/canonical)
+- `app/sitemap.ts` — добавлены `/releases`, `/colors`
+- `lib/seo/schema.ts` — новый `generateWebSiteSchema` с SearchAction
+- `components/release-page.tsx` — `<img>` → `<Image>` (next/image)
+- `components/books-client.tsx` — `alt=""` → `alt={book.title}`, `alt={ch.name}`
+- `components/comic-reader.tsx`, `components/release-comic-reader.tsx` — `alt=""` → `alt={Страница N}`
+- `lib/server/search.ts` — гранулярный ранг (точное совпадение → префикс → вхождение → другие поля); вторичная сортировка по `view_count DESC` для релизов
+
+**Редизайн /releases:**
+- `components/releases-page-bookmate.tsx` — убраны `ShelfSection`, «Новинки», «Популярное»; сетка книг сразу на странице
+- `app/releases/page.tsx` — убран A/B тест `?ab=bookmate`, bookmate-дизайн стал основным
+
+### Зачем
+- Яндекс и Google будут корректно индексировать страницы и показывать превью при шаринге
+- `/releases` теперь чистая сетка с category pills вместо hero + шельфов
+
+### Как использовать
+- `/releases` — сетка книг с фильтрами (Всё / Комиксы / Книги / Аудио / Журналы / Альбомы)
+- `/releases?ab=bookmate` — тот же дизайн (A/B тест больше не нужен)
+- Все страницы имеют OG, twitter cards и canonical URLs
+
+---
+
+## [17 июня 2026] Фикс ESLint: setState в useEffect (search-dialog)
+- Убран `useEffect` для загрузки недавних запросов — заменён на `handleOpenChange`
+- Исправляет ошибку `react-hooks/set-state-in-effect` (блокировала `pnpm build`)
+
+---
+
+## Редизайн страницы релиза в стиле Marginalia (17 июня 2026)
+
+### Что изменено
+- `components/release-page.tsx` — полная переделка hero-секции:
+  - Two-column layout: обложка слева (320px), контент справа, `items-center`
+  - Убран размытый blur-фон за обложкой
+  - Убрана секция «Где читать и слушать» — издания теперь pills-кнопки в hero
+  - Pills ведут на ридер: Черновик →, Полная версия →, Комикс → и т.д.
+  - Убрана кнопка «Одним файлом»
+  - Убрана секция «Персонажи» из UI (данные на уровне релиза остаются)
+  - Мета-чики: текст через `·` без иконок (23 главы · 51 тыс. слов · 4 ч 14 мин)
+  - Цитаты: pull-quote стиль с `border-l-2` + курсив
+  - Убраны неиспользуемые импорты (Headphones, BookMarked, Disc3, Newspaper, Music2, Quote)
+  - Используются CSS-классы `bg-cf-bg text-cf-text-1` вместо inline стилей — адаптация к light/dark теме
+
+### Зачем
+- Стилизация под Marginalia.shop: чистый двухколоночный layout, минимализм
+- Pills-кнопки вместо карточек изданий — интуитивнее: видно сразу какие варианты чтения доступны
+- Убрано лишнее: blur-фон, отдельные секции, «Одним файлом»
+
+### Как использовать
+- Страница `/release/[slug]` автоматически отображается в новом стиле
+- Каждая pill-кнопка ведёт на ридер соответствующего издания
+
+---
+
+## Улучшения поиска: UX + ранжирование + опечатки (17 июня 2026)
+
+### Что изменено
+
+**UX Cmd+K диалога:**
+- `components/search/search-dialog.tsx` — AbortController (устранена гонка ответов при быстром наборе); пустое состояние с секцией «Недавнее» (localStorage) и быстрыми ссылками (Все релизы / Персонажи / Новости); футер-подсказки клавиш `↑↓ · ↵ · esc`; подсветка совпадений в названиях
+- `lib/search-highlight.tsx` — новый util `highlight(text, query)` → React-узел с `<mark>`
+- `lib/search-recent.ts` — util для localStorage (ключ `cf:recent-searches`, dedup, до 6 записей)
+
+**Страница /search:**
+- `components/search/search-results-tabs.tsx` — новый клиентский компонент с табами-фильтрами «Все / Релизы / Персонажи / Новости» (counts, переключение без перезагрузки)
+- `app/search/page.tsx` — блок результатов заменён на `SearchResultsTabs`
+- Row-компоненты (`search-result-release/character/news`) — проп `query` + подсветка в названии и сниппете
+
+**Релевантность:**
+- `lib/server/search.ts` — гранулярный ранг (точное совпадение → префикс → вхождение → другие поля); вторичная сортировка по `view_count DESC` для релизов
+
+**Нечёткий поиск (опечатки):**
+- `postgres/007_search_trgm.sql` — миграция: `CREATE EXTENSION pg_trgm` + GIN-индексы на title (releases, characters, news_posts); **применена к Neon**
+- `lib/server/search.ts` — гибридный WHERE: `LIKE` + `word_similarity($q, title) >= 0.4`
+
+### Зачем
+- Устранена гонка ответов при быстром наборе (AbortController)
+- Пустой диалог стал полезным (недавнее + навигация)
+- Совпадения визуально выделены в обоих местах поиска
+- Табы позволяют фокусироваться на одном типе результатов
+- Опечатки находят результаты: «помедки» → «Пометки на полях»
+
+### Как использовать
+- `word_similarity` требует `pg_trgm` extension в БД — миграция `postgres/007_search_trgm.sql` применена
+- При переносе на новую БД — выполнить миграцию первой
+- Порог схожести 0.4 — можно скорректировать в `search.ts`
+
+---
+
+## Поиск по релизам (17 июня 2026)
+
+### Что изменено
+- `lib/server/search.ts` — добавлен 3-й тип результата `release`: интерфейс `SearchResultRelease`, поле `releases` в `SearchResults`, `kind` в `AutocompleteItem` расширен до `release`. Ветки `UNION ALL` для релизов в `searchAll` и `searchAutocomplete` (поиск по `title`, `annotation`, `description`, `genre`, `authors`), фильтр `status = 'published'`. В автокомплите лимит перераспределён под 3 вида (релизам — больше)
+- `components/search/search-result-release.tsx` — новый компонент строки результата с прямоугольной обложкой 2:3
+- `app/search/page.tsx` — секция «Релизы (N)» рендерится первой
+- `components/search/search-dialog.tsx` — группа «Релизы» в Cmd+K первой, с миниатюрой обложки
+
+### Зачем
+- Релизы — основной контент сайта, но в поиске их не было вообще (искались только персонажи и новости)
+- Релизы первыми в выдаче — как главный тип контента
+
+### Как использовать
+- Cmd+K и `/search` находят релизы по названию/аннотации/жанру/авторам, ведут на `/release/<slug>`
+- Драфты и архивные релизы в поиск не попадают (только `published`)
+- Глубина — метаданные релиза; полнотекст по главам не входит (отдельная задача)
+- Проверено вживую на localhost (обе темы): «Маша» → релиз «Маша, можно!» + персонаж + новость; драфты (`test`, `electronicmicroanimal`) не находятся; `tsc --noEmit` чист
+
+---
+
+## Фикс поиска: невидимый диалог + пропадающие результаты (17 июня 2026)
+
+### Что изменено
+- `app/globals.css` — в `@theme inline` добавлены семантические токены shadcn/ui (`--color-background`, `--color-popover`, `--color-border`, `--color-muted-foreground`, `--color-accent` и др.), замапленные на палитру `cf-*`. Раньше их не было вообще
+- `components/ui/command.tsx` — `CommandDialog` теперь прокидывает проп `shouldFilter` в `Command`
+- `components/search/search-dialog.tsx` — у `CommandDialog` выставлен `shouldFilter={false}`
+- `app/search/page.tsx` — убран литеральный `\n` в JSX перед `</main>`
+
+### Зачем
+- **Прозрачный диалог поиска**: `DialogContent` (`bg-background`) и `Command` (`bg-popover`) ссылались на несуществующие токены → фон прозрачный, окно поиска было не видно
+- **Пустые результаты в Cmd+K**: `cmdk` по умолчанию (`shouldFilter=true`) сам фильтровал пункты по их `value` (`character-${id}`), который не содержит запрос, и вырезал серверные результаты. Фильтрация и так идёт на сервере
+- Литеральный `\n` выводил текст «\n» в подвале страницы `/search`
+
+### Как использовать
+- Поиск (Cmd+K и страница `/search`) работает в обеих темах. Проверено вживую на localhost: запрос «Вар» → персонаж «Варя Сёмина» + новость
+
+---
+
+## Правила OpenCode для Next.js (17 июня 2026)
+
+### Что изменено
+- Создан `docs/nextjs-rules.md` — правила для AI-агента при работе с Next.js (чтение документации, Server/Client Components, API Routes, кэширование, типичные ошибки)
+- Создан `opencode.json` — конфигурация OpenCode с подключением инструкций из `docs/nextjs-rules.md`, `docs/design-system.md`, `UPDATES.md`
+- Обновлён `AGENTS.md` — убран HTML-комментарий `<!-- BEGIN/END:nextjs-agent-rules -->`, добавлен отдельный блок `⚠️ Перед каждым git commit` с требованием обновлять `UPDATES.md`
+
+### Зачем
+- Адаптация проекта под систему правил OpenCode
+- Правила Next.js вынесены в отдельный файл для модульности
+- Явное требование обновлять `UPDATES.md` перед коммитом
+
+### Как использовать
+- При запуске OpenCode в проекте — правила подтянутся автоматически из `opencode.json`
+- `docs/nextjs-rules.md` —  (при работе с Next.js сначала читай его)
+
+---
+
+## v6.5 — Слова песни + умный CTA для аудиорелизов (17 июня 2026)
+
+### Что изменено
+
+**1. Синхронизированные слова песни (Lyrics)**
+- `lib/utils/lyrics.ts` — парсер LRC-формата (`[mm:ss.ms] текст`), сериализация LRC, `findActiveLine()` для подсветки по времени
+- `lib/releases-types.ts` — типы `LyricLine`, `ChapterLyrics`, хелпер `extractLyrics()` для чтения из `audio_metadata`
+- `lib/schemas/studio.ts` — zod-схемы `lyricLineSchema`, `lyricsSchema` для валидации
+- `components/studio/audio-chapter-editor.tsx` — три режима:
+  - **Ввод** — textarea с LRC-парсингом, автоопределение формата (synced/plain)
+  - **Синхронизация** — ручная простановка таймкодов под играющий превью-аудио, кнопки «Поставить метку», «← Назад», «След. →»
+  - **Превью** — тёмный плеер с подсветкой активной строки и перемоткой по клику
+- `components/release-audio-player.tsx` — кнопка «Слова» в хедере, боковая панель с подсветкой активной строки (synced) или читаемым текстом (plain), автоскролл, клик по строке → перемотка
+- Хранение: `audio_metadata.lyrics` в JSONB (без миграции БД)
+
+**2. Навигация аудиоплеер → страница релиза**
+- `components/release-audio-player.tsx` — pill-кнопка `← О релизе` в header, accent border, ведёт на `/release/${release.slug}`
+- `components/studio/edition-setup-page.tsx` — серия убрана из страницы издания (больше не назначается на уровне издания).
+- `lib/actions/studio.ts` (`updateEditionSetupAction`, `getEditionSetupData`) — параметр `series_links` удалён.
+- `app/sitemap.ts` — серии добавлены в sitemap.
+- `components/release-page.tsx` — для админов на странице релиза появилась кнопка «Studio» (ссылка на `/studio/releases/[id]`).
+
+**3. Format-aware hero CTA на странице релиза**
+- `components/release-page.tsx` — CTA зависит от primary edition:
+  - `audiorelease` → «Слушать релиз» + Disc3
   - `album` → «Слушать альбом» + Music2
   - `audiobook` → «Слушать аудиокнигу» + Headphones
   - `book` → «Читать» + BookOpen (как было)
