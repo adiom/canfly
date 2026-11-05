@@ -218,6 +218,26 @@ admin-only авторизацию MCP; публичного API для стат�
 
 Справочник: https://yandex.ru/dev/metrika/ru/stat/ .
 
+
+## Яндекс Вебмастер через MCP (только чтение)
+
+Для `https://canfly.org` доступны:
+- `canfly_webmaster_site` — проверка подключения и общее состояние индекса;
+- `canfly_webmaster_queries` — поисковые запросы: показы, клики и позиции;
+- `canfly_webmaster_indexing` — история количества страниц в поиске;
+- `canfly_webmaster_diagnostics` — проблемы сайта, Sitemap, robots и SSL.
+
+### Подключение
+
+1. В [Яндекс OAuth](https://oauth.yandex.ru/client/new) создайте приложение для доступа к API с правом `webmaster:hostinfo` (официальное руководство также упоминает `webmaster:verify`; для операций чтения не предоставляйте дополнительные права, если они не обязательны).
+2. Авторизуйте **тот Яндекс-аккаунт**, в котором подтверждён `https://canfly.org`. Получите токен по официальной [инструкции](https://yandex.ru/dev/webmaster/doc/ru/tasks/how-to-get-oauth).
+3. Установите токен **только в серверной переменной Vercel** `YANDEX_WEBMASTER_ACCESS_TOKEN`. Не вставляйте секрет в ChatGPT, GitHub, клиентский код или логи.
+4. После деплоя вызовите `canfly_webmaster_site` из авторизованного Canfly MCP. Без токена все четыре инструмента возвращают понятную ошибку.
+
+Вебмастер и Метрика имеют отдельные OAuth-права. Существующий `YANDEX_METRIKA_ACCESS_TOKEN` не изменяется. Отчёты берутся из API на сервере, не сохраняются в Postgres и недоступны публично. Вызовы ограничены GET; инструменты не отправляют сайты на переобход и не меняют настройки.
+
+Источник API: https://yandex.ru/dev/webmaster/doc/ru/concepts/getting-started .
+
 ## Безопасность и сопровождение
 
 - HTML глав очищается на сервере при записи и чтении.
