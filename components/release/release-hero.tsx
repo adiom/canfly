@@ -1,103 +1,121 @@
 import Image from 'next/image'
 import Link from 'next/link'
-import { ArrowRight, BookOpen, ExternalLink } from 'lucide-react'
-import type { Edition, Release, ReleaseDesignConfig, Series } from '@/lib/releases-types'
-import { formatTotalDuration, getEditionAction, getEditionLabel, isAudioFormat, isDigitalFormat, isExternalEditionUrl } from '@/lib/utils/editions'
-import { formatChapterCount, formatReadingTime, formatWordCount } from '@/lib/utils/format'
+import { ArrowDown } from 'lucide-react'
+import type { ReleasePagePublicProps } from './types'
+import { EditionLink, ReleaseEditions } from './release-editions'
+import { ReleaseHeroArt } from './release-hero-art'
 import { ReleaseStudioLink } from './release-studio-link'
+import { EDITION_FORMAT_LABELS, formatTotalDuration, isAudioFormat } from '@/lib/utils/editions'
+import { formatChapterCount, formatReadingTime, formatWordCount } from '@/lib/utils/format'
+import styles from './release.module.css'
 
-const defaultConfig: ReleaseDesignConfig = { accent_color: '#d52525', show_series: true }
-
-type ReleaseHeroProps = {
-  release: Release
-  editions: Edition[]
-  primaryEditionSlug: string | null
-  seriesLink: { series: Series; phase_number: number | null } | null
-  meta: { chapterCount: number; wordCount: number; readingMinutes: number; durationSeconds: number }
-  preview?: boolean
+type ReleaseHeroProps = Pick<ReleasePagePublicProps, 'release' | 'editions' | 'primaryEditionSlug' | 'seriesLink' | 'meta' | 'preview'> & {
+  showSeries: boolean
 }
 
-export function ReleaseHero({ release, editions, primaryEditionSlug, seriesLink, meta, preview }: ReleaseHeroProps) {
+export function ReleaseHero({ release, editions, primaryEditionSlug, seriesLink, meta, preview, showSeries }: ReleaseHeroProps) {
   const config = release.design_config ?? {}
   const heroStyle = config.hero_style ?? 'full'
   const annotation = release.annotation || release.description
-  const accent = config.accent_color ?? defaultConfig.accent_color!
-  const published = editions.filter(e => e.status === 'published')
-  const primaryEdition = published.find(e => e.slug === primaryEditionSlug) ?? null
-  const sortedEditions = primaryEdition ? [primaryEdition, ...published.filter(e => e.id !== primaryEdition.id)] : published
-  const primaryIsAudio = primaryEdition ? isAudioFormat(primaryEdition.format) : false
-  const metaItems: string[] = []
-
-  if (meta.chapterCount > 0) metaItems.push(formatChapterCount(meta.chapterCount, primaryIsAudio))
-  if (primaryIsAudio) {
-    if (meta.durationSeconds > 0) metaItems.push(formatTotalDuration(meta.durationSeconds))
-  } else {
-    if (meta.wordCount > 0) metaItems.push(formatWordCount(meta.wordCount))
-    if (meta.readingMinutes > 0) metaItems.push(formatReadingTime(meta.readingMinutes))
-  }
+  const shortAnnotation = annotation && annotation.length > 280
+    ? `${annotation.slice(0, 280).replace(/\s+\S*$/, '')}…`
+    : annotation
+  const cover = heroStyle === 'minimal' ? null : release.cover_image
+  const art = heroStyle !== 'minimal' && (config.hero_art === 'svg' || config.hero_art === 'canvas') ? config.hero_art : null
+  const primary = editions.find(edition => edition.slug === primaryEditionSlug)
+  const alternatives = primary ? editions.filter(edition => edition.id !== primary.id) : editions
+  const audio = primary ? isAudioFormat(primary.format) : false
+  const text = primary?.format === 'book' || primary?.format === 'magazine'
+  const series = showSeries ? seriesLink : null
+  const details = [
+    meta.chapterCount > 0 ? formatChapterCount(meta.chapterCount, audio) : null,
+    audio && meta.durationSeconds > 0 ? formatTotalDuration(meta.durationSeconds) : null,
+    text && meta.wordCount > 0 ? formatWordCount(meta.wordCount) : null,
+    text && meta.readingMinutes > 0 ? formatReadingTime(meta.readingMinutes) : null,
+  ].filter(Boolean)
+  const format = primary ? EDITION_FORMAT_LABELS[primary.format] : null
 
   return (
-    <section className="release-container mx-auto max-w-6xl px-5 pt-10 pb-12 md:px-8 md:pt-16 md:pb-20" data-release-hero={heroStyle}>
-      <div className={heroStyle === 'centered'
-        ? 'mx-auto grid max-w-3xl items-start gap-8 text-center'
-        : heroStyle === 'minimal'
-          ? 'mx-auto max-w-4xl'
-          : 'grid items-center gap-8 md:grid-cols-[minmax(0,210px)_minmax(0,1fr)] md:gap-12'}>
-        {heroStyle !== 'minimal' && <div className={heroStyle === 'centered' ? 'mx-auto w-48 sm:w-56' : 'mx-auto w-48 sm:w-56 md:mx-0 md:w-full'}>
-          <div className="relative aspect-[2/3] overflow-hidden rounded-sm shadow-2xl ring-1 ring-cf-text-1/8">
-            {release.cover_image ? (
-              <>
-                <Image src={release.cover_image} alt={release.title} fill sizes="(max-width: 768px) 192px, 320px" className={config.cover_fit === 'contain' ? 'object-contain' : 'object-cover'} priority />
-                {config.hero_overlay === 'dark' && <span className="absolute inset-0 bg-black/45" aria-hidden="true" />}
-                {config.hero_overlay === 'gradient' && <span className="absolute inset-0 bg-gradient-to-t from-cf-bg/75 via-transparent to-transparent" aria-hidden="true" />}
-              </>
-            ) : (
-              <div className="flex h-full w-full items-center justify-center bg-cf-bg-2"><BookOpen className="h-12 w-12 text-cf-text-3 opacity-20" /></div>
-            )}
-          </div>
-        </div>}
-
-        <div className={`flex min-w-0 flex-col text-center ${heroStyle === 'centered' ? '' : 'md:text-left'}`}>
-          <div className={`mb-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[10px] font-black uppercase tracking-[0.22em] ${heroStyle === 'centered' ? '' : 'md:justify-start'}`}>
-            {release.genre && <span style={{ color: accent }}>{release.genre}</span>}
-            {config.show_series !== false && seriesLink && (
-              <span className="flex items-center gap-1.5 text-cf-text-3">
-                <span className="opacity-30">·</span>
-                <Link href={`/series/${seriesLink.series.slug}`} className="transition-colors hover:text-cf-warm">
-                  {seriesLink.series.title}{seriesLink.phase_number ? ` · #${seriesLink.phase_number}` : ''}
-                </Link>
-              </span>
-            )}
-          </div>
-
-          <h1 className={`max-w-[16ch] font-sans text-[clamp(2.5rem,5.6vw,4.75rem)] font-semibold leading-[1.04] tracking-[-0.035em] text-cf-text-heading [overflow-wrap:anywhere] [text-wrap:balance] ${heroStyle === 'centered' ? 'mx-auto' : ''}`}>{release.title}</h1>
-          {release.authors.length > 0 && <p className="mt-4 text-base text-cf-text-2 md:text-lg">{release.authors.map(a => a.name).join(', ')}</p>}
-          {metaItems.length > 0 && (
-            <div className={`mt-4 flex flex-wrap items-center justify-center gap-x-2 text-xs text-cf-text-3 ${heroStyle === 'centered' ? '' : 'md:justify-start'}`}>
-              {metaItems.map((item, i) => <span key={item} className="tabular-nums">{i > 0 && <span className="mr-2 opacity-40">·</span>}{item}</span>)}
-            </div>
-          )}
-          <ReleaseStudioLink releaseId={release.id} />
-          {annotation && <div className={`mt-5 max-w-[48ch] ${heroStyle === 'centered' ? 'mx-auto' : ''}`}><p className="text-base leading-relaxed text-cf-text-caption md:text-lg">{annotation}</p></div>}
-
-          {preview && editions.length > 0 && (
-            <ul aria-label="Издания в предпросмотре" className="mt-6 flex flex-wrap gap-3 text-sm">
-              {editions.map(edition => <li key={edition.id}>{getEditionLabel(edition)} · {edition.status === 'draft' ? 'черновик' : 'опубликовано'}</li>)}
+    <>
+      <section
+        className={`release-container ${styles.container} ${styles.hero}`}
+        aria-labelledby="release-title"
+        data-release-hero={heroStyle}
+        data-cover={Boolean(cover || art)}
+      >
+        <div className={styles.identity}>
+          <h1 id="release-title" className={styles.title}>{release.title}</h1>
+          {release.authors.length > 0 ? (
+            <p className={styles.authors}>{release.authors.map(author => author.name).join(', ')}</p>
+          ) : null}
+          {series ? (
+            <a className={styles.seriesLink} href="#release-series">
+              Серия «{series.series.title}»{series.phase_number !== null ? ` · Том ${series.phase_number}` : ''}
+              <ArrowDown size={14} aria-hidden="true" />
+            </a>
+          ) : null}
+          {format || release.genre ? (
+            <ul className={styles.kinds} aria-label="Формат и жанр">
+              {format ? <li>{format}</li> : null}
+              {release.genre ? <li>{release.genre}</li> : null}
             </ul>
-          )}
-          {!preview && published.length > 0 && (
-            <div className={`mt-8 flex flex-wrap items-center justify-center gap-3 ${heroStyle === 'centered' ? '' : 'md:justify-start'}`}>
-              {sortedEditions.map(edition => {
-                const isDigital = isDigitalFormat(edition.format)
-                const primary = edition.id === primaryEdition?.id
-                if (isDigital && !isExternalEditionUrl(edition.external_url)) return null
-                const href = isDigital && edition.external_url ? edition.external_url : `/vvvvv/${edition.slug}`
-                return <Link key={edition.id} href={href} {...(isDigital ? { target: '_blank', rel: 'noopener noreferrer' } : {})} className={`inline-flex min-h-11 items-center gap-2 rounded-lg border border-cf-text-1/15 px-5 py-2.5 text-sm font-bold focus-visible:outline-2 focus-visible:outline-offset-4 ${primary ? 'bg-cf-text-1 text-cf-bg' : 'text-cf-text-1 hover:bg-cf-text-1/6'}`}>{primary ? getEditionAction(edition) : getEditionLabel(edition)}{isDigital ? <ExternalLink aria-hidden="true" className="size-3.5" /> : <ArrowRight aria-hidden="true" className="size-3.5" />}</Link>
-              })}
-            </div>
-          )}
+          ) : null}
         </div>
-      </div>
-    </section>
+
+        {cover || art ? (
+          <figure className={styles.stage} data-art-only={!cover}>
+            {cover ? (
+              <div className={styles.cover} data-overlay={config.hero_overlay ?? 'none'}>
+                <Image
+                  src={cover}
+                  alt={`Обложка «${release.title}»`}
+                  fill
+                  sizes={heroStyle === 'centered'
+                    ? '(max-width: 480px) 54vw, 264px'
+                    : '(max-width: 767px) 116px, (max-width: 1100px) 30vw, 356px'}
+                  className={config.cover_fit === 'contain' ? 'object-contain' : 'object-cover'}
+                  fetchPriority="high"
+                  loading="eager"
+                />
+              </div>
+            ) : null}
+            {art ? <ReleaseHeroArt key={art} mode={art} /> : null}
+            {cover && series?.phase_number != null ? (
+              <figcaption className={styles.coverCaption}>Том {series.phase_number} / {series.series.title}</figcaption>
+            ) : null}
+          </figure>
+        ) : null}
+
+        <div className={styles.details}>
+          {shortAnnotation ? <p className={styles.annotation}>{shortAnnotation}</p> : null}
+          {annotation && shortAnnotation !== annotation ? (
+            <details className={styles.annotationMore}>
+              <summary>Полное описание</summary>
+              <p>{annotation}</p>
+            </details>
+          ) : null}
+          {details.length > 0 ? (
+            <ul className={styles.facts} aria-label="Объём основного издания">
+              {details.map(item => <li key={item}>{item}</li>)}
+            </ul>
+          ) : null}
+          {!preview && primary ? (
+            <div className={styles.actions}>
+              <EditionLink edition={primary} primary />
+              {alternatives.length === 1 ? <EditionLink edition={alternatives[0]} /> : null}
+              {alternatives.length > 1 ? (
+                <Link href="#release-editions" className={styles.action}>Другие форматы <ArrowDown size={18} aria-hidden="true" /></Link>
+              ) : null}
+            </div>
+          ) : null}
+          {!preview && !primary ? <p className={styles.unavailable}>Пока нет доступных изданий</p> : null}
+          {!preview ? <ReleaseStudioLink releaseId={release.id} /> : null}
+        </div>
+      </section>
+
+      {editions.length > 0 && (preview || editions.length > 1) ? (
+        <ReleaseEditions editions={primary ? [primary, ...alternatives] : editions} preview={Boolean(preview)} />
+      ) : null}
+    </>
   )
 }

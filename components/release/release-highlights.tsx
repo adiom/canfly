@@ -1,61 +1,63 @@
-'use client'
-
-import { useState } from 'react'
 import Link from 'next/link'
+import { ArrowRight, ChevronDown } from 'lucide-react'
 import type { ChapterHighlight } from '@/lib/releases-types'
+import type { MaterialKind } from '@/lib/highlights/types'
 import { pluralRu } from '@/lib/utils/format'
+import styles from './release.module.css'
 
-export function ReleaseHighlights({
-  highlights,
-  accent,
-}: {
-  highlights: ChapterHighlight[]
-  accent: string
-}) {
-  const [showAllQuotes, setShowAllQuotes] = useState(false)
+const MATERIAL_LABELS: Record<MaterialKind, string> = {
+  text: 'Текст',
+  explain: 'Пояснение',
+  meaning: 'Толкование',
+  rewrite: 'Переработка',
+  image: 'Иллюстрация',
+}
 
-  if (highlights.length === 0) return null
+function HighlightCard({ highlight }: { highlight: ChapterHighlight }) {
+  const materials = [...new Set(highlight.publication?.materials.map(material => MATERIAL_LABELS[material.kind]))]
+  return (
+    <article className="border-t border-cf-text-1/20 pt-4">
+      <p className={styles.caption}>
+        {[highlight.user_name || 'Читатель', ...materials].join(' · ')}
+      </p>
+      <blockquote className="mt-2 line-clamp-4 wrap-anywhere font-[family-name:var(--release-serif)] text-xl leading-snug">
+        «{highlight.text_content}»
+      </blockquote>
+      {highlight.chapter_title ? <p className={`${styles.caption} mt-1`}>Глава «{highlight.chapter_title}»</p> : null}
+      {highlight.publication?.note ? (
+        <p className="mt-3 line-clamp-3 wrap-anywhere font-[family-name:var(--release-serif)] text-base">{highlight.publication.note}</p>
+      ) : null}
+      <div className="mt-2 flex flex-wrap gap-x-4">
+        <Link href={`/highlight/${highlight.id}`} className={styles.textLink}>Открыть работу <ArrowRight size={16} aria-hidden="true" /></Link>
+        {highlight.edition_slug ? (
+          <Link href={`/vvvvv/${highlight.edition_slug}?highlight=${highlight.id}`} className={styles.textLink}>Исходный фрагмент</Link>
+        ) : null}
+      </div>
+    </article>
+  )
+}
 
-  const visibleQuotes = showAllQuotes ? highlights : highlights.slice(0, 2)
+export function ReleaseHighlights({ highlights }: { highlights: ChapterHighlight[] }) {
+  const more = highlights.length - 2
 
   return (
-    <section className="border-t border-cf-text-1/10">
-      <div className="mx-auto max-w-6xl px-5 py-10 md:px-8 md:py-14">
-        <h3 className="text-2xl font-semibold tracking-tight text-cf-text-heading md:text-3xl">Работы читателей</h3>
-        <p className="mb-6 mt-2 text-sm text-cf-text-2">Интерпретации аудитории с указанием автора и исходного фрагмента.</p>
-        <div className="grid gap-6 md:grid-cols-2">
-          {visibleQuotes.map(highlight => (
-            <article
-              key={highlight.id}
-              className="rounded-r-xl border-l-2 bg-cf-bg-2 p-5"
-              style={{ borderColor: accent }}
-            >
-              <p className="mb-2 text-sm font-semibold">{highlight.user_name ?? 'Читатель'}</p>
-              {highlight.chapter_title && <p className="mb-2 text-xs text-cf-text-3">Глава «{highlight.chapter_title}»</p>}
-              <blockquote className="line-clamp-4 text-base leading-relaxed text-cf-text-caption">
-                «{highlight.text_content}»
-              </blockquote>
-              {highlight.publication?.note && <p className="mt-3 line-clamp-3 text-sm">{highlight.publication.note}</p>}
-              <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-sm">
-                <Link href={`/highlight/${highlight.id}`} className="font-semibold underline underline-offset-4">Открыть работу</Link>
-                {highlight.edition_slug && <Link href={`/vvvvv/${highlight.edition_slug}?highlight=${highlight.id}`} className="underline underline-offset-4">Исходный фрагмент</Link>}
-              </div>
-            </article>
-          ))}
-        </div>
-        {highlights.length > 2 && (
-          <button
-            type="button"
-            onClick={() => setShowAllQuotes(value => !value)}
-            className="mt-5 text-xs font-black uppercase tracking-[0.15em] opacity-60 transition-opacity hover:opacity-100"
-            style={{ color: accent }}
-          >
-            {showAllQuotes
-              ? 'Свернуть'
-              : `Ещё ${highlights.length - 2} ${pluralRu(highlights.length - 2, 'работа', 'работы', 'работ')}`}
-          </button>
-        )}
+    <section aria-labelledby="release-highlights-title">
+      <p className={styles.caption}>Сообщество Canfly</p>
+      <h2 id="release-highlights-title" className={styles.sectionTitle}>Работы читателей</h2>
+      <div className="mt-5 grid gap-x-8 gap-y-5 sm:grid-cols-2">
+        {highlights.slice(0, 2).map(highlight => <HighlightCard key={highlight.id} highlight={highlight} />)}
       </div>
+      {more > 0 ? (
+        <details className="group mt-3">
+          <summary className={`${styles.textLink} cursor-pointer list-none [&::-webkit-details-marker]:hidden`}>
+            Ещё {more} {pluralRu(more, 'работа', 'работы', 'работ')}
+            <ChevronDown size={16} aria-hidden="true" className="group-open:rotate-180" />
+          </summary>
+          <div className="mt-3 grid gap-x-8 gap-y-5 sm:grid-cols-2">
+            {highlights.slice(2).map(highlight => <HighlightCard key={highlight.id} highlight={highlight} />)}
+          </div>
+        </details>
+      ) : null}
     </section>
   )
 }

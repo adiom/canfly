@@ -1,4 +1,4 @@
-import type { ReleaseBlock } from '@/lib/release-design'
+import type { ReleaseBlock, ReleaseHeroArtMode } from '@/lib/release-design'
 
 export type ReleaseStatus = 'draft' | 'published' | 'archived'
 export type EditionStatus = 'draft' | 'published' | 'archived'
@@ -25,6 +25,7 @@ export interface ReleaseDesignConfig {
   text_color?: string
   hero_style?: HeroStyle
   hero_overlay?: HeroOverlay
+  hero_art?: ReleaseHeroArtMode
   layout?: ReleaseLayout
   show_toc?: boolean
   show_characters?: boolean

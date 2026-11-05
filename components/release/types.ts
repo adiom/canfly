@@ -13,6 +13,8 @@ export type ReleaseCharacter = {
   name: string
   slug: string
   avatar: string | null
+  bio: string | null
+  canChat: boolean
   role: string
 }
 

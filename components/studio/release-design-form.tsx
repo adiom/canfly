@@ -7,9 +7,10 @@ import { ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Release, ReleaseDesignConfig } from '@/lib/releases-types'
 import { updateReleaseDesignAction } from '@/lib/actions/studio'
-import { RELEASE_BLOCK_LABELS, releaseBlockOrder, type ReleaseBlock } from '@/lib/release-design'
+import { RELEASE_BLOCK_LABELS, RELEASE_DESIGN_DEFAULTS, releaseBlockOrder, type ReleaseBlock } from '@/lib/release-design'
 import { useUnsavedReleaseChanges } from '@/components/studio/use-unsaved-release-changes'
 import { ReleaseSaveBar } from '@/components/studio/release-save-bar'
+import { ReleaseHeroArt } from '@/components/release/release-hero-art'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -22,15 +23,10 @@ import {
 } from '@/components/ui/select'
 
 const defaultConfig: Required<ReleaseDesignConfig> = {
+  ...RELEASE_DESIGN_DEFAULTS,
   block_order: releaseBlockOrder(),
   hidden_blocks: [],
   cover_fit: 'cover',
-  accent_color: '#d52525',
-  bg_color: '#111210',
-  text_color: '#f4efe5',
-  hero_style: 'full',
-  hero_overlay: 'gradient',
-  layout: 'narrow',
   show_toc: true,
   show_characters: true,
   show_series: true,
@@ -38,8 +34,8 @@ const defaultConfig: Required<ReleaseDesignConfig> = {
 
 const presets: { label: string; config: ReleaseDesignConfig }[] = [
   {
-    label: 'canfly (default)',
-    config: { accent_color: '#d52525', bg_color: '#111210', text_color: '#f4efe5', hero_style: 'full', hero_overlay: 'gradient', layout: 'narrow', show_toc: true, show_characters: true, show_series: true },
+    label: 'Canfly',
+    config: defaultConfig,
   },
   {
     label: 'Тёмный минимал',
@@ -56,6 +52,7 @@ const presets: { label: string; config: ReleaseDesignConfig }[] = [
 ]
 
 const heroLabels = { full: 'Полный', centered: 'По центру', minimal: 'Минимальный' }
+const artLabels = { none: 'Без графики', svg: 'Линии SVG', canvas: 'Линии Canvas' }
 const overlayLabels = { dark: 'Тёмное', gradient: 'Градиент', none: 'Без затемнения' }
 const layoutLabels = { wide: 'Широкая', narrow: 'Узкая', sidebar: 'С боковой колонкой' }
 const colorFields = [
@@ -120,9 +117,10 @@ export function ReleaseDesignForm({ release, preview = release }: { release: Rel
   const accent = validColor('accent_color')
   const background = validColor('bg_color')
   const text = validColor('text_color')
+  const art = config.hero_style !== 'minimal' && config.hero_art !== 'none' ? config.hero_art : null
 
   return (
-    <form onSubmit={save} aria-label="Оформление релиза" aria-busy={saving}>
+    <form onSubmit={save} aria-label="Оформление релиза" aria-busy={saving} className="release-design-editor">
       <div className="paper-section-heading">
         <div><h2>Оформление</h2><p className="paper-help">Как читатели увидят страницу релиза.</p></div>
       </div>
@@ -134,12 +132,17 @@ export function ReleaseDesignForm({ release, preview = release }: { release: Rel
         </div>
         <div className="paper-preview mx-auto" data-hero={config.hero_style} data-layout={config.layout} style={{ backgroundColor: background, color: text, maxWidth: viewport === 'mobile' ? 360 : undefined }}>
           <div className="paper-preview-hero">
-            {preview.cover_image && config.hero_style !== 'minimal' && (
-              <div className="paper-preview-cover">
-                <Image src={preview.cover_image} alt="" fill sizes="(max-width: 440px) 240px, 740px" className={config.cover_fit === 'contain' ? 'object-contain' : 'object-cover'} unoptimized />
-                {config.hero_overlay !== 'none' && <span className="absolute inset-0" style={{ background: config.hero_overlay === 'dark' ? 'rgba(0, 0, 0, 0.5)' : `linear-gradient(to bottom, transparent, ${background})` }} />}
+            {config.hero_style !== 'minimal' && (preview.cover_image || art) ? (
+              <div className="paper-preview-cover isolate" style={{ backgroundColor: `color-mix(in srgb, ${background} 68%, #6a9ab8)` }}>
+                {art ? <ReleaseHeroArt mode={art} interactive={false} /> : null}
+                {preview.cover_image ? (
+                  <div className="absolute inset-[12%]">
+                    <Image src={preview.cover_image} alt="" fill sizes="(max-width: 440px) 100px, 160px" className={config.cover_fit === 'contain' ? 'object-contain' : 'object-cover'} unoptimized />
+                    {config.hero_overlay !== 'none' ? <span className="absolute inset-0" style={{ background: config.hero_overlay === 'dark' ? 'rgba(0, 0, 0, 0.5)' : `linear-gradient(to bottom, transparent, ${background})` }} /> : null}
+                  </div>
+                ) : null}
               </div>
-            )}
+            ) : null}
             <div className="paper-preview-copy">
               <span className="paper-preview-eyebrow" style={{ color: accent }}>canfly · релиз</span>
               <h3>{preview.title || 'Без названия'}</h3>
@@ -161,7 +164,7 @@ export function ReleaseDesignForm({ release, preview = release }: { release: Rel
               setError(null)
             }}>
               <span className="paper-preset-swatch" style={{ background: preset.config.bg_color, borderLeftColor: preset.config.accent_color, color: preset.config.text_color }} aria-hidden="true">Aa</span>
-              <span>{preset.label === 'canfly (default)' ? 'canfly' : preset.label}</span>
+              <span>{preset.label}</span>
             </Button>
           ))}
         </div>
@@ -195,6 +198,14 @@ export function ReleaseDesignForm({ release, preview = release }: { release: Rel
                   <SelectContent className="paper-theme paper-select">{Object.entries(overlayLabels).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
+            </div>
+            <div className="paper-field">
+              <Label htmlFor="release-hero-art">Графика первого экрана</Label>
+              <Select value={config.hero_art} disabled={config.hero_style === 'minimal'} onValueChange={value => update('hero_art', value as keyof typeof artLabels)}>
+                <SelectTrigger id="release-hero-art"><SelectValue /></SelectTrigger>
+                <SelectContent className="paper-theme paper-select">{Object.entries(artLabels).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
+              </Select>
+              <p className="paper-help">Линии отображаются статично. Читатель может запустить движение.</p>
             </div>
             <div className="paper-field">
               <Label htmlFor="release-design-layout">Ширина и структура</Label>

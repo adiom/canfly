@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { RELEASE_BLOCKS } from '@/lib/release-design'
+import { RELEASE_BLOCKS, RELEASE_HERO_ART } from '@/lib/release-design'
 
 /**
  * Zod-схемы для Studio server actions (release / edition / chapter / series).
@@ -67,6 +67,7 @@ export const releaseDesignSchema = z.object({
   text_color: designColor,
   hero_style: z.enum(['full', 'centered', 'minimal']),
   hero_overlay: z.enum(['dark', 'gradient', 'none']),
+  hero_art: z.enum(RELEASE_HERO_ART),
   layout: z.enum(['wide', 'narrow', 'sidebar']),
   show_toc: z.boolean(),
   show_characters: z.boolean(),
