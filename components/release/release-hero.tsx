@@ -19,6 +19,7 @@ type ReleaseHeroProps = {
 
 export function ReleaseHero({ release, editions, primaryEditionSlug, seriesLink, meta, preview }: ReleaseHeroProps) {
   const config = release.design_config ?? {}
+  const heroStyle = config.hero_style ?? 'full'
   const annotation = release.annotation || release.description
   const accent = config.accent_color ?? defaultConfig.accent_color!
   const published = editions.filter(e => e.status === 'published')
@@ -36,22 +37,28 @@ export function ReleaseHero({ release, editions, primaryEditionSlug, seriesLink,
   }
 
   return (
-    <section className="mx-auto max-w-6xl px-5 pt-10 pb-12 md:px-8 md:pt-16 md:pb-20">
-      <div className={config.hero_style === 'centered'
-        ? 'mx-auto grid max-w-3xl items-start gap-8 [&>div]:mx-auto [&>div]:text-center'
-        : 'grid items-start gap-8 md:grid-cols-[minmax(0,280px)_minmax(0,1fr)] md:gap-14 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)]'}>
-        <div className="mx-auto w-48 sm:w-56 md:mx-0 md:w-full">
+    <section className="release-container mx-auto max-w-6xl px-5 pt-10 pb-12 md:px-8 md:pt-16 md:pb-20" data-release-hero={heroStyle}>
+      <div className={heroStyle === 'centered'
+        ? 'mx-auto grid max-w-3xl items-start gap-8 text-center'
+        : heroStyle === 'minimal'
+          ? 'mx-auto max-w-4xl'
+          : 'grid items-start gap-8 md:grid-cols-[minmax(0,280px)_minmax(0,1fr)] md:gap-14 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)]'}>
+        {heroStyle !== 'minimal' && <div className={heroStyle === 'centered' ? 'mx-auto w-48 sm:w-56' : 'mx-auto w-48 sm:w-56 md:mx-0 md:w-full'}>
           <div className="relative aspect-[2/3] overflow-hidden rounded-sm shadow-2xl ring-1 ring-cf-text-1/8">
             {release.cover_image ? (
-              <Image src={release.cover_image} alt={release.title} fill sizes="(max-width: 768px) 192px, 320px" className={config.cover_fit === 'contain' ? 'object-contain' : 'object-cover'} priority />
+              <>
+                <Image src={release.cover_image} alt={release.title} fill sizes="(max-width: 768px) 192px, 320px" className={config.cover_fit === 'contain' ? 'object-contain' : 'object-cover'} priority />
+                {config.hero_overlay === 'dark' && <span className="absolute inset-0 bg-black/45" aria-hidden="true" />}
+                {config.hero_overlay === 'gradient' && <span className="absolute inset-0 bg-gradient-to-t from-cf-bg/75 via-transparent to-transparent" aria-hidden="true" />}
+              </>
             ) : (
               <div className="flex h-full w-full items-center justify-center bg-cf-bg-2"><BookOpen className="h-12 w-12 text-cf-text-3 opacity-20" /></div>
             )}
           </div>
-        </div>
+        </div>}
 
-        <div className="flex min-w-0 flex-col text-center md:text-left">
-          <div className="mb-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[10px] font-black uppercase tracking-[0.22em] md:justify-start">
+        <div className={`flex min-w-0 flex-col text-center ${heroStyle === 'centered' ? '' : 'md:text-left'}`}>
+          <div className={`mb-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[10px] font-black uppercase tracking-[0.22em] ${heroStyle === 'centered' ? '' : 'md:justify-start'}`}>
             {release.genre && <span style={{ color: accent }}>{release.genre}</span>}
             {config.show_series !== false && seriesLink && (
               <span className="flex items-center gap-1.5 text-cf-text-3">
@@ -66,7 +73,7 @@ export function ReleaseHero({ release, editions, primaryEditionSlug, seriesLink,
           <h1 className="font-[family-name:var(--font-cormorant)] text-[clamp(2.25rem,10vw,3.75rem)] font-bold italic leading-[0.88] text-cf-text-heading [overflow-wrap:anywhere] sm:text-7xl md:text-8xl lg:text-[6.5rem]">{release.title}</h1>
           {release.authors.length > 0 && <p className="mt-4 text-base text-cf-text-2 md:text-lg">{release.authors.map(a => a.name).join(', ')}</p>}
           {metaItems.length > 0 && (
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-x-2 text-xs text-cf-text-3 md:justify-start">
+            <div className={`mt-4 flex flex-wrap items-center justify-center gap-x-2 text-xs text-cf-text-3 ${heroStyle === 'centered' ? '' : 'md:justify-start'}`}>
               {metaItems.map((item, i) => <span key={item} className="tabular-nums">{i > 0 && <span className="mr-2 opacity-40">·</span>}{item}</span>)}
             </div>
           )}
@@ -79,7 +86,7 @@ export function ReleaseHero({ release, editions, primaryEditionSlug, seriesLink,
             </ul>
           )}
           {!preview && published.length > 0 && (
-            <div className="mt-8 flex flex-wrap items-center justify-center gap-3 md:justify-start">
+            <div className={`mt-8 flex flex-wrap items-center justify-center gap-3 ${heroStyle === 'centered' ? '' : 'md:justify-start'}`}>
               {sortedEditions.map(edition => {
                 const isDigital = isDigitalFormat(edition.format)
                 const primary = edition.id === primaryEdition?.id

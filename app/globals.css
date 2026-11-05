@@ -214,6 +214,33 @@
   --color-ring: var(--cf-accent);
 }
 
+/* Настройки композиции публичного Release из Studio. */
+.release-content[data-release-layout='wide'] .release-container { max-width: 88rem; }
+.release-content[data-release-layout='narrow'] .release-container { max-width: 64rem; }
+.release-content[data-release-layout='sidebar'] .release-container { max-width: 76rem; }
+.release-content[data-release-layout='sidebar'] .release-body {
+  display: grid;
+  grid-template-columns: minmax(11rem, 15rem) minmax(0, 1fr);
+  align-items: start;
+  gap: clamp(1.5rem, 4vw, 4rem);
+}
+.release-content[data-release-layout='sidebar'] .release-world-nav {
+  position: sticky;
+  top: 5.5rem;
+}
+.release-content[data-release-layout='sidebar'] .release-world-nav nav {
+  flex-direction: column;
+  align-items: flex-start;
+}
+.release-content[data-release-layout='sidebar'] .release-body[data-release-toc='false'] {
+  display: block;
+}
+@media (max-width: 767px) {
+  .release-content[data-release-layout='sidebar'] .release-body { display: block; }
+  .release-content[data-release-layout='sidebar'] .release-world-nav { position: static; }
+  .release-content[data-release-layout='sidebar'] .release-world-nav nav { flex-direction: row; }
+}
+
 @keyframes cf-artifact-in {
   from { transform: scale(0.88); opacity: 0; }
   to   { transform: scale(1);    opacity: 1; }

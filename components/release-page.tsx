@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import type { CSSProperties } from 'react'
 import type { ReleasePagePublicProps } from '@/components/release/types'
 import { SiteFooter } from '@/components/site-footer'
 import { SiteHeader } from '@/components/site-header'
@@ -14,6 +15,12 @@ import { ReleaseSeries } from './release/release-series'
 interface BreadcrumbItem {
   label: string
   url: string
+}
+
+const HEX_COLOR_PATTERN = /^#[\da-f]{6}$/i
+
+function getReleaseColor(value: string | undefined, fallback: string) {
+  return HEX_COLOR_PATTERN.test(value ?? '') ? value! : fallback
 }
 
 function DraftBanner({ releaseId, viewerCanEdit }: { releaseId: string; viewerCanEdit: boolean }) {
@@ -59,7 +66,24 @@ export function ReleasePagePublic({
   viewerCanEdit = false,
 }: ReleasePagePublicProps & { breadcrumbs: BreadcrumbItem[] }) {
   const config = release.design_config ?? {}
-  const accent = config.accent_color ?? '#d52525'
+  const accent = getReleaseColor(config.accent_color, '#d52525')
+  const background = getReleaseColor(config.bg_color, '#f4efe5')
+  const text = getReleaseColor(config.text_color, '#111210')
+  const designStyle = {
+    '--cf-bg': background,
+    '--cf-bg-2': `color-mix(in srgb, ${background} 92%, ${text})`,
+    '--cf-footer-bg': `color-mix(in srgb, ${background} 86%, ${text})`,
+    '--cf-text-1': text,
+    '--cf-text-2': `color-mix(in srgb, ${text} 82%, ${background})`,
+    '--cf-text-3': `color-mix(in srgb, ${text} 64%, ${background})`,
+    '--cf-text-4': `color-mix(in srgb, ${text} 48%, ${background})`,
+    '--cf-text-heading': text,
+    '--cf-text-caption': `color-mix(in srgb, ${text} 78%, ${background})`,
+    '--cf-accent': accent,
+    '--cf-accent-hover': `color-mix(in srgb, ${accent} 82%, ${text})`,
+    '--cf-warm': accent,
+    '--cf-air-accent': accent,
+  } as CSSProperties
   const publishedEditions = editions.filter(edition => edition.status === 'published')
   const blocks = {
     characters: config.show_characters !== false && characters.length > 0 && <ReleaseCharacters characters={characters} />,
@@ -88,7 +112,7 @@ export function ReleasePagePublic({
   const readerEdition = !preview && editions.find(edition => edition.format === 'book' || edition.format === 'magazine')
 
   return (
-    <div className="min-h-screen bg-cf-bg text-cf-text-1">
+    <div className="release-surface min-h-screen bg-cf-bg text-cf-text-1" style={designStyle}>
       <SiteHeader activePath={CATALOG_PATH} />
       <div className="mx-auto max-w-6xl px-5 pt-4 md:px-8">
         <Breadcrumbs items={breadcrumbs} />
@@ -98,7 +122,7 @@ export function ReleasePagePublic({
         <DraftBanner releaseId={release.id} viewerCanEdit={viewerCanEdit} />
       )}
 
-      <main>
+      <main className="release-content" data-release-layout={config.layout ?? 'narrow'}>
       <ReleaseHero
         release={release}
         editions={editions}
@@ -108,27 +132,36 @@ export function ReleasePagePublic({
         preview={preview === 'draft'}
       />
 
-      {visibleBlocks.length > 0 && (
-        <div id="release-world" className="mx-auto max-w-6xl px-5 pb-7 md:px-8">
-          <h2 className="font-serif text-3xl text-cf-text-heading">Мир произведения</h2>
-          <nav aria-label="Разделы мира произведения" className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm">
-            {visibleBlocks.map(block => <a key={block} className="underline underline-offset-4" href={`#release-${block}`}>{RELEASE_BLOCK_LABELS[block]}</a>)}
-          </nav>
-        </div>
-      )}
-      {visibleBlocks.map(block => <div key={block} id={`release-${block}`} className="scroll-mt-24">{blocks[block]}</div>)}
-      {readerEdition && !config.hidden_blocks?.includes('highlights') && (
-        <section className="mx-auto max-w-6xl px-5 py-10 md:px-8" aria-labelledby="release-create-title">
-          <div className="rounded-xl border border-cf-text-1/10 bg-cf-bg-2 p-5 md:p-8">
-            <h2 id="release-create-title" className="font-serif text-3xl text-cf-text-heading">Создайте свою интерпретацию</h2>
-            <p className="mt-2 text-sm text-cf-text-2">Откройте произведение в VVVVV, выделите фрагмент, создайте работу и поделитесь ею со ссылкой на источник.</p>
-            <Link href={`/vvvvv/${readerEdition.slug}`} className="mt-4 inline-flex min-h-11 items-center font-bold underline underline-offset-4">Перейти к чтению</Link>
+      {(visibleBlocks.length > 0 || readerEdition) && (
+        <div
+          className="release-body release-container mx-auto max-w-6xl px-5 pb-10 md:px-8"
+          data-release-toc={config.show_toc !== false && visibleBlocks.length > 0}
+        >
+          {config.show_toc !== false && visibleBlocks.length > 0 && (
+            <aside id="release-world" className="release-world-nav pb-7">
+              <h2 className="font-serif text-3xl text-cf-text-heading">Мир произведения</h2>
+              <nav aria-label="Разделы мира произведения" className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm">
+                {visibleBlocks.map(block => <a key={block} className="underline underline-offset-4" href={`#release-${block}`}>{RELEASE_BLOCK_LABELS[block]}</a>)}
+              </nav>
+            </aside>
+          )}
+          <div className="min-w-0">
+            {visibleBlocks.map(block => <div key={block} id={`release-${block}`} className="scroll-mt-24">{blocks[block]}</div>)}
+            {readerEdition && !config.hidden_blocks?.includes('highlights') && (
+              <section className="py-10" aria-labelledby="release-create-title">
+                <div className="rounded-xl border border-cf-text-1/10 bg-cf-bg-2 p-5 md:p-8">
+                  <h2 id="release-create-title" className="font-serif text-3xl text-cf-text-heading">Создайте свою интерпретацию</h2>
+                  <p className="mt-2 text-sm text-cf-text-2">Откройте произведение в VVVVV, выделите фрагмент, создайте работу и поделитесь ею со ссылкой на источник.</p>
+                  <Link href={`/vvvvv/${readerEdition.slug}`} className="mt-4 inline-flex min-h-11 items-center font-bold underline underline-offset-4">Перейти к чтению</Link>
+                </div>
+              </section>
+            )}
           </div>
-        </section>
+        </div>
       )}
 
       {!preview && !publishedEditions.length && (
-        <div className="mx-auto max-w-6xl px-5 pb-24 md:px-8">
+        <div className="release-container mx-auto max-w-6xl px-5 pb-24 md:px-8">
           <div className="border-t border-cf-text-1/10 py-16 text-center text-cf-text-3">
             Пока нет доступных изданий
           </div>

@@ -192,6 +192,13 @@ test.describe('studio: paper release editor', () => {
     const stored = await withDb(async client => (await client.query('SELECT *, release_date::text AS date_text FROM releases WHERE id = $1', [releaseId])).rows[0])
     expect(stored).toMatchObject({ title: `${title} — правки`, status: 'published', authors, date_text: '2026-03-10', editor_notes: 'Личная заметка редактора', isbn: '978-1-234-56789-7', show_in_catalog: false })
     expect(stored.design_config).toMatchObject({ accent_color: '#28637a', layout: 'sidebar', show_series: false })
+    await page.goto(`/release/${slug}-saved`)
+    const releaseSurface = page.locator('.release-surface')
+    await expect(releaseSurface).toHaveCSS('background-color', 'rgb(244, 239, 229)')
+    await expect(releaseSurface).toHaveCSS('color', 'rgb(17, 18, 16)')
+    await expect(page.locator('.release-content')).toHaveAttribute('data-release-layout', 'sidebar')
+    await expect(page.locator('[data-release-hero]')).toHaveAttribute('data-release-hero', 'centered')
+    await expect.poll(() => releaseSurface.evaluate(element => getComputedStyle(element).getPropertyValue('--cf-accent').trim())).toBe('#28637a')
     expect(errors).toEqual([])
   })
 
