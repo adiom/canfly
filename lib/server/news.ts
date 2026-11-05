@@ -21,6 +21,15 @@ export async function fetchNewsPosts(limit = 3) {
   )
 }
 
+/** Даты и адреса опубликованных материалов для sitemap без искусственного лимита. */
+export async function fetchPublishedNewsForSitemap() {
+  return dbQuery<Pick<NewsPost, 'slug' | 'updated_at' | 'published_at' | 'created_at'>>(
+    `SELECT slug, updated_at, published_at, created_at FROM news_posts
+     WHERE status = 'published'
+     ORDER BY published_at DESC NULLS LAST, created_at DESC`,
+  )
+}
+
 export async function listAdminNewsPosts() {
   return dbQuery<NewsPost>(
     `SELECT ${newsColumns} FROM news_posts ORDER BY updated_at DESC`,

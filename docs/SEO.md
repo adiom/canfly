@@ -184,3 +184,11 @@ curl http://localhost:3000/sitemap.xml
 # Проверить OG-генератор (должен быть 200)
 curl -sS -o /dev/null -w "%{http_code}" http://localhost:3000/opengraph-image
 ```
+
+## Проверки аудита (5 ноября 2026)
+
+Canonical /releases сохраняет query-параметры каталога. Sitemap обновляется раз в пять минут, содержит все опубликованные новости и исключает серии без опубликованных релизов. Пустые страницы серии остаются доступными, но получают noindex и не включаются в карту.
+
+Read-only аудит локального, preview или production-сайта: node scripts/seo-audit.mjs https://canfly.org --format=json. Скрипт обходит sitemap index, проверяет HTTP-статусы, canonical, robots, title, description, JSON-LD и дубликаты URL. Запросы ограничены origin сайта; внешний redirect не обходится. Полный HTML учитывает streaming metadata Next.js.
+
+Проверяй sitemap, robots и изменённые URL после деплоя. Аудит не читает Search Console и Яндекс Вебмастер.

@@ -162,6 +162,57 @@ test.describe('buildMetadata', () => {
 })
 
 test.describe('SEO reader', () => {
+  test('каталог сохраняет страницу и query при canonical и пагинации', async ({ page }) => {
+    await page.goto('/releases?page=2', { waitUntil: 'domcontentloaded' })
+    await expect(page).toHaveURL(/\/releases(?:\?.*)?$/)
+    const current = new URL(page.url())
+    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', current.toString())
+  })
+
+  test('публичная игра отдаёт title, description и собственный canonical', async ({ page }) => {
+    const path = '/games/still-road'
+    const response = await page.goto(path, { waitUntil: 'domcontentloaded' })
+    expect(response?.status(), path).toBe(200)
+    await expect(page).toHaveTitle(/.+/)
+    expect(await metaContent(page, 'description')).toBeTruthy()
+    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', absoluteUrl(path))
+  })
+
+  test('несуществующий релиз остаётся 404 и закрыт от индексации', async ({ page }) => {
+    const response = await page.goto('/release/seo-missing-regression-slug', { waitUntil: 'domcontentloaded' })
+    expect(response?.status()).toBe(404)
+    expect(await metaContent(page, 'robots')).toContain('noindex')
+  })
+
+  test('legacy books URL сохраняет постоянный редирект в каталог', async ({ request }) => {
+    const response = await request.get('/books', { maxRedirects: 0 })
+    expect(response.status()).toBe(301)
+    expect(response.headers().location).toMatch(/\/releases\/?$/)
+  })
+
+  test('sitemap содержит уникальные HTTPS URL и метаданные каталога имеют верный canonical', async ({ page, request }) => {
+    const response = await request.get('/sitemap.xml')
+    expect(response.status()).toBe(200)
+    const xml = await response.text()
+    const urls = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map(match => match[1])
+    expect(urls.every(url => url.startsWith('https://'))).toBeTruthy()
+    expect(new Set(urls).size).toBe(urls.length)
+
+    await page.goto('/releases?category=book', { waitUntil: 'domcontentloaded' })
+    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+      'href',
+      absoluteUrl('/releases?category=book'),
+    )
+  })
+
+  test('фильтр аудиорелизов сохраняет категорию в canonical', async ({ page }) => {
+    await page.goto('/releases?category=audiorelease', { waitUntil: 'domcontentloaded' })
+    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+      'href',
+      absoluteUrl('/releases?category=audiorelease'),
+    )
+  })
+
   test('sitemap сохраняет лендинг, но не содержит reader-страниц', async ({ request }) => {
     const response = await request.get('/sitemap.xml')
     expect(response.status()).toBe(200)

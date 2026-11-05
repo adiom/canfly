@@ -16,6 +16,7 @@ const VALID_CATEGORIES: (EditionFormat | 'all')[] = [
   'comic',
   'book',
   'audiobook',
+  'audiorelease',
   'magazine',
   'album',
   'digital',
@@ -49,12 +50,12 @@ function parseParams(searchParams: {
 }
 
 /** Адрес каталога без query-параметров — без хвоста `/`. */
-function catalogUrl(category: EditionFormat | 'all', page: number, base = ''): string {
+function catalogUrl(category: EditionFormat | 'all', page: number): string {
   const params = new URLSearchParams()
   if (category !== 'all') params.set('category', category)
   if (page > 1) params.set('page', String(page))
   const qs = params.toString()
-  return qs ? `${base}/?${qs}` : base || '/releases'
+  return qs ? `/releases?${qs}` : '/releases'
 }
 
 export async function generateMetadata({
