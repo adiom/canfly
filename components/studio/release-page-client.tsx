@@ -9,7 +9,6 @@ import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CoverImageUploader } from '@/components/studio/cover-image-uploader'
 import { EditionCard } from '@/components/studio/edition-card'
-import { ReleaseDesignForm } from '@/components/studio/release-design-form'
 import { ReleaseCharactersSection } from '@/components/studio/release-characters-section'
 import { ReleaseDetailsForm } from '@/components/studio/release-details-form'
 import { ReleasePublicationMenu } from '@/components/studio/release-publication-menu'
@@ -21,7 +20,6 @@ const SECTIONS = [
   { value: 'main', label: 'Основное' },
   { value: 'editions', label: 'Издания' },
   { value: 'characters', label: 'Связи' },
-  { value: 'design', label: 'Оформление' },
   { value: 'readiness', label: 'Готовность' },
 ] as const
 
@@ -123,9 +121,6 @@ export function ReleasePageClient({ release, editions, series, releaseSeries, ch
                 <p className="paper-help mt-5">Серия и номер фазы настраиваются в меню публикации.</p>
               </>
             )}
-          </TabsContent>
-          <TabsContent value="design" forceMount hidden={activeSection !== 'design'} className="paper-sheet">
-            {visited.includes('design') && <ReleaseDesignForm release={release} preview={form.draft} />}
           </TabsContent>
           <TabsContent value="readiness" className="paper-sheet">
             <ReleaseReadiness release={release} draft={form.draft} editions={editions} chapterCounts={chapterCounts}

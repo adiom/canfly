@@ -8,10 +8,10 @@ export function getReleaseMetadata(release: Release) {
     title: draft ? `${release.title} · черновик | canfly` : `${release.title} | canfly`,
     description: draft
       ? `Черновик «${release.title}» — предпросмотр для команды релиза.`
-      : release.description ?? release.annotation ?? `«${release.title}» на canfly`,
+      : release.annotation || release.description || `«${release.title}» на canfly`,
     path: `/release/${release.slug}`,
     generatedImage: true,
-    ogType: 'book',
+    ogType: 'website',
     publishedTime: draft ? undefined : release.release_date ?? release.created_at,
     modifiedTime: draft ? undefined : release.updated_at,
     noindex: draft,
