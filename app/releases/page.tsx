@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { cache } from 'react'
 import { redirect } from 'next/navigation'
 import { fetchReleasesPage } from '@/lib/server/releases'
 import type { EditionFormat } from '@/lib/releases-types'
@@ -24,6 +25,15 @@ const VALID_CATEGORIES: (EditionFormat | 'all')[] = [
 ]
 
 const PAGE_SIZE = 24
+
+const getCatalogData = cache((category: EditionFormat | 'all', page: number) =>
+  fetchReleasesPage({
+    status: 'published',
+    format: category,
+    page,
+    pageSize: PAGE_SIZE,
+  }),
+)
 
 interface ReleasesPageProps {
   searchParams: Promise<{
@@ -63,6 +73,7 @@ export async function generateMetadata({
 }: ReleasesPageProps): Promise<Metadata> {
   const sp = await searchParams
   const { category, page } = parseParams(sp)
+  const data = await getCatalogData(category, page)
 
   const CATEGORY_LABELS: Record<EditionFormat | 'all', string> = {
     all: '',
@@ -91,6 +102,7 @@ export async function generateMetadata({
     title,
     description,
     path: catalogUrl(category, page),
+    noindex: data.total === 0,
   })
 }
 
@@ -98,12 +110,7 @@ export default async function HomeCatalogPage({ searchParams }: ReleasesPageProp
   const sp = await searchParams
   const { category, page } = parseParams(sp)
 
-  const data = await fetchReleasesPage({
-    status: 'published',
-    format: category,
-    page,
-    pageSize: PAGE_SIZE,
-  })
+  const data = await getCatalogData(category, page)
 
   if (page > data.totalPages) {
     redirect(catalogUrl(category, data.totalPages))
@@ -134,3 +141,4 @@ export default async function HomeCatalogPage({ searchParams }: ReleasesPageProp
     </>
   )
 }
+
