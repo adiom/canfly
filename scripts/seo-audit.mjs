@@ -1,3 +1,6 @@
+import { resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
+
 /**
  * Read-only SEO audit of a local, staging, or production deployment.
  * Usage: node scripts/seo-audit.mjs https://canfly.org [--limit=20] [--format=json|text|both]
@@ -43,11 +46,40 @@ function canonical(html) {
   return tag ? getAttribute(tag, 'href') : null
 }
 
+export function classifyStatus(status, { inSitemap = true } = {}) {
+  if (status >= 500) return 'server-error'
+  if (status >= 400) {
+    if (!inSitemap && (status === 404 || status === 410)) return 'expected-missing'
+    return 'client-error'
+  }
+  if (status >= 300) return 'redirect'
+  if (status >= 200) return 'ok'
+  return 'unexpected'
+}
+
+export function inspectCanonical(href, pageUrl, baseUrl) {
+  if (!href) return { canonicalUrl: null, issues: ['нет canonical'] }
+  try {
+    const canonicalUrl = new URL(href, pageUrl)
+    const expectedUrl = new URL(pageUrl)
+    const matchesPath = canonicalUrl.pathname === expectedUrl.pathname && canonicalUrl.search === expectedUrl.search
+    const previewProductionCanonical = new URL(baseUrl).hostname.endsWith('.vercel.app') && canonicalUrl.origin === 'https://canfly.org'
+    const sameAllowedOrigin = canonicalUrl.origin === new URL(baseUrl).origin || previewProductionCanonical
+    const issues = []
+    if (!sameAllowedOrigin) issues.push(`canonical вне проверяемого домена: ${canonicalUrl.origin}`)
+    if (!matchesPath || !sameAllowedOrigin) issues.push(`canonical не совпадает с URL sitemap: ${canonicalUrl.href}`)
+    return { canonicalUrl: canonicalUrl.href, issues }
+  } catch {
+    return { canonicalUrl: null, issues: [`canonical некорректен: ${href}`] }
+  }
+}
+
 function statusIssue(url, status, redirectTo) {
   const item = { url, status, ...(redirectTo ? { redirectTo } : {}) }
   results.push(item)
-  if (status >= 400) errors.push(`${url}: HTTP ${status}`)
-  else if (status >= 300 && status < 400) warnings.push(`${url}: HTTP ${status}${redirectTo ? ` → ${redirectTo}` : ''}`)
+  const category = classifyStatus(status, { inSitemap: true })
+  if (category === 'client-error' || category === 'server-error' || category === 'unexpected') errors.push(`${url}: HTTP ${status}`)
+  else if (category === 'redirect') warnings.push(`${url}: HTTP ${status}${redirectTo ? ` → ${redirectTo}` : ''}`)
 }
 
 async function getSameOrigin(url) {
@@ -68,7 +100,7 @@ async function getSameOrigin(url) {
   throw new Error('слишком много редиректов')
 }
 
-function sitemapLocs(xml, index = false) {
+export function sitemapLocs(xml, index = false) {
   const itemTag = index ? 'sitemap' : 'url'
   return [...xml.matchAll(new RegExp(`<${itemTag}\\b[^>]*>([\\s\\S]*?)<\\/${itemTag}>`, 'gi'))]
     .map(([, item]) => /<loc\b[^>]*>([\s\S]*?)<\/loc>/i.exec(item)?.[1])
@@ -143,28 +175,8 @@ function checkHtml(url, html, status) {
   const robots = [getMeta(html, 'robots'), getMeta(html, 'googlebot')].filter(Boolean).join(', ')
   if (/noindex/i.test(robots)) issues.push(`URL из sitemap закрыт от индексации (${robots})`)
 
-  const href = canonical(html)
-  if (!href) issues.push('нет canonical')
-  else {
-    try {
-      const canonicalUrl = new URL(href, url)
-      const expectedUrl = new URL(url)
-      const canonicalMatchesExpectedPath =
-        canonicalUrl.pathname === expectedUrl.pathname && canonicalUrl.search === expectedUrl.search
-      const isProductionCanonicalForPreview =
-        baseUrl.hostname.endsWith('.vercel.app') &&
-        canonicalUrl.origin === 'https://canfly.org' &&
-        canonicalMatchesExpectedPath
-      if (canonicalUrl.origin !== BASE && !isProductionCanonicalForPreview) {
-        issues.push(`canonical вне проверяемого домена: ${canonicalUrl.origin}`)
-      }
-      if (!canonicalMatchesExpectedPath || (!isProductionCanonicalForPreview && canonicalUrl.origin !== BASE)) {
-        issues.push(`canonical не совпадает с URL sitemap: ${canonicalUrl.href}`)
-      }
-    } catch {
-      issues.push(`canonical некорректен: ${href}`)
-    }
-  }
+  const canonicalResult = inspectCanonical(canonical(html), url, BASE)
+  issues.push(...canonicalResult.issues)
 
   const ogUrl = getMeta(html, 'og:url')
   if (ogUrl) {
@@ -281,8 +293,10 @@ async function main() {
   if (errors.length || (strict && warnings.length)) process.exitCode = 1
 }
 
-main().catch(error => {
-  console.error(error.message)
-  process.exitCode = 1
-})
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  main().catch(error => {
+    console.error(error.message)
+    process.exitCode = 1
+  })
+}
 
