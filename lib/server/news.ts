@@ -100,3 +100,4 @@ export async function updateNewsPost(id: string, data: Record<string, unknown>) 
 export async function deleteNewsPost(id: string) {
   await dbQuery('DELETE FROM news_posts WHERE id = $1', [id])
 }
+
