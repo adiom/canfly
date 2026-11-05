@@ -50,7 +50,7 @@ export function ReleaseReadiness({ release, draft, editions, chapterCounts, unav
           <div><dt className="font-semibold">Title</dt><dd>{typeof metadata.title === 'string' ? metadata.title : '—'}</dd></div>
           <div><dt className="font-semibold">Description</dt><dd>{metadata.description ?? '—'}</dd></div>
           <div><dt className="font-semibold">Canonical</dt><dd>{typeof metadata.alternates?.canonical === 'string' ? metadata.alternates.canonical : '—'}</dd></div>
-          <div><dt className="font-semibold">Open Graph</dt><dd>{metadata.openGraph?.title ?? '—'}</dd></div>
+          <div><dt className="font-semibold">Open Graph</dt><dd>{typeof metadata.openGraph?.title === 'string' ? metadata.openGraph.title : '—'}</dd></div>
           <div><dt className="font-semibold">Доступность</dt><dd>{release.status === 'published' ? 'Публичный релиз, допускается индексация' : release.status === 'draft' ? 'Приватный черновик, noindex' : 'Архив, страница закрыта'}</dd></div>
         </dl>
       </details>
