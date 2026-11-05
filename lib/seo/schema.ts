@@ -109,7 +109,7 @@ function releaseAuthors(release: Release) {
 }
 
 /**
- * Одно медиавоплощение внутри `hasPart` релиза.
+ * Одно издание внутри `workExample` произведения.
  *
  * Тип берётся из карты форматов, а не фиксируется как `Book`: комиксы,
  * аудиокниги, журналы и альбомы иначе не размечались вообще.
@@ -136,6 +136,7 @@ function editionExample(
     // isbn — свойство Book, не CreativeWork: на произведении он был невалиден.
     ...(edition.format === 'book' && release.isbn && { isbn: release.isbn }),
     ...(edition.external_url && { sameAs: edition.external_url }),
+    ...(meta && meta.chapterCount > 0 && { numberOfPages: meta.chapterCount }),
     ...(meta && !isAudio && meta.wordCount > 0 && { wordCount: meta.wordCount }),
     ...(meta &&
       !isAudio &&
@@ -159,8 +160,8 @@ function releaseGenres(formats: EditionFormat[], genre: string | null): string[]
 }
 
 /**
- * Релиз остаётся `CreativeWork` — общей творческой идентичностью.
- * Конкретные типы (`Book`, `ComicIssue`, `Audiobook`, …) живут в `hasPart`
+ * Произведение остаётся `CreativeWork` — это абстракция над изданиями.
+ * Конкретные типы (`Book`, `ComicIssue`, `Audiobook`, …) живут в `workExample`
  * и на собственных страницах изданий.
  *
  * Связи с персонажами:
@@ -188,7 +189,7 @@ export function generateReleaseSchema(opts: {
   const url = `${BASE_URL}/release/${release.slug}`
 
   const published = editions.filter(edition => edition.status === 'published')
-  const parts = published.map(edition =>
+  const workExample = published.map(edition =>
     editionExample(
       edition,
       release,
@@ -261,7 +262,7 @@ export function generateReleaseSchema(opts: {
     ...(persons.length > 0 && { character: persons }),
     ...(protagonistNode && { about: protagonistNode }),
     ...(contentLocation && contentLocation.length > 0 && { contentLocation }),
-    ...(parts.length > 0 && { hasPart: parts }),
+    ...(workExample.length > 0 && { workExample }),
     ...(release.view_count > 0 && {
       interactionStatistic: {
         '@type': 'InteractionCounter',
@@ -618,7 +619,8 @@ type AuthorWorkRef = Pick<
  * Страница автора: `ProfilePage` + Person, который «владеет» своими работами.
  * Произведения — ссылочные узлы (только @id, имя и дата), полная разметка
  * лежит на страницах самих релизов. Book ставится, только если основное
- * издание — книга: для комикса/аудио остаётся абстрактный CreativeWork.
+ * Релизы остаются `CreativeWork` независимо от формата изданий; Book описывает
+ * только конкретное издание и размечается на странице Edition.
  */
 export function generateAuthorProfileSchema(
   user: Pick<UserProfile, 'handle' | 'display_name' | 'avatar' | 'bio' | 'tagline' | 'created_at'>,
@@ -628,9 +630,8 @@ export function generateAuthorProfileSchema(
   const base = generateProfilePageSchema(user, undefined, socialLinks)
 
   const hasPart = works.map(work => {
-    const isBook = work.formats?.includes('book')
     return {
-      '@type': isBook ? 'Book' : 'CreativeWork',
+      '@type': 'CreativeWork',
       '@id': ID.work(work.slug),
       name: work.title,
       url: `${BASE_URL}/release/${work.slug}`,
@@ -746,3 +747,4 @@ export function generateWebSiteSchema() {
 export function generateOrganizationSchema() {
   return organizationNode()
 }
+
