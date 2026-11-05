@@ -17,6 +17,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     path: `/series/${series.slug}`,
     ogType: 'website',
     generatedImage: true,
+    noindex: series.releases.length === 0,
   })
 }
 
@@ -40,3 +41,4 @@ export default async function SeriesPageRoute({ params }: { params: Promise<{ sl
     </>
   )
 }
+

@@ -1,6 +1,9 @@
 import { test, expect, type Page } from '@playwright/test'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { buildMetadata } from '@/lib/seo/metadata'
 import { absoluteUrl } from '@/lib/seo/entities'
+import { generateAuthorProfileSchema } from '@/lib/seo/schema'
 import { fetchEditionBySlug } from '@/lib/server/editions'
 import { loadEnvLocal } from './setup/pg'
 
@@ -161,7 +164,113 @@ test.describe('buildMetadata', () => {
   })
 })
 
+test.describe('Release schema', () => {
+  test('авторский профиль размечает произведение как CreativeWork при книжном формате', () => {
+    const profile = generateAuthorProfileSchema(
+      {
+        handle: 'seo-test',
+        display_name: 'SEO Test',
+        avatar: null,
+        bio: null,
+        tagline: null,
+        created_at: '2026-01-01T00:00:00.000Z',
+      },
+      [{ slug: 'seo-test-work', title: 'SEO Work', cover_image: null, release_date: null, formats: ['book'] }],
+    ) as { hasPart?: Array<Record<string, unknown>> }
+
+    expect(profile.hasPart?.[0]?.['@type']).toBe('CreativeWork')
+  })
+})
+
+test.describe('Static game SEO', () => {
+  test('STILL ROAD declares its canonical, description, resource base and VideoGame schema', () => {
+    const html = readFileSync(join(process.cwd(), 'public/games/still-road/index.html'), 'utf8')
+    const jsonLd = /<script type="application\/ld\+json">([\s\S]*?)<\/script>/i.exec(html)?.[1]
+
+    expect(html).toContain('<base href="/games/still-road/">')
+    expect(html).toContain('name="description"')
+    expect(html).toContain('rel="canonical" href="https://canfly.org/games/still-road"')
+    expect(jsonLd).toBeTruthy()
+    expect(JSON.parse(jsonLd!)['@type']).toBe('VideoGame')
+  })
+})
+
 test.describe('SEO reader', () => {
+  test('каталог сохраняет страницу и query при canonical и пагинации', async ({ page }) => {
+    await page.goto('/releases', { waitUntil: 'domcontentloaded' })
+    const nextPage = page.locator('nav[aria-label="Пагинация"] a[aria-label="Следующая страница"]')
+    test.skip(!(await nextPage.count()), 'в тестовой БД нет второй страницы каталога')
+
+    const href = await nextPage.getAttribute('href')
+    expect(href).toBeTruthy()
+    expect(new URL(href!, page.url()).searchParams.get('page')).toBe('2')
+    const response = await page.goto(href!, { waitUntil: 'domcontentloaded' })
+    expect(response?.status()).toBe(200)
+    expect(response?.request().redirectedFrom()).toBeNull()
+    expect(new URL(page.url()).pathname).toBe('/releases')
+    expect(new URL(page.url()).searchParams.get('page')).toBe('2')
+    await expect(page.locator('nav[aria-label="Пагинация"] [aria-current="page"]')).toHaveText('2')
+    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', page.url())
+  })
+
+  test('публичная игра отдаёт title, description и собственный canonical', async ({ page }) => {
+    const path = '/games/still-road'
+    const response = await page.goto(path, { waitUntil: 'domcontentloaded' })
+    expect(response?.status(), path).toBe(200)
+    await expect(page).toHaveTitle(/.+/)
+    expect(await metaContent(page, 'description')).toBeTruthy()
+    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', absoluteUrl(path))
+    expect(deepTypes(await readJsonLd(page))).toContain('VideoGame')
+  })
+
+  test('несуществующий релиз остаётся 404 и закрыт от индексации', async ({ page }) => {
+    const response = await page.goto('/release/seo-missing-regression-slug', { waitUntil: 'domcontentloaded' })
+    expect(response?.status()).toBe(404)
+    expect(await metaContent(page, 'robots')).toContain('noindex')
+  })
+
+  test('legacy books URL сохраняет постоянный редирект в каталог', async ({ request }) => {
+    const response = await request.get('/books', { maxRedirects: 0 })
+    expect(response.status()).toBe(301)
+    expect(response.headers().location).toMatch(/\/releases\/?$/)
+  })
+
+  test('sitemap содержит уникальные HTTPS URL и метаданные каталога имеют верный canonical', async ({ page, request }) => {
+    const response = await request.get('/sitemap.xml')
+    expect(response.status()).toBe(200)
+    const xml = await response.text()
+    const urls = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map(match => match[1])
+    expect(urls.every(url => url.startsWith('https://'))).toBeTruthy()
+    expect(new Set(urls).size).toBe(urls.length)
+
+    await page.goto('/releases?category=book', { waitUntil: 'domcontentloaded' })
+    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+      'href',
+      absoluteUrl('/releases?category=book'),
+    )
+  })
+
+  test('фильтр аудиорелизов сохраняет категорию в canonical', async ({ page }) => {
+    await page.goto('/releases?category=audiorelease', { waitUntil: 'domcontentloaded' })
+    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+      'href',
+      absoluteUrl('/releases?category=audiorelease'),
+    )
+  })
+
+  test('пустая категория каталога закрыта от индексации', async ({ page }) => {
+    let foundEmptyCategory = false
+    for (const category of ['comic', 'audiobook', 'audiorelease', 'magazine', 'album', 'digital', 'artwork']) {
+      await page.goto(`/releases?category=${category}`, { waitUntil: 'domcontentloaded' })
+      if (await page.getByText('В этой категории пока нет релизов.').count()) {
+        foundEmptyCategory = true
+        break
+      }
+    }
+    test.skip(!foundEmptyCategory, 'в тестовой БД нет пустых категорий')
+    await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /noindex/i)
+  })
+
   test('sitemap сохраняет лендинг, но не содержит reader-страниц', async ({ request }) => {
     const response = await request.get('/sitemap.xml')
     expect(response.status()).toBe(200)
@@ -624,3 +733,4 @@ test.describe('матрица noindex', () => {
     expect(await response.text()).not.toMatch(/^Disallow:\s*\/vvvvv/m)
   })
 })
+

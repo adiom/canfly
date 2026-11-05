@@ -1,24 +1,28 @@
 import type { MetadataRoute } from 'next'
 import { dbQuery } from '@/lib/db'
 import { fetchReleasesWithEditions } from '@/lib/server/releases'
-import { fetchNewsPosts } from '@/lib/server/news'
+import { fetchPublishedNewsForSitemap } from '@/lib/server/news'
 import { fetchPublicCharactersList } from '@/lib/server/characters'
 import { fetchPublishedGames } from '@/lib/server/games'
 import { fetchPublicPlaces } from '@/lib/server/places'
-import { fetchAllSeries } from '@/lib/server/series'
+import { fetchAllSeriesWithStats } from '@/lib/server/series'
 import { CATALOG_PATH, LANDING_PATH } from '@/lib/nav'
 import { absoluteUrl } from '@/lib/seo/entities'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://canfly.org'
 
+// Keep the generated route fresh after editorial publication without relying
+// on a build-time snapshot. The catalog is small enough for periodic refresh.
+export const revalidate = 300
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const [releases, newsPosts, characters, places, games, series, authorUsers] = await Promise.all([
     fetchReleasesWithEditions({ status: 'published' }),
-    fetchNewsPosts(100),
+    fetchPublishedNewsForSitemap(),
     fetchPublicCharactersList(),
     fetchPublicPlaces(),
     fetchPublishedGames(),
-    fetchAllSeries(),
+    fetchAllSeriesWithStats(),
     dbQuery<{ handle: string; updated_at: string }>(
       `SELECT handle, updated_at FROM users
        WHERE public_role = 'author' AND profile_is_public = TRUE
@@ -68,7 +72,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     images: game.cover_image ? [game.cover_image] : undefined,
   }))
 
-  const seriesEntries = series.map((s) => ({
+  const seriesEntries = series.filter((s) => s.release_count > 0).map((s) => ({
     url: `${BASE_URL}/series/${s.slug}`,
     lastModified: new Date(s.updated_at),
     changeFrequency: 'monthly' as const,
@@ -128,3 +132,4 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...authorEntries,
   ]
 }
+

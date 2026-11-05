@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { cache } from 'react'
 import { redirect } from 'next/navigation'
 import { fetchReleasesPage } from '@/lib/server/releases'
 import type { EditionFormat } from '@/lib/releases-types'
@@ -16,6 +17,7 @@ const VALID_CATEGORIES: (EditionFormat | 'all')[] = [
   'comic',
   'book',
   'audiobook',
+  'audiorelease',
   'magazine',
   'album',
   'digital',
@@ -23,6 +25,15 @@ const VALID_CATEGORIES: (EditionFormat | 'all')[] = [
 ]
 
 const PAGE_SIZE = 24
+
+const getCatalogData = cache((category: EditionFormat | 'all', page: number) =>
+  fetchReleasesPage({
+    status: 'published',
+    format: category,
+    page,
+    pageSize: PAGE_SIZE,
+  }),
+)
 
 interface ReleasesPageProps {
   searchParams: Promise<{
@@ -49,12 +60,12 @@ function parseParams(searchParams: {
 }
 
 /** Адрес каталога без query-параметров — без хвоста `/`. */
-function catalogUrl(category: EditionFormat | 'all', page: number, base = ''): string {
+function catalogUrl(category: EditionFormat | 'all', page: number): string {
   const params = new URLSearchParams()
   if (category !== 'all') params.set('category', category)
   if (page > 1) params.set('page', String(page))
   const qs = params.toString()
-  return qs ? `${base}/?${qs}` : base || '/releases'
+  return qs ? `/releases?${qs}` : '/releases'
 }
 
 export async function generateMetadata({
@@ -62,6 +73,7 @@ export async function generateMetadata({
 }: ReleasesPageProps): Promise<Metadata> {
   const sp = await searchParams
   const { category, page } = parseParams(sp)
+  const data = await getCatalogData(category, page)
 
   const CATEGORY_LABELS: Record<EditionFormat | 'all', string> = {
     all: '',
@@ -90,6 +102,7 @@ export async function generateMetadata({
     title,
     description,
     path: catalogUrl(category, page),
+    noindex: data.total === 0,
   })
 }
 
@@ -97,12 +110,7 @@ export default async function HomeCatalogPage({ searchParams }: ReleasesPageProp
   const sp = await searchParams
   const { category, page } = parseParams(sp)
 
-  const data = await fetchReleasesPage({
-    status: 'published',
-    format: category,
-    page,
-    pageSize: PAGE_SIZE,
-  })
+  const data = await getCatalogData(category, page)
 
   if (page > data.totalPages) {
     redirect(catalogUrl(category, data.totalPages))
@@ -133,3 +141,4 @@ export default async function HomeCatalogPage({ searchParams }: ReleasesPageProp
     </>
   )
 }
+
