@@ -15,6 +15,7 @@ import { registerReleasesTools } from '@/lib/mcp/tools/releases'
 import { registerSearchTools } from '@/lib/mcp/tools/search'
 import { registerPlacesTools } from '@/lib/mcp/tools/places'
 import { registerSeriesTools } from '@/lib/mcp/tools/series'
+import { registerMetrikaTools } from '@/lib/mcp/tools/metrika'
 
 /**
  * Локальная проекция McpEvent — `parameters` типизирован как `unknown`
@@ -100,6 +101,7 @@ const mcpHandler = createMcpHandler(
     registerSearchTools(server)
     registerPlacesTools(server)
     registerSeriesTools(server)
+    registerMetrikaTools(server)
   },
   {
     serverInfo: { name: 'canfly', version: '2.0.0' },
