@@ -97,6 +97,12 @@ test.describe('MCP tools', () => {
       'canfly_set_release_series',
       'canfly_set_character_places',
       'canfly_search',
+      'canfly_metrika_counter',
+      'canfly_metrika_overview',
+      'canfly_metrika_daily',
+      'canfly_metrika_sources',
+      'canfly_metrika_entrances',
+      'canfly_metrika_devices',
     ]))
 
     // Никаких новых удалений релизов, изданий, глав, персонажей и серий.
