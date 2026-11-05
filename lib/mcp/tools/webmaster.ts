@@ -101,6 +101,78 @@ async function forCanfly(path: string, params?: URLSearchParams) {
   return { site: site.host, response: await webmasterGet(endpoint, params) }
 }
 
+
+const samplesInput = z.object({
+  limit: z.number().int().min(1).max(100).default(30),
+  offset: z.number().int().min(0).max(49999).default(0),
+})
+
+function samplesParams(input: z.infer<typeof samplesInput>): URLSearchParams {
+  return new URLSearchParams({ limit: String(input.limit), offset: String(input.offset) })
+}
+
+type YandexPage = {
+  url?: string
+  event?: string
+  excluded_url_status?: string
+  target_url?: string
+  last_access?: string
+  title?: string
+}
+
+type PageSamples = { count?: number; samples?: YandexPage[] }
+
+/**
+ * Inspect only indexed example URLs under the Canfly origin. No user-provided
+ * URLs, no redirects, no browser cookies and no fetching other origins.
+ * This is a current HTML check, not evidence about the old Yandex crawl.
+ */
+async function inspectDescriptions(limit: number, offset: number) {
+  const result = await forCanfly('search-urls/in-search/samples', samplesParams({ limit, offset }))
+  const pages = (result.response as PageSamples).samples ?? []
+  const checked = await Promise.all(pages.map(async (page) => {
+    const raw = page.url
+    if (!raw) return { url: null, status: 'missing_url' }
+    let address: URL
+    try {
+      address = new URL(raw)
+      if (address.origin !== new URL(CANFLY_URL).origin || address.username || address.password) {
+        return { url: raw, status: 'skipped_other_origin' }
+      }
+    } catch {
+      return { url: raw, status: 'invalid_url' }
+    }
+    try {
+      const response = await fetch(address, {
+        method: 'GET',
+        redirect: 'manual',
+        cache: 'no-store',
+        headers: { Accept: 'text/html' },
+        signal: AbortSignal.timeout(8000),
+      })
+      if (!response.ok) return { url: raw, status: 'http_error', http_status: response.status }
+      if (!response.headers.get('content-type')?.toLowerCase().includes('text/html')) {
+        return { url: raw, status: 'not_html' }
+      }
+      const html = (await response.text()).slice(0, 524288)
+      const head = html.match(/<head\b[^>]*>([\s\S]*?)<\/head\s*>/i)?.[1] ?? html.slice(0, 65536)
+      const tags = head.match(/<meta\s+[^>]*>/gi) ?? []
+      const description = tags.find((tag) => /\bname\s*=\s*(['"])description\1/i.test(tag))
+      const content = description?.match(/\bcontent\s*=\s*(['"])([\s\S]*?)\1/i)?.[2]?.trim()
+      return { url: raw, status: description && content ? 'present' : 'missing_description' }
+    } catch {
+      return { url: raw, status: 'fetch_failed' }
+    }
+  }))
+  return {
+    site: result.site,
+    yandex_sample_count: (result.response as PageSamples).count,
+    scanned: checked.length,
+    note: 'Проверка текущего HTML, не список страниц конкретной проблемы Яндекс Вебмастера',
+    pages: checked,
+  }
+}
+
 export function registerWebmasterTools(server: McpServer) {
   const readOnly = { readOnlyHint: true, openWorldHint: true } as const
 
@@ -138,6 +210,46 @@ export function registerWebmasterTools(server: McpServer) {
     annotations: readOnly,
   }, withToolCatch(async (input) =>
     json(await forCanfly('search-urls/in-search/history', validatePeriod(input)))) )
+
+
+  server.registerTool('canfly_webmaster_search_pages', {
+    title: 'URL страниц Canfly в поиске Яндекса',
+    description: 'Примеры URL, участвующих в поиске, с заголовками и датами обхода. Ответ API ограничен 50 000 страницами; только чтение.',
+    inputSchema: samplesInput,
+    annotations: readOnly,
+  }, withToolCatch(async (input) =>
+    json(await forCanfly('search-urls/in-search/samples', samplesParams(input)))))
+
+  server.registerTool('canfly_webmaster_excluded_pages', {
+    title: 'URL исключённых и появившихся страниц Canfly',
+    description: 'Примеры событий появления или исключения URL из поиска; сообщает event и excluded_url_status. Это история событий, а не гарантированно полный текущий список исключённых страниц.',
+    inputSchema: samplesInput.extend({
+      only_removed: z.boolean().default(true),
+    }),
+    annotations: readOnly,
+  }, withToolCatch(async ({ only_removed, ...pagination }) => {
+    const result = await forCanfly('search-urls/events/samples', samplesParams(pagination))
+    const data = result.response as PageSamples
+    return json({
+      site: result.site,
+      count: data.count,
+      total_events_on_page: data.samples?.length ?? 0,
+      samples: only_removed
+        ? (data.samples ?? []).filter((page) => page.event === 'REMOVED_FROM_SEARCH')
+        : data.samples,
+      note: 'Исторические события, не точный снимок текущих исключений',
+    })
+  }))
+
+  server.registerTool('canfly_webmaster_description_audit', {
+    title: 'Проверка meta description страниц Canfly',
+    description: 'Проверить текущий HTML примеров страниц, известных Яндексу: есть ли непустой meta description. Это отдельный аудит, не список URL из диагностики Яндекса.',
+    inputSchema: z.object({
+      limit: z.number().int().min(1).max(20).default(10),
+      offset: z.number().int().min(0).max(49999).default(0),
+    }),
+    annotations: readOnly,
+  }, withToolCatch(async ({ limit, offset }) => json(await inspectDescriptions(limit, offset))))
 
   server.registerTool('canfly_webmaster_diagnostics', {
     title: 'Ошибки Canfly в Яндекс Вебмастере',
