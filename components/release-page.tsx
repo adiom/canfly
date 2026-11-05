@@ -109,7 +109,7 @@ export function ReleasePagePublic({
   } satisfies Record<ReleaseBlock, React.ReactNode>
   const visibleBlocks = releaseBlockOrder(config.block_order)
     .filter(block => !config.hidden_blocks?.includes(block) && Boolean(blocks[block]))
-  const readerEdition = !preview && editions.find(edition => edition.format === 'book' || edition.format === 'magazine')
+  const readerEdition = !preview && publishedEditions.find(edition => edition.format === 'book' || edition.format === 'magazine')
 
   return (
     <div className="release-surface min-h-screen bg-cf-bg text-cf-text-1" style={designStyle}>
@@ -139,7 +139,7 @@ export function ReleasePagePublic({
         >
           {config.show_toc !== false && visibleBlocks.length > 0 && (
             <aside id="release-world" className="release-world-nav pb-7">
-              <h2 className="font-serif text-3xl text-cf-text-heading">Мир произведения</h2>
+              <h2 className="text-2xl font-semibold tracking-tight text-cf-text-heading md:text-3xl">Мир произведения</h2>
               <nav aria-label="Разделы мира произведения" className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm">
                 {visibleBlocks.map(block => <a key={block} className="underline underline-offset-4" href={`#release-${block}`}>{RELEASE_BLOCK_LABELS[block]}</a>)}
               </nav>
@@ -150,7 +150,7 @@ export function ReleasePagePublic({
             {readerEdition && !config.hidden_blocks?.includes('highlights') && (
               <section className="py-10" aria-labelledby="release-create-title">
                 <div className="rounded-xl border border-cf-text-1/10 bg-cf-bg-2 p-5 md:p-8">
-                  <h2 id="release-create-title" className="font-serif text-3xl text-cf-text-heading">Создайте свою интерпретацию</h2>
+                  <h2 id="release-create-title" className="text-2xl font-semibold tracking-tight text-cf-text-heading md:text-3xl">Создайте свою интерпретацию</h2>
                   <p className="mt-2 text-sm text-cf-text-2">Откройте произведение в VVVVV, выделите фрагмент, создайте работу и поделитесь ею со ссылкой на источник.</p>
                   <Link href={`/vvvvv/${readerEdition.slug}`} className="mt-4 inline-flex min-h-11 items-center font-bold underline underline-offset-4">Перейти к чтению</Link>
                 </div>

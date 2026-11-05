@@ -21,7 +21,7 @@ export function ReleaseHighlights({
   return (
     <section className="border-t border-cf-text-1/10">
       <div className="mx-auto max-w-6xl px-5 py-10 md:px-8 md:py-14">
-        <h3 className="font-serif text-3xl text-cf-text-heading">Работы читателей</h3>
+        <h3 className="text-2xl font-semibold tracking-tight text-cf-text-heading md:text-3xl">Работы читателей</h3>
         <p className="mb-6 mt-2 text-sm text-cf-text-2">Интерпретации аудитории с указанием автора и исходного фрагмента.</p>
         <div className="grid gap-6 md:grid-cols-2">
           {visibleQuotes.map(highlight => (
@@ -32,7 +32,7 @@ export function ReleaseHighlights({
             >
               <p className="mb-2 text-sm font-semibold">{highlight.user_name ?? 'Читатель'}</p>
               {highlight.chapter_title && <p className="mb-2 text-xs text-cf-text-3">Глава «{highlight.chapter_title}»</p>}
-              <blockquote className="line-clamp-4 font-[family-name:var(--font-ebgaramond)] text-lg italic leading-snug text-cf-text-caption">
+              <blockquote className="line-clamp-4 text-base leading-relaxed text-cf-text-caption">
                 «{highlight.text_content}»
               </blockquote>
               {highlight.publication?.note && <p className="mt-3 line-clamp-3 text-sm">{highlight.publication.note}</p>}
