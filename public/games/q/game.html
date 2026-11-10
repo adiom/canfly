@@ -22,6 +22,8 @@
     button { border: 0; border-radius: 999px; padding: 13px 28px; background: #f5cb72; color: #142034; font: 700 16px system-ui, sans-serif; cursor: pointer; }
     button:focus-visible { outline: 3px solid white; outline-offset: 4px; }
     p { margin: 0; opacity: .75; font-size: 14px; }
+    .sync { width: 100%; font-size: 12px; color: #d8e5e7; opacity: .85; }
+    .sync a { color: #ffe29b; }
     @media(max-width: 540px) { .hud { padding: 12px 16px; } .controls { justify-content: center; text-align: center; } }
   </style>
 </head>
@@ -31,9 +33,10 @@
     <section class="panel" aria-label="Игра Рогатка">
       <div class="hud"><span>Выстрелы: <strong id="shots">0</strong></span><span>Попадания: <strong id="hits">0</strong></span></div>
       <canvas id="game" width="800" height="440" role="img" aria-label="Рогатка слева, мишень справа. Нажмите на поле или кнопку, чтобы выстрелить."></canvas>
-      <div class="controls"><p id="status" aria-live="polite">Нажми на рогатку или кнопку, чтобы запустить камень.</p><button id="shoot" type="button">Выстрелить!</button></div>
+      <div class="controls"><p id="status" aria-live="polite">Нажми на рогатку или кнопку, чтобы запустить камень.</p><button id="shoot" type="button">Выстрелить!</button><p class="sync" id="sync" aria-live="polite">Проверяем сохранения Canfly…</p></div>
     </section>
   </main>
+  <script src="/games/canfly-game-api.js"></script>
   <script>
   (() => {
     'use strict';
@@ -42,6 +45,7 @@
     const shotsEl = document.getElementById('shots');
     const hitsEl = document.getElementById('hits');
     const statusEl = document.getElementById('status');
+    const syncEl = document.getElementById('sync');
     const button = document.getElementById('shoot');
     const W = canvas.width, H = canvas.height;
     const origin = { x: 155, y: 295 };
@@ -50,17 +54,111 @@
     const FLIGHT_TIME = 1.03;
     let stone = null, sparks = [], lastTime = 0;
     let shots = 0, hits = 0;
+    let cloudReady = false, cloudUser = null, syncTimer = null;
+    let syncChain = Promise.resolve(), lastUpload = 0, lastSyncedShots = -1, lastSyncedHits = -1;
+    let localKey = 'canfly-slingshot-v1';
+    let stateRevision = 0;
     try {
-      const saved = JSON.parse(localStorage.getItem('canfly-slingshot-v1') || '{}');
+      const saved = JSON.parse(localStorage.getItem(localKey) || '{}');
       shots = Number.isSafeInteger(saved.shots) && saved.shots >= 0 ? saved.shots : 0;
       hits = Number.isSafeInteger(saved.hits) && saved.hits >= 0 ? Math.min(saved.hits, shots) : 0;
     } catch {}
     function updateHud() { shotsEl.textContent = shots; hitsEl.textContent = hits; }
-    function save() { try { localStorage.setItem('canfly-slingshot-v1', JSON.stringify({ shots, hits })); } catch {} }
+    function save() {
+      try { localStorage.setItem(localKey, JSON.stringify({ shots, hits })); } catch {}
+    }
+    function syncLabel(message) { syncEl.textContent = message; }
+    function validCounters(data) {
+      return data && Number.isSafeInteger(data.shots) && data.shots >= 0 &&
+        Number.isSafeInteger(data.hits) && data.hits >= 0 && data.hits <= data.shots;
+    }
+    function queueCloudSave() {
+      if (!cloudReady || !cloudUser || !window.CanflyGame) return;
+      if (shots === lastSyncedShots && hits === lastSyncedHits) return;
+      const current = { shots, hits };
+      // Queue writes to prevent an older score from arriving after a newer one.
+      syncChain = syncChain.catch(() => {}).then(async () => {
+        if (current.shots === lastSyncedShots && current.hits === lastSyncedHits) return;
+        const result = await window.CanflyGame.save('round_summary', {
+          score: current.hits,
+          details: { shots: current.shots, hits: current.hits }
+        });
+        if (result.ok) {
+          lastSyncedShots = current.shots;
+          lastSyncedHits = current.hits;
+          lastUpload = Date.now();
+          syncLabel('Сохранено в аккаунте Canfly');
+        }
+      }).catch(() => {
+        syncLabel('Нет связи с Canfly — результат сохранён на устройстве');
+      });
+    }
+    function scheduleCloudSave() {
+      if (!cloudReady || !cloudUser) return;
+      clearTimeout(syncTimer);
+      const delay = Math.max(1200, 15000 - (Date.now() - lastUpload));
+      syncTimer = setTimeout(queueCloudSave, delay);
+    }
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        clearTimeout(syncTimer);
+        queueCloudSave();
+      }
+    });
+    async function loadCloud() {
+      if (!window.CanflyGame) {
+        syncLabel('Результат сохраняется только на устройстве');
+        return;
+      }
+      const revisionAtStart = stateRevision;
+      try {
+        const data = await window.CanflyGame.load();
+        cloudUser = data.user;
+        localKey = 'canfly-slingshot-v1:user:' + data.user.id;
+        const latest = (data.history || []).find(event =>
+          event.kind === 'round_summary' && validCounters(event.details)
+        );
+        let stored = null;
+        try { stored = JSON.parse(localStorage.getItem(localKey) || 'null'); } catch {}
+        if (stateRevision === revisionAtStart) {
+          if (validCounters(stored) && (!latest || stored.shots > latest.details.shots)) {
+            // Recover progress earned offline on this account.
+            shots = stored.shots;
+            hits = stored.hits;
+          } else if (latest) {
+            shots = latest.details.shots;
+            hits = latest.details.hits;
+          } else if (validCounters(stored)) {
+            shots = stored.shots;
+            hits = stored.hits;
+          } else {
+            shots = 0;
+            hits = 0;
+          }
+          updateHud();
+        }
+        save();
+        cloudReady = true;
+        lastSyncedShots = latest ? latest.details.shots : -1;
+        lastSyncedHits = latest ? latest.details.hits : -1;
+        lastUpload = Date.now();
+        syncLabel('Canfly: ' + (data.user.name || 'игрок') + ' · прогресс подключён');
+        if (shots !== lastSyncedShots || hits !== lastSyncedHits) scheduleCloudSave();
+      } catch (err) {
+        cloudReady = true;
+        if (err && err.status === 401) {
+          syncLabel('Гостевой режим · очки на устройстве · войдите в Canfly для синхронизации');
+        } else {
+          syncLabel(err && err.status === 404 ? 'Игра ещё не опубликована в Canfly Studio · очки на устройстве' : 'Canfly недоступен · очки сохраняются на устройстве');
+        }
+      }
+    }
+    void loadCloud();
     updateHud();
     function shoot() {
       if (stone) return;
       shots++;
+      stateRevision++;
       updateHud();
       save();
       const t = FLIGHT_TIME;
@@ -122,7 +220,7 @@
           sparks.push({ x: target.x, y: target.y, vx: Math.cos(a) * (70 + i * 5), vy: Math.sin(a) * (70 + i * 5), life: 1 });
         }
       } else statusEl.textContent = 'Мимо! Попробуй ещё.';
-      stone = null; button.disabled = false; updateHud(); save();
+      stone = null; button.disabled = false; updateHud(); save(); scheduleCloudSave();
     }
     function frame(time) {
       const dt = Math.min((time - (lastTime || time)) / 1000, .04); lastTime = time;
