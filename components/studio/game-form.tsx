@@ -76,7 +76,7 @@ export function GameForm({
   const checkFile = useCallback(async (value: string) => {
     setFileStatus('checking')
     try {
-      const response = await fetch(`/games/${value}/index.html`, { method: 'HEAD' })
+      const response = await fetch(`/games/${value}/game.html`, { method: 'HEAD' })
       setFileStatus(response.ok ? 'ok' : 'missing')
     } catch {
       setFileStatus('missing')
@@ -114,7 +114,7 @@ export function GameForm({
       return
     }
     if (isPublished && fileStatus === 'missing') {
-      toast.error(`Файл /games/${slug}/index.html не найден — публикация невозможна`)
+      toast.error(`Файл /games/${slug}/game.html не найден — публикация невозможна`)
       return
     }
 
@@ -192,7 +192,7 @@ export function GameForm({
             <>
               <CheckCircle2 className="h-4 w-4 text-emerald-500" />
               <span className="text-gray-600">
-                Файл найден: <code className="text-gray-500">/games/{slug}/index.html</code>
+                Файл найден: <code className="text-gray-500">/games/{slug}/game.html</code>
               </span>
             </>
           ) : null}
@@ -200,7 +200,7 @@ export function GameForm({
             <>
               <XCircle className="h-4 w-4 text-red-500" />
               <span className="text-gray-600">
-                Файла <code className="text-gray-500">/games/{slug}/index.html</code> нет — положите папку игры в
+                Файла <code className="text-gray-500">/games/{slug}/game.html</code> нет — положите папку игры в
                 <code className="ml-1 text-gray-500">public/games/{slug}/</code>
               </span>
             </>
