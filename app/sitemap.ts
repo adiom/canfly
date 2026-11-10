@@ -60,7 +60,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   }))
 
   // Хаб `/games` намеренно без записи: он noindex, как и `/places`.
-  const gameEntries = games.map((game) => ({
+  const gameEntries = games.filter(game => !game.seo_noindex).map((game) => ({
     url: `${BASE_URL}/games/${game.slug}`,
     lastModified: new Date(game.updated_at),
     changeFrequency: 'monthly' as const,

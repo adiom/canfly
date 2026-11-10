@@ -343,7 +343,7 @@ export interface ChapterEditorialNote {
 export type GameAspectRatio = '16:9' | '4:3' | '1:1' | '9:16'
 
 /**
- * Игра — статический бандл в `public/games/<slug>/` (точка входа `index.html`).
+ * Игра — статический бандл в `public/games/<slug>/` (точка входа `game.html`).
  * В БД живут только метаданные и связи, сами файлы в canfly не собираются.
  */
 export interface Game {
@@ -353,6 +353,9 @@ export interface Game {
   tagline: string | null
   description: string | null
   cover_image: string | null
+  seo_title: string | null
+  seo_description: string | null
+  seo_noindex: boolean
   aspect_ratio: GameAspectRatio
   display_order: number
   is_published: boolean

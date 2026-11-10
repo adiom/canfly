@@ -13,6 +13,7 @@ import { registerCharacterRelationshipsTools } from '@/lib/mcp/tools/character-r
 import { registerChaptersTools } from '@/lib/mcp/tools/chapters'
 import { registerReleasesTools } from '@/lib/mcp/tools/releases'
 import { registerSearchTools } from '@/lib/mcp/tools/search'
+import { registerNewsTools } from '@/lib/mcp/tools/news'
 import { registerPlacesTools } from '@/lib/mcp/tools/places'
 import { registerSeriesTools } from '@/lib/mcp/tools/series'
 import { registerMetrikaTools } from '@/lib/mcp/tools/metrika'
@@ -100,6 +101,7 @@ const mcpHandler = createMcpHandler(
     registerChaptersTools(server)
     registerReleasesTools(server)
     registerSearchTools(server)
+    registerNewsTools(server)
     registerPlacesTools(server)
     registerSeriesTools(server)
     registerMetrikaTools(server)

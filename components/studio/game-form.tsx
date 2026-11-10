@@ -61,6 +61,9 @@ export function GameForm({
   const [tagline, setTagline] = useState(game?.tagline ?? '')
   const [description, setDescription] = useState(game?.description ?? '')
   const [coverImage, setCoverImage] = useState(game?.cover_image ?? '')
+  const [seoTitle, setSeoTitle] = useState(game?.seo_title ?? '')
+  const [seoDescription, setSeoDescription] = useState(game?.seo_description ?? '')
+  const [seoNoindex, setSeoNoindex] = useState(game?.seo_noindex ?? false)
   const [aspectRatio, setAspectRatio] = useState<GameAspectRatio>(game?.aspect_ratio ?? '16:9')
   const [displayOrder, setDisplayOrder] = useState(String(game?.display_order ?? 0))
   const [isPublished, setIsPublished] = useState(game?.is_published ?? false)
@@ -73,7 +76,7 @@ export function GameForm({
   const checkFile = useCallback(async (value: string) => {
     setFileStatus('checking')
     try {
-      const response = await fetch(`/games/${value}/index.html`, { method: 'HEAD' })
+      const response = await fetch(`/games/${value}/game.html`, { method: 'HEAD' })
       setFileStatus(response.ok ? 'ok' : 'missing')
     } catch {
       setFileStatus('missing')
@@ -111,7 +114,7 @@ export function GameForm({
       return
     }
     if (isPublished && fileStatus === 'missing') {
-      toast.error(`Файл /games/${slug}/index.html не найден — публикация невозможна`)
+      toast.error(`Файл /games/${slug}/game.html не найден — публикация невозможна`)
       return
     }
 
@@ -123,6 +126,9 @@ export function GameForm({
       formData.set('tagline', tagline)
       formData.set('description', description)
       formData.set('cover_image', coverImage)
+      formData.set('seo_title', seoTitle)
+      formData.set('seo_description', seoDescription)
+      if (seoNoindex) formData.set('seo_noindex', 'true')
       formData.set('aspect_ratio', aspectRatio)
       formData.set('display_order', displayOrder)
       if (isPublished) formData.set('is_published', 'true')
@@ -186,7 +192,7 @@ export function GameForm({
             <>
               <CheckCircle2 className="h-4 w-4 text-emerald-500" />
               <span className="text-gray-600">
-                Файл найден: <code className="text-gray-500">/games/{slug}/index.html</code>
+                Файл найден: <code className="text-gray-500">/games/{slug}/game.html</code>
               </span>
             </>
           ) : null}
@@ -194,7 +200,7 @@ export function GameForm({
             <>
               <XCircle className="h-4 w-4 text-red-500" />
               <span className="text-gray-600">
-                Файла <code className="text-gray-500">/games/{slug}/index.html</code> нет — положите папку игры в
+                Файла <code className="text-gray-500">/games/{slug}/game.html</code> нет — положите папку игры в
                 <code className="ml-1 text-gray-500">public/games/{slug}/</code>
               </span>
             </>
@@ -232,6 +238,39 @@ export function GameForm({
           <Label className="text-gray-600">Обложка</Label>
           <CoverImageUploader value={coverImage || null} onChange={url => setCoverImage(url ?? '')} />
         </div>
+
+        <fieldset className="space-y-4 rounded-xl border border-gray-200/80 p-4">
+          <legend className="px-2 text-sm font-semibold text-gray-700">SEO страницы игры</legend>
+          <div className="space-y-2">
+            <Label htmlFor="seo_title" className="text-gray-600">SEO title</Label>
+            <Input
+              id="seo_title"
+              value={seoTitle}
+              onChange={event => setSeoTitle(event.target.value)}
+              maxLength={300}
+              placeholder={title ? `${title} — canfly | культура твоего сознания` : 'Название игры — canfly'}
+              className="rounded-xl border-white/70 bg-white/60"
+            />
+            <p className="text-xs text-gray-500">Необязательно. Пустое поле использует название игры. Рекомендуется до 60 символов.</p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="seo_description" className="text-gray-600">Meta description</Label>
+            <Textarea
+              id="seo_description"
+              rows={3}
+              value={seoDescription}
+              onChange={event => setSeoDescription(event.target.value)}
+              maxLength={500}
+              placeholder="Что делает игру интересной и почему стоит сыграть"
+              className="rounded-xl border-white/70 bg-white/60"
+            />
+            <p className="text-xs text-gray-500">Необязательно. По умолчанию используется короткая строка или описание игры. Для выдачи текст сокращается примерно до 155 символов.</p>
+          </div>
+          <label className="flex items-center gap-3 text-sm text-gray-700">
+            <input type="checkbox" checked={seoNoindex} onChange={event => setSeoNoindex(event.target.checked)} className="h-4 w-4 accent-violet-600" />
+            Не индексировать страницу игры (noindex)
+          </label>
+        </fieldset>
 
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">

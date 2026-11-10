@@ -51,12 +51,9 @@ const voiceSchema = z.object({
   personality: nullableText(8000),
   speaking_style: nullableText(8000),
   // Системная инструкция модели — длинная, но ограничена 8000 как в старом action.
-  system_role: z
-    .string()
-    .trim()
-    .max(8000)
-    .optional()
-    .transform((v) => (v ?? '').slice(0, 8000)),
+  // Отсутствие поля в PATCH-запросе означает «не менять», поэтому здесь нет
+  // transform, превращающего undefined в пустую строку.
+  system_role: z.string().trim().max(8000).optional(),
 })
 
 const conductSchema = z.object({

@@ -131,7 +131,10 @@ export async function fetchCharacterFriends(
         cf.intimacy_level
       FROM character_friendships cf
       JOIN users u ON u.id = cf.user_id
-      WHERE cf.character_id = $1 AND cf.status = 'accepted'
+      WHERE cf.character_id = $1
+        AND cf.status = 'accepted'
+        AND COALESCE(u.is_deleted, FALSE) = FALSE
+        AND COALESCE(u.profile_is_public, TRUE) = TRUE
       ORDER BY cf.intimacy_level DESC, cf.created_at DESC
       LIMIT $2
     `,

@@ -10,6 +10,7 @@
     "db:structure": "node scripts/read-db-structure.mjs",
     "lint": "eslint .",
     "test:e2e": "playwright test",
+    "test:unit": "playwright test -c playwright.unit.config.ts",
     "test:smoke": "playwright test e2e/smoke.spec.ts",
     "seo:audit": "node scripts/seo-audit.mjs",
     "sync:tasks": "node scripts/sync-issues.mjs"

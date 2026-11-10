@@ -59,6 +59,7 @@ export function CharacterFriendButton({
       const response = await fetch(`/api/characters/${characterSlug}/friendship`, {
         method: 'POST',
       })
+      if (!response.ok) return
       const payload = await response.json()
       setFriendshipStatus(payload.data?.friendship?.status || null)
     } finally {
@@ -69,18 +70,37 @@ export function CharacterFriendButton({
   const removeFriend = async () => {
     setLoading(true)
     try {
-      await fetch(`/api/characters/${characterSlug}/friendship`, { method: 'DELETE' })
-      setFriendshipStatus(null)
+      const response = await fetch(`/api/characters/${characterSlug}/friendship`, { method: 'DELETE' })
+
+      if (response.status === 409) {
+        // Удаление не снимает блокировку: показываем реальное состояние,
+        // иначе следующий POST выглядел бы как обычная дружба.
+        setFriendshipStatus('blocked')
+        return
+      }
+
+      if (response.ok) setFriendshipStatus(null)
     } finally {
       setLoading(false)
     }
   }
 
   const isFriend = friendshipStatus === 'accepted'
+  const isBlocked = friendshipStatus === 'blocked'
 
   return (
     <div className="flex flex-wrap gap-3">
-      {isFriend ? (
+      {isBlocked ? (
+        <Button
+          type="button"
+          disabled
+          variant="outline"
+          className="h-11 rounded-full border-cf-air-line bg-cf-air-surface px-6 text-sm font-medium text-cf-text-3 backdrop-blur-xl"
+        >
+          <UserMinus className="mr-2 h-4 w-4" />
+          Общение ограничено
+        </Button>
+      ) : isFriend ? (
         <Button
           type="button"
           onClick={removeFriend}
@@ -103,7 +123,7 @@ export function CharacterFriendButton({
         </Button>
       )}
 
-      {canReceiveMessages ? (
+      {isBlocked ? null : canReceiveMessages ? (
         <Button
           asChild
           variant="outline"

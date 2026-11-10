@@ -94,6 +94,7 @@ test.describe('MCP tools', () => {
       'canfly_reorder_chapters',
       'canfly_restore_chapter_version',
       'canfly_create_series',
+      'canfly_create_news',
       'canfly_set_release_series',
       'canfly_set_character_places',
       'canfly_search',

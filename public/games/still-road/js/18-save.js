@@ -39,6 +39,11 @@ function finishSave(){
     S.mode='error'; S.errT=0; SFX.err();
   } else {
     writeSave(); S.saveCount++; SFX.save();
+    if(window.CanflyGame){
+      window.CanflyGame.save("save", {
+        details: {scene:S.scene,level:S.lv,steps:S.steps,saveCount:S.saveCount}
+      }).catch(function(){ /* guest/offline: keep local save */ });
+    }
     say(['СОХРАНЕНО. ДОРОГА ЗАПОМНИЛА ТЕБЯ.','СЛОТ ОДИН. ДРУГОГО НЕТ. АВТОСОХРАНЕНИЯ ТОЖЕ.'],null,'world');
   }
 }

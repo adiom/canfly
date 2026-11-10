@@ -4,6 +4,7 @@ import { CharacterFriendButton } from '@/components/character-friend-button'
 import { CharacterConstellation } from '@/components/character-constellation'
 import type { ConstellationNode } from '@/lib/character-constellation'
 import { presenceOf } from '@/components/character-presence'
+import { resolveCharacterChatAvailability } from '@/lib/ai/character-chat/availability'
 import type { Character, CharacterStats } from '@/lib/types'
 
 interface CharacterProfileHeroProps {
@@ -58,8 +59,7 @@ export function CharacterProfileHero({
   constellation,
   places = [],
 }: CharacterProfileHeroProps) {
-  const canChat =
-    character.can_receive_messages !== false && character.reply_mode !== 'disabled'
+  const canChat = resolveCharacterChatAvailability({ character }).canGenerate
   const presence = presenceOf(character)
 
   // Нули не показываем: пустая метрика — шум, а не информация
