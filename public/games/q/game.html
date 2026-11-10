@@ -54,7 +54,7 @@
     const FLIGHT_TIME = 1.03;
     let stone = null, sparks = [], lastTime = 0;
     let shots = 0, hits = 0;
-    let cloudReady = false, cloudUser = null, pendingCloud = false, syncTimer = null;
+    let cloudReady = false, cloudUser = null, syncTimer = null;
     let syncChain = Promise.resolve(), lastUpload = 0, lastSyncedShots = -1, lastSyncedHits = -1;
     let localKey = 'canfly-slingshot-v1';
     let stateRevision = 0;
@@ -121,7 +121,11 @@
         let stored = null;
         try { stored = JSON.parse(localStorage.getItem(localKey) || 'null'); } catch {}
         if (stateRevision === revisionAtStart) {
-          if (latest) {
+          if (validCounters(stored) && (!latest || stored.shots > latest.details.shots)) {
+            // Recover progress earned offline on this account.
+            shots = stored.shots;
+            hits = stored.hits;
+          } else if (latest) {
             shots = latest.details.shots;
             hits = latest.details.hits;
           } else if (validCounters(stored)) {
@@ -145,7 +149,7 @@
         if (err && err.status === 401) {
           syncLabel('Гостевой режим · очки на устройстве · войдите в Canfly для синхронизации');
         } else {
-          syncLabel('Canfly недоступен · очки сохраняются на устройстве');
+          syncLabel(err && err.status === 404 ? 'Игра ещё не опубликована в Canfly Studio · очки на устройстве' : 'Canfly недоступен · очки сохраняются на устройстве');
         }
       }
     }
