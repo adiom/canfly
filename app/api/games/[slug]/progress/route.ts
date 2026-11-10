@@ -9,7 +9,7 @@ import { checkRateLimit, rateLimitResponse } from '@/lib/server/rate-limit'
 
 export const dynamic = 'force-dynamic'
 
-type Context = { params: Promise<{ slug: string }> }
+type Context = { params: Promise<Record<string, string>> }
 
 const payloadSchema = z.object({
   requestId: z.string().uuid(),
@@ -27,7 +27,7 @@ function response(body: unknown, status = 200) {
 async function getProgress(request: NextRequest, context: Context) {
   const user = await getCurrentUser()
   if (!user) return response({ error: 'login_required', authenticated: false }, 401)
-  const { slug } = await context.params
+  const { slug } = await context.params as { slug: string }
   const game = await fetchPublishedGameBySlug(slug)
   if (!game) return response({ error: 'game_not_found' }, 404)
 
@@ -64,7 +64,7 @@ async function postProgress(request: NextRequest, context: Context) {
   }
   const user = await getCurrentUser()
   if (!user) return response({ error: 'login_required', authenticated: false }, 401)
-  const { slug } = await context.params
+  const { slug } = await context.params as { slug: string }
   const game = await fetchPublishedGameBySlug(slug)
   if (!game) return response({ error: 'game_not_found' }, 404)
 
