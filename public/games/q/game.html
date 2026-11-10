@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101b2a">
+  <meta name="description" content="Рогатка — маленькая игра-кликер. Нажми, чтобы запустить камень и попасть в мишень.">
+  <title>Рогатка — Canfly Games</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, -apple-system, Segoe UI, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0d1725; color: #f4ead7; padding: 20px; }
+    main { width: min(100%, 880px); }
+    header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+    h1 { font-size: clamp(24px, 4vw, 38px); margin: 0; letter-spacing: -.04em; }
+    .brand { font-size: 13px; opacity: .6; text-decoration: none; color: inherit; }
+    .panel { background: #182a3b; border: 1px solid #ffffff20; border-radius: 22px; overflow: hidden; box-shadow: 0 24px 60px #0005; }
+    .hud { display: flex; justify-content: space-between; gap: 16px; padding: 15px 22px; font-size: 15px; }
+    .hud strong { color: #ffe29b; font-variant-numeric: tabular-nums; }
+    canvas { display: block; width: 100%; height: auto; touch-action: manipulation; cursor: pointer; background: #81b8cd; }
+    .controls { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 16px 20px; flex-wrap: wrap; }
+    button { border: 0; border-radius: 999px; padding: 13px 28px; background: #f5cb72; color: #142034; font: 700 16px system-ui, sans-serif; cursor: pointer; }
+    button:focus-visible { outline: 3px solid white; outline-offset: 4px; }
+    p { margin: 0; opacity: .75; font-size: 14px; }
+    @media(max-width: 540px) { .hud { padding: 12px 16px; } .controls { justify-content: center; text-align: center; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header><h1>Рогатка</h1><a class="brand" href="/games">CANFLY GAMES</a></header>
+    <section class="panel" aria-label="Игра Рогатка">
+      <div class="hud"><span>Выстрелы: <strong id="shots">0</strong></span><span>Попадания: <strong id="hits">0</strong></span></div>
+      <canvas id="game" width="800" height="440" role="img" aria-label="Рогатка слева, мишень справа. Нажмите на поле или кнопку, чтобы выстрелить."></canvas>
+      <div class="controls"><p id="status" aria-live="polite">Нажми на рогатку или кнопку, чтобы запустить камень.</p><button id="shoot" type="button">Выстрелить!</button></div>
+    </section>
+  </main>
+  <script>
+  (() => {
+    'use strict';
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const shotsEl = document.getElementById('shots');
+    const hitsEl = document.getElementById('hits');
+    const statusEl = document.getElementById('status');
+    const button = document.getElementById('shoot');
+    const W = canvas.width, H = canvas.height;
+    const origin = { x: 155, y: 295 };
+    const target = { x: 650, y: 235, r: 43 };
+    const G = 550;
+    const FLIGHT_TIME = 1.03;
+    let stone = null, sparks = [], lastTime = 0;
+    let shots = 0, hits = 0;
+    try {
+      const saved = JSON.parse(localStorage.getItem('canfly-slingshot-v1') || '{}');
+      shots = Number.isSafeInteger(saved.shots) && saved.shots >= 0 ? saved.shots : 0;
+      hits = Number.isSafeInteger(saved.hits) && saved.hits >= 0 ? Math.min(saved.hits, shots) : 0;
+    } catch {}
+    function updateHud() { shotsEl.textContent = shots; hitsEl.textContent = hits; }
+    function save() { try { localStorage.setItem('canfly-slingshot-v1', JSON.stringify({ shots, hits })); } catch {} }
+    updateHud();
+    function shoot() {
+      if (stone) return;
+      shots++;
+      updateHud();
+      save();
+      const t = FLIGHT_TIME;
+      stone = { x: origin.x + 6, y: origin.y - 13, vx: (target.x - origin.x - 6) / t, vy: (target.y - (origin.y - 13) - .5 * G * t * t) / t, time: 0, hit: false };
+      button.disabled = true;
+      statusEl.textContent = 'Камень летит…';
+    }
+    button.addEventListener('click', shoot);
+    canvas.addEventListener('pointerdown', shoot);
+    window.addEventListener('keydown', e => {
+      if (e.code === 'Space' && e.target !== button && !e.repeat) { e.preventDefault(); shoot(); }
+    });
+    function circle(x, y, r, color) {
+      ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    }
+    function line(x1, y1, x2, y2, width, color) {
+      ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineCap = 'round'; ctx.beginPath();
+      ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    }
+    function draw() {
+      const sky = ctx.createLinearGradient(0, 0, 0, H);
+      sky.addColorStop(0, '#7bb8d5'); sky.addColorStop(1, '#d1dfb2');
+      ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+      circle(666, 77, 35, '#ffe9a0');
+      ctx.fillStyle = '#83b4a0';
+      ctx.beginPath(); ctx.moveTo(0, 340); ctx.quadraticCurveTo(240, 260, 410, 340);
+      ctx.quadraticCurveTo(640, 270, 800, 325); ctx.lineTo(800, H); ctx.lineTo(0, H); ctx.fill();
+      ctx.fillStyle = '#538979'; ctx.fillRect(0, 363, W, H - 363);
+      ctx.fillStyle = '#487466'; ctx.fillRect(0, 393, W, H - 393);
+      // Target stand and rings.
+      line(target.x, target.y + 40, target.x, 382, 13, '#6b4b36');
+      circle(target.x, target.y, target.r + 5, '#604534');
+      circle(target.x, target.y, target.r, '#f4dfbc');
+      circle(target.x, target.y, 31, '#d56753');
+      circle(target.x, target.y, 19, '#f4dfbc');
+      circle(target.x, target.y, 8, '#d56753');
+      // Slingshot: wooden handle, two forks, and leather pouch.
+      line(156, 383, 156, 306, 19, '#835537');
+      line(156, 312, 126, 248, 16, '#94613f');
+      line(156, 312, 183, 247, 16, '#94613f');
+      const loaded = !stone;
+      const pouchX = loaded ? origin.x + 6 : 155, pouchY = loaded ? origin.y - 13 : 268;
+      line(126, 248, pouchX, pouchY, 4, '#49382d');
+      line(183, 247, pouchX, pouchY, 4, '#49382d');
+      circle(pouchX, pouchY, 11, '#5d4134');
+      if (loaded) { circle(origin.x + 6, origin.y - 13, 10, '#59636c'); circle(origin.x + 3, origin.y - 17, 3, '#a3b2b6'); }
+      if (stone) {
+        circle(stone.x + 3, stone.y + 4, 10, '#0003');
+        circle(stone.x, stone.y, 10, '#57616b');
+        circle(stone.x - 3, stone.y - 3, 3, '#adb6b6');
+      }
+      for (const p of sparks) circle(p.x, p.y, Math.max(0, p.life * 4), '#ffeab2');
+    }
+    function finish(hit) {
+      if (hit) {
+        hits++; statusEl.textContent = 'Попадание! Отличный выстрел!';
+        for (let i = 0; i < 18; i++) {
+          const a = (Math.PI * 2 * i) / 18;
+          sparks.push({ x: target.x, y: target.y, vx: Math.cos(a) * (70 + i * 5), vy: Math.sin(a) * (70 + i * 5), life: 1 });
+        }
+      } else statusEl.textContent = 'Мимо! Попробуй ещё.';
+      stone = null; button.disabled = false; updateHud(); save();
+    }
+    function frame(time) {
+      const dt = Math.min((time - (lastTime || time)) / 1000, .04); lastTime = time;
+      if (stone) {
+        stone.time += dt;
+        stone.x += stone.vx * dt;
+        stone.y += stone.vy * dt;
+        stone.vy += G * dt;
+        const dx = stone.x - target.x, dy = stone.y - target.y;
+        if (dx * dx + dy * dy <= (target.r + 8) ** 2) finish(true);
+        else if (stone.y > 380 || stone.x > W + 12 || stone.time > 3) finish(false);
+      }
+      sparks = sparks.filter(p => p.life > 0);
+      for (const p of sparks) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += G * .4 * dt; p.life -= dt * 1.6; }
+      draw(); requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  })();
+  </script>
+</body>
+</html>
