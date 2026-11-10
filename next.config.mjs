@@ -130,7 +130,7 @@ const nextConfig = {
         // индексируемыми. Значения из глобального правила перекрываются по
         // ключу, остальные заголовки (nosniff, HSTS, Referrer-Policy)
         // продолжают применяться и здесь.
-        source: '/games/:slug/index.html',
+        source: '/games/:slug/game.html',
         headers: [
           { key: 'Content-Security-Policy', value: cspWithFrameAncestors("'self'") },
           { key: 'X-Frame-Options', value: 'SAMEORIGIN' },

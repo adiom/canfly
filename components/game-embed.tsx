@@ -99,7 +99,7 @@ export function GameEmbed({ slug, title, aspectRatio }: GameEmbedProps) {
         >
           <iframe
             ref={attachFrame}
-            src={`/games/${slug}/index.html`}
+            src={`/games/${slug}/game.html`}
             title={title}
             onLoad={() => setIsLoaded(true)}
             className="h-full w-full border-0 bg-black"
@@ -135,7 +135,7 @@ export function GameEmbed({ slug, title, aspectRatio }: GameEmbedProps) {
         </button>
 
         <a
-          href={`/games/${slug}/index.html`}
+          href={`/games/${slug}/game.html`}
           target="_blank"
           rel="noopener noreferrer"
           className={ACTION_CLASS}

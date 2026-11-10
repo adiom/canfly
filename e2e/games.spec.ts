@@ -135,7 +135,7 @@ test.describe('games: файлы игр', () => {
       })
       page.on('request', (request) => hosts.add(new URL(request.url()).host))
 
-      const response = await page.goto(`/games/${game.slug}/index.html`, {
+      const response = await page.goto(`/games/${game.slug}/game.html`, {
         waitUntil: 'domcontentloaded',
       })
       expect(response!.status()).toBe(200)
@@ -157,7 +157,7 @@ test.describe('games: файлы игр', () => {
       expect(css.status(), `fonts.css for ${game.slug}`).toBe(200)
       expect(await css.text()).toContain("url(./")
 
-      const html = await request.get(`/games/${game.slug}/index.html`)
+      const html = await request.get(`/games/${game.slug}/game.html`)
       const body = await html.text()
       expect(body).toContain('fonts/fonts.css')
       expect(body).not.toMatch(/https?:\/\//)
@@ -165,7 +165,7 @@ test.describe('games: файлы игр', () => {
   })
 
   test('заголовки: файл игры можно встроить, страницы — нет', async ({ request }) => {
-    const file = await request.get('/games/quantum-clash/index.html')
+    const file = await request.get('/games/quantum-clash/game.html')
     expect(file.status()).toBe(200)
     expect(file.headers()['x-frame-options']).toBe('SAMEORIGIN')
     expect(file.headers()['content-security-policy']).toContain("frame-ancestors 'self'")
@@ -196,14 +196,14 @@ test.describe('games: страницы и связи', () => {
     expect(response!.status()).toBe(200)
 
     const iframe = page.locator('iframe')
-    await expect(iframe).toHaveAttribute('src', `/games/${PUBLISHED_SLUG}/index.html`)
+    await expect(iframe).toHaveAttribute('src', `/games/${PUBLISHED_SLUG}/game.html`)
     const sandbox = await iframe.getAttribute('sandbox')
     expect(sandbox).toContain('allow-scripts')
     // allow-same-origin нужен: игра сохраняет прогресс в localStorage.
     expect(sandbox).toContain('allow-same-origin')
 
     await expect(page.getByRole('button', { name: 'На весь экран' })).toBeVisible()
-    await expect(page.locator(`a[href="/games/${PUBLISHED_SLUG}/index.html"]`)).toBeVisible()
+    await expect(page.locator(`a[href="/games/${PUBLISHED_SLUG}/game.html"]`)).toBeVisible()
 
     if (linkedCharacter) {
       await expect(page.locator(`a[href="/characters/${linkedCharacter.slug}"]`)).toBeVisible()
