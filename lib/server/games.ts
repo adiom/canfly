@@ -35,8 +35,8 @@ export async function fetchGameById(id: string): Promise<Game | null> {
 
 export async function createGame(data: Record<string, unknown>): Promise<Game | null> {
   return dbQueryOne<Game>(
-    `INSERT INTO games (title, slug, tagline, description, cover_image, aspect_ratio, display_order, is_published)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `INSERT INTO games (title, slug, tagline, description, cover_image, seo_title, seo_description, seo_noindex, aspect_ratio, display_order, is_published)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING *`,
     [
       data.title,
@@ -44,6 +44,9 @@ export async function createGame(data: Record<string, unknown>): Promise<Game | 
       data.tagline ?? null,
       data.description ?? null,
       data.cover_image ?? null,
+      data.seo_title ?? null,
+      data.seo_description ?? null,
+      data.seo_noindex ?? false,
       data.aspect_ratio ?? '16:9',
       data.display_order ?? 0,
       data.is_published ?? false,
@@ -57,6 +60,9 @@ const gameUpdatable: Record<string, UpdatableColumn> = {
   tagline: { column: 'tagline' },
   description: { column: 'description' },
   cover_image: { column: 'cover_image' },
+  seo_title: { column: 'seo_title' },
+  seo_description: { column: 'seo_description' },
+  seo_noindex: { column: 'seo_noindex' },
   aspect_ratio: { column: 'aspect_ratio' },
   display_order: { column: 'display_order' },
   is_published: { column: 'is_published' },

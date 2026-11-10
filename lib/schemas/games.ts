@@ -29,6 +29,9 @@ export const gameFormSchema = z.object({
   tagline: optionalString,
   description: optionalString,
   cover_image: optionalString,
+  seo_title: z.string().trim().max(300, 'SEO-заголовок слишком длинный').nullish().transform(v => v || null),
+  seo_description: z.string().trim().max(500, 'SEO-описание слишком длинное').nullish().transform(v => v || null),
+  seo_noindex: z.preprocess(v => v === 'on' || v === 'true' || v === true, z.boolean()),
   aspect_ratio: gameAspectRatioSchema.catch('16:9'),
   display_order: z.preprocess((v) => {
     const n = typeof v === 'string' ? Number.parseInt(v, 10) : Number(v)
