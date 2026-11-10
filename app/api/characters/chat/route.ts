@@ -1,123 +1,237 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { ModelMessage, streamText } from 'ai'
-import {
-  addCharacterMessage,
-  fetchConversationMessages,
-  getOrCreateCharacterConversation,
-  upsertCharacterFriendship,
-} from '@/lib/server/users'
+import { streamText } from 'ai'
+
+import { apiHandler } from '@/lib/api-handler'
 import { getCurrentUser } from '@/lib/server/session'
 import { fetchCharacterBySlug } from '@/lib/server/characters'
-import { checkRateLimit } from '@/lib/server/rate-limit'
-import { apiHandler } from '@/lib/api-handler'
+import {
+  claimCharacterTurn,
+  completeCharacterTurn,
+  failCharacterTurn,
+  fetchConversationMessages,
+  getFriendship,
+} from '@/lib/server/users'
+import { checkRateLimit, rateLimitResponse } from '@/lib/server/rate-limit'
+import { CHARACTER_CHAT_CONFIG } from '@/lib/ai/character-chat/config'
+import { resolveCharacterChatAvailability } from '@/lib/ai/character-chat/availability'
+import { buildCharacterChatSystemPrompt } from '@/lib/ai/character-chat/prompt'
+import {
+  buildModelContext,
+  extractLatestUserMessage,
+  normalizeChatText,
+} from '@/lib/ai/character-chat/turn'
+import { resolveCharacterAiRuntimeConfig } from '@/lib/server/character-ai-settings'
+import { characterChatRequestSchema } from '@/lib/schemas/character-chat'
 
-// Системные промпты больше не хранятся в коде — каждый персонаж получает свой
-// из БД (поле characters.system_role, редактируется в Studio). Если поле пустое,
-// чат отключён: route возвращает 503, страница /chat показывает «не настроено».
+export const dynamic = 'force-dynamic'
+
+function chatError(status: number, error: string, reason?: string) {
+  return NextResponse.json(reason ? { error, reason } : { error }, { status })
+}
+
+function toTextResponse(text: string, headers?: Record<string, string>) {
+  return new NextResponse(text, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': 'no-store',
+      ...headers,
+    },
+  })
+}
+
+function errorCode(error: unknown): string {
+  if (error instanceof Error && error.name) return error.name
+  return 'unknown_error'
+}
+
+function usageMetadata(usage: {
+  inputTokens?: number
+  outputTokens?: number
+  totalTokens?: number
+  cachedInputTokens?: number
+} | undefined) {
+  return {
+    inputTokens: usage?.inputTokens ?? null,
+    outputTokens: usage?.outputTokens ?? null,
+    totalTokens: usage?.totalTokens ?? null,
+    cachedInputTokens: usage?.cachedInputTokens ?? null,
+  }
+}
 
 async function postCharacterChat(request: NextRequest) {
-  const { messages, characterSlug } = await request.json()
-
-  if (!characterSlug) {
-    return new NextResponse('Invalid character', { status: 400 })
+  // Тело ограничиваем до JSON.parse. request.json() без предела позволял бы
+  // прислать произвольный объём данных до первого платного вызова.
+  const rawBody = await request.text()
+  if (rawBody.length > CHARACTER_CHAT_CONFIG.maxRequestBodyChars) {
+    return chatError(413, 'Слишком длинный запрос')
   }
 
-  const data = await fetchCharacterBySlug(characterSlug)
-
-  if (!data?.character) {
-    return new NextResponse('Invalid character', { status: 400 })
+  let payload: unknown
+  try {
+    payload = JSON.parse(rawBody)
+  } catch {
+    return chatError(400, 'Некорректный JSON')
   }
 
-  const character = data.character
-
-  if (!character.can_receive_messages || character.reply_mode === 'disabled') {
-    return new NextResponse('Character does not receive messages', { status: 403 })
+  const parsed = characterChatRequestSchema.safeParse(payload)
+  if (!parsed.success) {
+    return chatError(400, 'Некорректный запрос')
   }
+
+  const { characterSlug, requestId, message, messages } = parsed.data
 
   const user = await getCurrentUser()
-  if (!user) return new NextResponse('Unauthorized', { status: 401 })
+  if (!user) return chatError(401, 'Unauthorized')
 
-  // Каждое сообщение — платный вызов модели, поэтому лимит на пользователя
+  const data = await fetchCharacterBySlug(characterSlug)
+  if (!data?.character) return chatError(404, 'Character not found')
+
+  const character = data.character
+  const friendship = await getFriendship(user.id, character.id)
+  const availability = resolveCharacterChatAvailability({
+    character,
+    friendshipStatus: friendship?.status ?? null,
+    authenticated: true,
+  })
+
+  if (!availability.canGenerate) {
+    const status = availability.reason === 'unconfigured' ? 503 : 403
+    return chatError(status, availability.label, availability.reason)
+  }
+
+  // Runtime и Studio читают один resolver. Без установленной схемы он
+  // возвращает документированные defaults, а чат продолжает работать.
+  const ai = await resolveCharacterAiRuntimeConfig(character.id)
+  const aiConfig = ai.config
+
+  const latestText = normalizeChatText(
+    message ?? extractLatestUserMessage(messages) ?? '',
+  )
+  if (!latestText) {
+    return chatError(400, 'Пустое сообщение')
+  }
+  if (latestText.length > aiConfig.maxQuestionChars) {
+    return chatError(400, 'Сообщение слишком длинное')
+  }
+
+  // Replay того же requestId не должен списывать лимит и не должен
+  // запускать модель. Резервирование хода и проверка дублей — в одной
+  // транзакции на строке разговора.
+  const turn = await claimCharacterTurn({
+    userId: user.id,
+    characterId: character.id,
+    requestId: requestId ?? null,
+    content: latestText,
+    model: aiConfig.modelId,
+    activeTtlSeconds: CHARACTER_CHAT_CONFIG.activeTurnTtlSeconds,
+  })
+
+  if (turn.kind === 'replay') {
+    return toTextResponse(turn.text, { 'X-Character-Chat-Replay': '1' })
+  }
+  if (turn.kind === 'busy') {
+    return chatError(409, 'Предыдущий ответ ещё готовится. Дождитесь его или обновите страницу.', 'turn_in_progress')
+  }
+  if (turn.kind === 'conflict') {
+    return chatError(409, 'Этот requestId уже отправлен с другим текстом.', turn.reason)
+  }
+
   const limit = await checkRateLimit({
     bucket: 'chat:character',
     subject: user.id,
-    limit: 60,
+    limit: aiConfig.userTurnsPerHour,
     windowSeconds: 60 * 60,
   })
   if (!limit.allowed) {
-    return new NextResponse('Слишком много сообщений. Попробуйте позже.', {
-      status: 429,
-      headers: { 'Retry-After': String(limit.resetAfter) },
+    await failCharacterTurn({
+      conversationId: turn.conversationId,
+      userMessageId: turn.userMessageId,
+      requestId: requestId ?? null,
+      errorCode: 'rate_limited',
+    }).catch(() => undefined)
+    return rateLimitResponse(limit)
+  }
+
+  const storedMessages = await fetchConversationMessages(
+    turn.conversationId,
+    aiConfig.historyLimit,
+  )
+  const modelMessages = buildModelContext(storedMessages, aiConfig.maxContextChars)
+  const systemPrompt = buildCharacterChatSystemPrompt(character, friendship)
+
+  const startedAt = Date.now()
+  let streamFailed = false
+
+  const markFailed = async (code: string) => {
+    streamFailed = true
+    await failCharacterTurn({
+      conversationId: turn.conversationId,
+      userMessageId: turn.userMessageId,
+      requestId: requestId ?? null,
+      errorCode: code,
+    }).catch((error: unknown) => {
+      console.error('[character chat] failed to record failed turn', errorCode(error))
     })
   }
 
-  const friendship = await upsertCharacterFriendship(user.id, character.id)
-  const conversation = await getOrCreateCharacterConversation(user.id, character.id)
+  let result
+  try {
+    result = streamText({
+      model: aiConfig.modelId,
+      system: systemPrompt,
+      messages: modelMessages,
+      temperature: aiConfig.temperature,
+      maxOutputTokens: aiConfig.maxOutputTokens,
+      maxRetries: aiConfig.maxRetries,
+      abortSignal: request.signal,
+      timeout: {
+        totalMs: aiConfig.totalTimeoutMs,
+        chunkMs: aiConfig.chunkTimeoutMs,
+      },
+      onError: async ({ error }) => {
+        console.error('[character chat] model stream error', errorCode(error))
+        await markFailed(`model_${errorCode(error)}`)
+      },
+      onAbort: async () => {
+        await markFailed('aborted')
+      },
+      onFinish: async (event) => {
+        if (streamFailed) return
 
-  if (!conversation) {
-    return new NextResponse('Conversation unavailable', { status: 500 })
-  }
+        const text = event.text.trim()
+        if (!text) {
+          await markFailed('empty_response')
+          return
+        }
 
-  const incomingMessages = Array.isArray(messages) ? messages : []
-  const latestUserMessage = [...incomingMessages]
-    .reverse()
-    .find((msg: { role?: string; content?: string }) => msg.role === 'user' && msg.content?.trim())
-
-  if (latestUserMessage?.content) {
-    await addCharacterMessage(conversation.id, 'user', latestUserMessage.content.trim(), {
-      source: 'chat',
+        try {
+          await completeCharacterTurn({
+            conversationId: turn.conversationId,
+            userMessageId: turn.userMessageId,
+            requestId: requestId ?? null,
+            text,
+            metadata: {
+              source: 'model',
+              requestedModel: aiConfig.modelId,
+              reportedModel: `${event.model.provider}/${event.model.modelId}`,
+              usage: usageMetadata(event.totalUsage),
+              finishReason: event.finishReason,
+              durationMs: Date.now() - startedAt,
+              settingsSource: ai.source,
+              settingsRevision: ai.settings?.revision ?? null,
+            },
+          })
+        } catch (error) {
+          // Поток уже отдан клиенту: честно логируем, но не подменяем ответ.
+          console.error('[character chat] failed to persist assistant turn', errorCode(error))
+        }
+      },
     })
+  } catch (error) {
+    await markFailed(`setup_${errorCode(error)}`)
+    return chatError(502, 'AI-сервис временно недоступен')
   }
-
-  const storedMessages = await fetchConversationMessages(conversation.id, 24)
-  const modelMessages: ModelMessage[] = storedMessages.map((message) => ({
-    role: message.role === 'character' ? 'assistant' : message.role,
-    content: message.content,
-  }))
-
-  const characterPrompt = character.system_role?.trim()
-
-  if (!characterPrompt) {
-    return new NextResponse('System instruction not configured', { status: 503 })
-  }
-
-  const systemPrompt = `${characterPrompt}
-
-Информация о персонаже:
-Имя: ${character.name}
-Описание: ${character.bio}
-${character.full_description ? `\nПолное описание: ${character.full_description}` : ''}
-${character.personality ? `\nХарактер: ${character.personality}` : ''}
-${character.speaking_style ? `\nМанера речи: ${character.speaking_style}` : ''}
-${character.knowledge_scope ? `\nГраницы знаний: ${character.knowledge_scope}` : ''}
-${character.spoiler_policy ? `\nПолитика спойлеров: ${character.spoiler_policy}` : ''}
-${character.boundaries ? `\nОграничения: ${character.boundaries}` : ''}
-
-Отношение к пользователю:
-Пользователь добавил персонажа в друзья. Статус связи: ${friendship?.status || 'accepted'}.
-Уровень близости: ${friendship?.intimacy_level ?? 1}/100.
-
-Правила общения:
-- Говори только от лица этого персонажа.
-- Не утверждай, что ты AI.
-- Не раскрывай скрытые сюжетные детали, если пользователь явно не просит спойлеры.
-- Если тебя спрашивают о книгах и комиксах вселенной canfly, рассказывай как этот персонаж видит эти события.`
-
-  const result = streamText({
-    model: 'openai/gpt-4o-mini',
-    system: systemPrompt,
-    messages: modelMessages,
-    temperature: 0.8,
-    maxOutputTokens: 1024,
-    onFinish: async ({ text }) => {
-      if (text?.trim()) {
-        await addCharacterMessage(conversation.id, 'character', text.trim(), {
-          source: 'openai',
-          model: 'gpt-4o-mini',
-        })
-      }
-    },
-  })
 
   return result.toTextStreamResponse() as unknown as NextResponse
 }

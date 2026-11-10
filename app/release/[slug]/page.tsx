@@ -9,6 +9,7 @@ import { fetchCharactersList } from '@/lib/server/characters'
 import { fetchGamesByRelease } from '@/lib/server/games'
 import { fetchPlacesByRelease } from '@/lib/server/places'
 import { fetchPublicHighlightsByRelease } from '@/lib/server/chapter-highlights'
+import { resolveCharacterChatAvailability } from '@/lib/ai/character-chat/availability'
 import { getReleaseViewer } from '@/lib/server/studio-auth'
 import { ReleasePagePublic } from '@/components/release-page'
 import { canOpenEdition, computeEditionMeta, getPrimaryEdition } from '@/lib/utils/editions'
@@ -98,8 +99,9 @@ export default async function ReleasePublicPage({ params }: { params: Promise<{ 
   const characters = releaseChars.flatMap(({ character_id, role }) => {
     const character = charactersById.get(character_id)
     if (!character) return []
-    const { id, name, slug, avatar, bio, can_receive_messages, reply_mode } = character
-    return [{ id, name, slug, avatar: avatar ?? null, bio, role, canChat: can_receive_messages !== false && reply_mode !== 'disabled' }]
+    const { id, name, slug, avatar, bio } = character
+    const canChat = resolveCharacterChatAvailability({ character }).canGenerate
+    return [{ id, name, slug, avatar: avatar ?? null, bio, role, canChat }]
   })
 
   // Карта slug → role. Используется в JSON-LD, чтобы выделить protagonist

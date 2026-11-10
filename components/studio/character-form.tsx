@@ -127,7 +127,16 @@ export function CharacterForm({ character }: CharacterFormProps) {
 
         <div className="space-y-2">
           <Label htmlFor="abilities" className="text-gray-600">Способности (по одной на строку)</Label>
-          
+          <Textarea
+            id="abilities"
+            name="abilities"
+            rows={4}
+            defaultValue={
+              Array.isArray(character?.abilities) ? character.abilities.join('\n') : ''
+            }
+            placeholder="Например: читает чужие сны"
+            className="bg-white/60 border-white/70 rounded-xl"
+          />
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">

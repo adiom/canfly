@@ -20,6 +20,7 @@ import {
   formatZodError,
   updateCharacterPostSchema,
 } from '@/lib/schemas/character-post'
+import { buildCharacterUpdateData, parseAbilities } from '@/lib/studio/character-update'
 
 const VALID_REPLY_MODES: CharacterReplyMode[] = ['ai_auto', 'manual', 'hybrid', 'disabled']
 const VALID_CHARACTER_TYPES: CharacterType[] = ['person', 'city']
@@ -66,13 +67,6 @@ function normalizeCharacterType(value: unknown): CharacterType {
   return typeof value === 'string' && VALID_CHARACTER_TYPES.includes(value as CharacterType)
     ? (value as CharacterType)
     : 'person'
-}
-
-function parseAbilities(raw: string): string[] {
-  return raw
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
 }
 
 // ── Characters CRUD ─────────────────────────────────────────────────────────
@@ -145,40 +139,12 @@ export async function createCharacterAction(formData: FormData) {
 export async function updateCharacterAction(id: string, formData: FormData) {
   await requireAdmin()
 
-  const characterType = normalizeCharacterType(formData.get('character_type'))
+  const existing = await charactersDb.fetchCharacterById(id)
+  if (!existing) throw new Error('Персонаж не найден')
 
-  const data: Record<string, unknown> = {
-    name: str(formData, 'name'),
-    slug: str(formData, 'slug'),
-    avatar: strOrNull(formData, 'avatar'),
-    bio: strOrNull(formData, 'bio'),
-    full_description: strOrNull(formData, 'full_description'),
-    character_type: characterType,
-    passport: strOrNull(formData, 'passport'),
-    map_image_url: strOrNull(formData, 'map_image_url'),
-  }
-
-  if (characterType === 'person') {
-    data.abilities = parseAbilities(str(formData, 'abilities'))
-    data.speaking_style = strOrNull(formData, 'speaking_style')
-    data.personality = strOrNull(formData, 'personality')
-    data.boundaries = strOrNull(formData, 'boundaries')
-    data.knowledge_scope = strOrNull(formData, 'knowledge_scope')
-    data.spoiler_policy = strOrNull(formData, 'spoiler_policy')
-    data.system_role = str(formData, 'system_role').trim().slice(0, 8000)
-    data.reply_mode = normalizeReplyMode(formData.get('reply_mode'))
-    data.can_receive_messages = formData.get('can_receive_messages') !== 'false'
-  } else {
-    data.abilities = []
-    data.speaking_style = null
-    data.personality = null
-    data.boundaries = null
-    data.knowledge_scope = null
-    data.spoiler_policy = null
-    data.system_role = ''
-    data.reply_mode = 'disabled'
-    data.can_receive_messages = false
-  }
+  // Непереданное поле означает «не менять»: старая форма может не содержать
+  // паспорт/способности, и сохранение инструкции не должно их стирать.
+  const data = buildCharacterUpdateData(formData, existing)
 
   await charactersDb.updateCharacter(id, data)
 

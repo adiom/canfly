@@ -1,5 +1,5 @@
 import { randomBytes, pbkdf2 } from 'crypto'
-import { dbQuery, dbQueryOne } from '@/lib/db'
+import { dbQuery, dbQueryOne, withTransaction } from '@/lib/db'
 import {
   AdminUserProfile,
   CharacterConversation,
@@ -200,11 +200,26 @@ export async function getFriendship(userId: string, characterId: string) {
   )
 }
 
-export async function deleteCharacterFriendship(userId: string, characterId: string) {
-  await dbQuery(
-    'DELETE FROM character_friendships WHERE user_id = $1 AND character_id = $2',
+/**
+ * Удаление связи по инициативе пользователя. Заблокированную связь удалять
+ * нельзя: иначе DELETE + повторный POST вернул бы `accepted` и обошёл блокировку.
+ * Возвращаем признак, чтобы API ответил 409, а не притворился успехом.
+ */
+export async function deleteCharacterFriendship(
+  userId: string,
+  characterId: string,
+): Promise<{ deleted: boolean; blocked: boolean }> {
+  const removed = await dbQueryOne<{ id: string }>(
+    `DELETE FROM character_friendships
+     WHERE user_id = $1 AND character_id = $2 AND status <> 'blocked'
+     RETURNING id`,
     [userId, characterId],
   )
+
+  if (removed) return { deleted: true, blocked: false }
+
+  const existing = await getFriendship(userId, characterId)
+  return { deleted: false, blocked: existing?.status === 'blocked' }
 }
 
 export async function upsertCharacterFriendship(userId: string, characterId: string) {
@@ -295,17 +310,277 @@ export async function adminDeleteCharacterFriendship(
   return Boolean(result)
 }
 
-export async function getOrCreateCharacterConversation(userId: string, characterId: string) {
+/** Только чтение: открытие истории не создаёт диалог и не меняет updated_at. */
+export async function fetchCharacterConversation(userId: string, characterId: string) {
   return dbQueryOne<CharacterConversation>(
     `
-      INSERT INTO character_conversations (user_id, character_id)
-      VALUES ($1, $2)
-      ON CONFLICT (user_id, character_id)
-      DO UPDATE SET updated_at = NOW()
-      RETURNING *
+      SELECT *
+      FROM character_conversations
+      WHERE user_id = $1 AND character_id = $2
+      LIMIT 1
     `,
     [userId, characterId],
   )
+}
+
+type MessageMetadata = Record<string, unknown>
+
+function metadataAttempt(metadata: CharacterMessage['metadata']): Record<string, unknown> {
+  const attempt = metadata?.attempt
+  return attempt && typeof attempt === 'object' && !Array.isArray(attempt)
+    ? (attempt as Record<string, unknown>)
+    : {}
+}
+
+function attemptStatus(metadata: CharacterMessage['metadata']): string | null {
+  const status = metadataAttempt(metadata).status
+  return typeof status === 'string' ? status : null
+}
+
+function requestMatches(metadata: CharacterMessage['metadata'], requestId: string | null): boolean {
+  const stored = metadata?.requestId
+  if (requestId === null) return typeof stored !== 'string'
+  return stored === requestId
+}
+
+export type CharacterTurnClaim =
+  | { kind: 'start'; conversationId: string; userMessageId: string; retried: boolean }
+  | { kind: 'replay'; conversationId: string; text: string }
+  | { kind: 'busy'; conversationId: string }
+  | { kind: 'conflict'; conversationId: string; reason: 'request_mismatch' }
+
+/**
+ * Резервирует один ход под блокировкой строки разговора.
+ *
+ * JSONB metadata не даёт отдельного уникального индекса по requestId, поэтому
+ * это best-effort дедупликация: все новые записи хода идут через эту функцию и
+ * одну блокировку. Заявление о строгой exactly-once здесь неуместно.
+ */
+export async function claimCharacterTurn(input: {
+  userId: string
+  characterId: string
+  requestId: string | null
+  content: string
+  model: string
+  activeTtlSeconds: number
+}): Promise<CharacterTurnClaim> {
+  const { userId, characterId, requestId, content, model, activeTtlSeconds } = input
+  const startedAt = new Date().toISOString()
+
+  return withTransaction(async (client) => {
+    // ON CONFLICT DO NOTHING не запускает updated_at-trigger, поэтому чтение
+    // истории/резервирование не «оживляет» диалог само по себе.
+    await client.query(
+      `INSERT INTO character_conversations (user_id, character_id)
+       VALUES ($1, $2)
+       ON CONFLICT (user_id, character_id) DO NOTHING`,
+      [userId, characterId],
+    )
+
+    const conversationResult = await client.query<CharacterConversation>(
+      `SELECT * FROM character_conversations
+       WHERE user_id = $1 AND character_id = $2
+       FOR UPDATE`,
+      [userId, characterId],
+    )
+    const conversation = conversationResult.rows[0]
+    if (!conversation) throw new Error('Conversation unavailable')
+
+    if (requestId) {
+      const sameRequest = await client.query<CharacterMessage>(
+        `SELECT * FROM character_messages
+         WHERE conversation_id = $1 AND metadata->>'requestId' = $2
+         ORDER BY created_at ASC, id ASC`,
+        [conversation.id, requestId],
+      )
+
+      const assistant = [...sameRequest.rows]
+        .reverse()
+        .find((message) => message.role === 'character')
+      if (assistant) {
+        return { kind: 'replay', conversationId: conversation.id, text: assistant.content }
+      }
+
+      const existingUser = sameRequest.rows.find((message) => message.role === 'user')
+      if (existingUser) {
+        if (existingUser.content !== content) {
+          return { kind: 'conflict', conversationId: conversation.id, reason: 'request_mismatch' }
+        }
+
+        const pendingFresh =
+          attemptStatus(existingUser.metadata) === 'pending' &&
+          Date.now() - new Date(existingUser.created_at).getTime() < activeTtlSeconds * 1000
+
+        if (pendingFresh) {
+          return { kind: 'busy', conversationId: conversation.id }
+        }
+
+        // Неудачная/зависшая попытка: повторяем тот же вопрос, не дублируя
+        // пользовательскую реплику новым requestId.
+        const retryMetadata: MessageMetadata = {
+          ...(existingUser.metadata ?? {}),
+          attempt: {
+            ...metadataAttempt(existingUser.metadata),
+            status: 'pending',
+            startedAt,
+            requestedModel: model,
+          },
+        }
+        await client.query(
+          'UPDATE character_messages SET metadata = $2::jsonb WHERE id = $1',
+          [existingUser.id, JSON.stringify(retryMetadata)],
+        )
+        await client.query(
+          'UPDATE character_conversations SET updated_at = NOW() WHERE id = $1',
+          [conversation.id],
+        )
+        return {
+          kind: 'start',
+          conversationId: conversation.id,
+          userMessageId: existingUser.id,
+          retried: true,
+        }
+      }
+    }
+
+    // Один активный ход на диалог: второй таб/повтор получает 409.
+    const active = await client.query<{ id: string }>(
+      `SELECT id FROM character_messages
+       WHERE conversation_id = $1
+         AND role = 'user'
+         AND metadata->'attempt'->>'status' = 'pending'
+         AND created_at > NOW() - ($2::int * INTERVAL '1 second')
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [conversation.id, activeTtlSeconds],
+    )
+    if (active.rows[0]) {
+      return { kind: 'busy', conversationId: conversation.id }
+    }
+
+    const metadata: MessageMetadata = {
+      source: 'chat',
+      ...(requestId ? { requestId } : {}),
+      attempt: { status: 'pending', startedAt, requestedModel: model },
+    }
+
+    const inserted = await client.query<CharacterMessage>(
+      `INSERT INTO character_messages (conversation_id, role, content, metadata)
+       VALUES ($1, 'user', $2, $3::jsonb)
+       RETURNING *`,
+      [conversation.id, content, JSON.stringify(metadata)],
+    )
+    const userMessage = inserted.rows[0]
+    if (!userMessage) throw new Error('Failed to save chat message')
+
+    await client.query(
+      'UPDATE character_conversations SET updated_at = NOW() WHERE id = $1',
+      [conversation.id],
+    )
+
+    return {
+      kind: 'start',
+      conversationId: conversation.id,
+      userMessageId: userMessage.id,
+      retried: false,
+    }
+  })
+}
+
+/**
+ * Записывает ответ персонажа только если попытка всё ещё принадлежит этому
+ * ходу и её не обогнал более новый вопрос. Поздний onFinish старого запроса
+ * поэтому не может дописать текст поверх новой переписки.
+ */
+export async function completeCharacterTurn(input: {
+  conversationId: string
+  userMessageId: string
+  requestId: string | null
+  text: string
+  metadata: MessageMetadata
+}): Promise<CharacterMessage | null> {
+  return withTransaction(async (client) => {
+    const locked = await client.query<CharacterMessage>(
+      `SELECT * FROM character_messages
+       WHERE id = $1 AND conversation_id = $2
+       FOR UPDATE`,
+      [input.userMessageId, input.conversationId],
+    )
+    const userMessage = locked.rows[0]
+    if (!userMessage || userMessage.role !== 'user') return null
+    if (attemptStatus(userMessage.metadata) !== 'pending') return null
+    if (!requestMatches(userMessage.metadata, input.requestId)) return null
+
+    const latest = await client.query<{ id: string }>(
+      `SELECT id FROM character_messages
+       WHERE conversation_id = $1 AND role = 'user'
+       ORDER BY created_at DESC, id DESC
+       LIMIT 1`,
+      [input.conversationId],
+    )
+    if (latest.rows[0]?.id !== input.userMessageId) return null
+
+    const saved = await client.query<CharacterMessage>(
+      `INSERT INTO character_messages (conversation_id, role, content, metadata)
+       VALUES ($1, 'character', $2, $3::jsonb)
+       RETURNING *`,
+      [input.conversationId, input.text, JSON.stringify(input.metadata)],
+    )
+
+    const completedMetadata: MessageMetadata = {
+      ...(userMessage.metadata ?? {}),
+      attempt: {
+        ...metadataAttempt(userMessage.metadata),
+        status: 'completed',
+        finishedAt: new Date().toISOString(),
+      },
+    }
+    await client.query(
+      'UPDATE character_messages SET metadata = $2::jsonb WHERE id = $1',
+      [userMessage.id, JSON.stringify(completedMetadata)],
+    )
+    await client.query(
+      'UPDATE character_conversations SET updated_at = NOW() WHERE id = $1',
+      [input.conversationId],
+    )
+
+    return saved.rows[0] ?? null
+  })
+}
+
+/** Неудачная попытка — это состояние metadata, а не реплика персонажа. */
+export async function failCharacterTurn(input: {
+  conversationId: string
+  userMessageId: string
+  requestId: string | null
+  errorCode: string
+}): Promise<void> {
+  await withTransaction(async (client) => {
+    const locked = await client.query<CharacterMessage>(
+      `SELECT * FROM character_messages
+       WHERE id = $1 AND conversation_id = $2
+       FOR UPDATE`,
+      [input.userMessageId, input.conversationId],
+    )
+    const userMessage = locked.rows[0]
+    if (!userMessage || userMessage.role !== 'user') return
+    if (attemptStatus(userMessage.metadata) !== 'pending') return
+    if (!requestMatches(userMessage.metadata, input.requestId)) return
+
+    const failedMetadata: MessageMetadata = {
+      ...(userMessage.metadata ?? {}),
+      attempt: {
+        ...metadataAttempt(userMessage.metadata),
+        status: 'failed',
+        errorCode: input.errorCode.slice(0, 100),
+        finishedAt: new Date().toISOString(),
+      },
+    }
+    await client.query(
+      'UPDATE character_messages SET metadata = $2::jsonb WHERE id = $1',
+      [userMessage.id, JSON.stringify(failedMetadata)],
+    )
+  })
 }
 
 export async function fetchConversationMessages(conversationId: string, limit = 40) {

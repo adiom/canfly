@@ -5,8 +5,9 @@ import { Input } from '@/components/ui/input'
 import Image from 'next/image'
 import { useRef, useEffect, useState } from 'react'
 import { readTextStream } from '@/lib/chat/read-text-stream'
+import { CHARACTER_CHAT_CONFIG } from '@/lib/ai/character-chat/config'
 
-interface Message {
+export interface CharacterChatMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
@@ -16,112 +17,156 @@ interface CharacterChatProps {
   characterSlug: string
   characterName: string
   characterAvatar: string
+  /** Может ли персонаж отвечать сейчас. `false` — история только для чтения. */
+  canGenerate: boolean
+  /** Объяснение, почему нельзя написать. Показывается вместо поля ввода. */
+  statusMessage?: string
+  /** История, уже прочитанная сервером. Клиент её не перезапрашивает. */
+  initialMessages?: CharacterChatMessage[]
 }
 
-export function CharacterChat({ characterSlug, characterName, characterAvatar }: CharacterChatProps) {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      role: 'assistant',
-      content: `Привет! Я ${characterName}. Рад(а) познакомиться с тобой. Хочешь узнать больше о мне, о нашей вселенной или просто поговорить?`,
-    },
-  ])
+function greetingFor(characterName: string): CharacterChatMessage {
+  return {
+    id: 'greeting',
+    role: 'assistant',
+    content: `Привет! Я ${characterName}. Рад(а) познакомиться с тобой. Хочешь узнать больше о мне, о нашей вселенной или просто поговорить?`,
+  }
+}
+
+/** Ошибку сервер отдаёт JSON-ом; сеть может отдать что угодно. */
+async function readErrorMessage(response: Response): Promise<string> {
+  try {
+    const payload: unknown = await response.json()
+    if (payload && typeof payload === 'object' && 'error' in payload) {
+      const { error } = payload as { error?: unknown }
+      if (typeof error === 'string' && error.trim()) return error
+    }
+  } catch {
+    // ignore: ниже общий текст
+  }
+
+  if (response.status === 429) return 'Слишком много сообщений. Попробуйте позже.'
+  if (response.status === 401) return 'Войдите, чтобы продолжить разговор.'
+  return 'Не удалось получить ответ. Попробуйте ещё раз.'
+}
+
+export function CharacterChat({
+  characterSlug,
+  characterName,
+  characterAvatar,
+  canGenerate,
+  statusMessage,
+  initialMessages = [],
+}: CharacterChatProps) {
+  const [messages, setMessages] = useState<CharacterChatMessage[]>(() => {
+    if (initialMessages.length > 0) return initialMessages
+    return canGenerate ? [greetingFor(characterName)] : []
+  })
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [historyLoading, setHistoryLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const stickToBottomRef = useRef(true)
+  // Повтор того же текста после сбоя переиспользует requestId: сервер
+  // продолжит неудачный ход, а не создаст вторую реплику с тем же вопросом.
+  const lastAttemptRef = useRef<{ text: string; requestId: string } | null>(null)
 
   useEffect(() => {
-    let active = true
+    // Не дёргаем чтение выше: автопрокрутка только если читатель уже внизу.
+    if (!stickToBottomRef.current) return
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    messagesEndRef.current?.scrollIntoView({
+      behavior: reduced ? 'auto' : 'smooth',
+      block: 'end',
+    })
+  }, [messages, isLoading])
 
-    const loadHistory = async () => {
-      try {
-        const response = await fetch(`/api/characters/${characterSlug}/conversation`)
-        const payload = await response.json()
-        const savedMessages = payload.data?.messages
+  const handleScroll = () => {
+    const container = scrollContainerRef.current
+    if (!container) return
+    stickToBottomRef.current =
+      container.scrollHeight - container.scrollTop - container.clientHeight < 80
+  }
 
-        if (!active || !Array.isArray(savedMessages) || savedMessages.length === 0) {
-          return
-        }
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
 
-        setMessages(
-          savedMessages.map(
-            (message: { id: string; role: 'user' | 'character' | 'system'; content: string }) => ({
-              id: message.id,
-              role: message.role === 'character' ? 'assistant' : 'user',
-              content: message.content,
-            }),
-          ),
-        )
-      } catch (error) {
-        console.error('Conversation history error:', error)
-      } finally {
-        if (active) setHistoryLoading(false)
-      }
-    }
+    const text = input.trim()
+    if (!text || isLoading || !canGenerate) return
 
-    loadHistory()
+    // requestId делает повтор безопасным: тот же ход не спишет лимит второй раз
+    // и не запустит модель, а сервер вернёт уже сохранённый ответ.
+    const previous = lastAttemptRef.current
+    const requestId = previous?.text === text ? previous.requestId : crypto.randomUUID()
+    lastAttemptRef.current = { text, requestId }
+    const userMessageId = `user-${requestId}`
+    const assistantMessageId = `character-${requestId}`
 
-    return () => {
-      active = false
-    }
-  }, [characterSlug])
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!input.trim() || isLoading) return
-
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: input,
-    }
-
-    setMessages((prev) => [...prev, userMessage])
+    setMessages((prev) =>
+      prev.some((message) => message.id === userMessageId)
+        ? prev
+        : [...prev, { id: userMessageId, role: 'user', content: text }],
+    )
     setInput('')
+    setError(null)
     setIsLoading(true)
+
+    let received = ''
 
     try {
       const response = await fetch('/api/characters/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: messages.map((m) => ({ role: m.role, content: m.content })).concat([{ role: 'user', content: input }]),
-          characterSlug,
-        }),
+        body: JSON.stringify({ characterSlug, message: text, requestId }),
       })
 
-      if (!response.ok) throw new Error('Chat failed')
+      if (!response.ok) {
+        setError(await readErrorMessage(response))
 
-      if (!response.body) throw new Error('No response body')
-      let assistantMessage = ''
-      const messageId = crypto.randomUUID()
-      const updateMessage = () => {
-        setMessages((prev) => {
-          const existing = prev.find((m) => m.id === messageId)
-          if (existing) return prev.map((m) => m.id === messageId ? { ...m, content: assistantMessage } : m)
-          return [...prev, { id: messageId, role: 'assistant', content: assistantMessage }]
-        })
+        // 4xx — ход не сохранён, поэтому убираем оптимистичную реплику и
+        // возвращаем текст в поле. 429 и 5xx оставляем: вопрос уже записан.
+        if (response.status < 500 && response.status !== 429) {
+          setMessages((prev) => prev.filter((message) => message.id !== userMessageId))
+          setInput((current) => (current ? current : text))
+          lastAttemptRef.current = null
+        }
+        return
+      }
+
+      if (!response.body) {
+        setError('Сервер не прислал ответ. Попробуйте ещё раз.')
+        setMessages((prev) => prev.filter((message) => message.id !== userMessageId))
+        return
       }
 
       for await (const chunk of readTextStream(response.body)) {
-        assistantMessage += chunk
-        updateMessage()
+        received += chunk
+        const content = received
+
+        setMessages((prev) => {
+          const exists = prev.some((message) => message.id === assistantMessageId)
+          if (exists) {
+            return prev.map((message) =>
+              message.id === assistantMessageId ? { ...message, content } : message,
+            )
+          }
+          return [...prev, { id: assistantMessageId, role: 'assistant', content }]
+        })
       }
-    } catch (error) {
-      console.error('Chat error:', error)
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: Date.now().toString(),
-          role: 'assistant',
-          content: 'Извини, произошла ошибка. Попробуй ещё раз.',
-        },
-      ])
+
+      if (!received.trim()) {
+        setError('Персонаж не ответил. Попробуйте ещё раз.')
+        setMessages((prev) => prev.filter((message) => message.id !== assistantMessageId))
+      } else {
+        lastAttemptRef.current = null
+      }
+    } catch (streamError) {
+      console.error('Character chat error:', streamError)
+      setError('Связь прервалась. Проверьте соединение и попробуйте ещё раз.')
+      if (!received) {
+        setMessages((prev) => prev.filter((message) => message.id !== assistantMessageId))
+      }
     } finally {
       setIsLoading(false)
     }
@@ -130,13 +175,15 @@ export function CharacterChat({ characterSlug, characterName, characterAvatar }:
   return (
     <div className="flex h-full flex-col">
       {/* Messages Container */}
-      <div className="mb-6 flex-1 space-y-4 overflow-y-auto">
-        {historyLoading && (
-          <div className="cf-glass rounded-2xl px-4 py-3 text-sm text-cf-text-3">
-            Загружаем историю диалога...
-          </div>
-        )}
-
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="mb-6 flex-1 space-y-4 overflow-y-auto"
+        role="log"
+        aria-live="polite"
+        aria-relevant="additions text"
+        aria-label={`Переписка с ${characterName}`}
+      >
         {messages.map((message) => (
           <div
             key={message.id}
@@ -161,6 +208,7 @@ export function CharacterChat({ characterSlug, characterName, characterAvatar }:
             )}
           </div>
         ))}
+
         {isLoading && (
           <div className="flex gap-3">
             <CharacterAvatar name={characterName} avatar={characterAvatar} />
@@ -173,26 +221,50 @@ export function CharacterChat({ characterSlug, characterName, characterAvatar }:
             </div>
           </div>
         )}
+
+        {!canGenerate && messages.length === 0 ? (
+          <p className="text-[15px] leading-relaxed text-cf-text-3">
+            {statusMessage ?? `${characterName} сейчас не отвечает на сообщения.`}
+          </p>
+        ) : null}
+
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Form */}
-      <form onSubmit={handleSubmit} className="flex gap-3">
-        <Input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder={`Спроси ${characterName}...`}
-          disabled={isLoading}
-          className="h-12 flex-1 rounded-full border-cf-air-line bg-cf-air-surface px-5 text-cf-text-1 backdrop-blur-xl placeholder:text-cf-text-4"
-        />
-        <Button
-          type="submit"
-          disabled={isLoading || !input.trim()}
-          className="h-12 rounded-full bg-cf-air-accent px-6 font-medium text-white hover:bg-cf-air-accent-ink"
+      {error ? (
+        <div
+          role="alert"
+          className="mb-4 rounded-2xl border border-cf-air-line bg-cf-air-surface px-4 py-3 text-sm text-cf-text-2"
         >
-          {isLoading ? 'Думает...' : 'Отправить'}
-        </Button>
-      </form>
+          {error}
+        </div>
+      ) : null}
+
+      {/* Input Form */}
+      {canGenerate ? (
+        <form onSubmit={handleSubmit} className="flex gap-3">
+          <Input
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
+            placeholder={`Спроси ${characterName}...`}
+            aria-label={`Сообщение для ${characterName}`}
+            maxLength={CHARACTER_CHAT_CONFIG.maxQuestionChars}
+            disabled={isLoading}
+            className="h-12 flex-1 rounded-full border-cf-air-line bg-cf-air-surface px-5 text-cf-text-1 backdrop-blur-xl placeholder:text-cf-text-4"
+          />
+          <Button
+            type="submit"
+            disabled={isLoading || !input.trim()}
+            className="h-12 rounded-full bg-cf-air-accent px-6 font-medium text-white hover:bg-cf-air-accent-ink"
+          >
+            {isLoading ? 'Думает...' : 'Отправить'}
+          </Button>
+        </form>
+      ) : (
+        <p className="rounded-2xl border border-cf-air-line bg-cf-air-surface px-4 py-3 text-sm text-cf-text-3">
+          {statusMessage ?? `${characterName} сейчас не отвечает на сообщения.`}
+        </p>
+      )}
     </div>
   )
 }

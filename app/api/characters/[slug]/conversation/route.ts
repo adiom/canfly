@@ -1,15 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { fetchCharacterBySlug } from '@/lib/server/characters'
 import {
+  fetchCharacterConversation,
   fetchConversationMessages,
-  getOrCreateCharacterConversation,
-  upsertCharacterFriendship,
+  getFriendship,
 } from '@/lib/server/users'
 import { getCurrentUser } from '@/lib/server/session'
+import { toPublicConversationMessages, toPublicUserSummary } from '@/lib/character-public'
 import { apiHandler } from '@/lib/api-handler'
 
 export const dynamic = 'force-dynamic'
 
+/**
+ * Чистое чтение истории. GET не создаёт ни дружбу, ни разговор и не меняет
+ * `updated_at`: открытие чата — не действие пользователя.
+ */
 async function getCharacterConversation(
   request: NextRequest,
   context: { params: Promise<Record<string, string>> },
@@ -24,21 +29,21 @@ async function getCharacterConversation(
   const user = await getCurrentUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const friendship = await upsertCharacterFriendship(user.id, data.character.id)
-  const conversation = await getOrCreateCharacterConversation(user.id, data.character.id)
+  const [friendship, conversation] = await Promise.all([
+    getFriendship(user.id, data.character.id),
+    fetchCharacterConversation(user.id, data.character.id),
+  ])
 
-  if (!conversation) {
-    return NextResponse.json({ error: 'Conversation not found' }, { status: 500 })
-  }
-
-  const messages = await fetchConversationMessages(conversation.id)
+  const messages = conversation
+    ? await fetchConversationMessages(conversation.id)
+    : []
 
   return NextResponse.json({
     data: {
-      user,
+      user: toPublicUserSummary(user),
       friendship,
       conversation,
-      messages,
+      messages: toPublicConversationMessages(messages),
     },
   })
 }
