@@ -47,12 +47,13 @@ export async function generateMetadata({ params }: GamePageProps) {
   if (!game) return notFoundMetadata('Игра не найдена')
 
   return buildMetadata({
-    title: `${game.title} — canfly | культура твоего сознания`,
+    title: game.seo_title || `${game.title} — canfly | культура твоего сознания`,
     description:
-      game.tagline ?? game.description ?? `Игра вселенной canfly — ${game.title}.`,
+      game.seo_description || game.tagline || game.description || `Игра вселенной canfly — ${game.title}.`,
     path: `/games/${game.slug}`,
     generatedImage: true,
     ogType: 'website',
+    noindex: game.seo_noindex,
   })
 }
 
