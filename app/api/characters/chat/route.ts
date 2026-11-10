@@ -21,6 +21,7 @@ import {
   normalizeChatText,
 } from '@/lib/ai/character-chat/turn'
 import { resolveCharacterAiRuntimeConfig } from '@/lib/server/character-ai-settings'
+import { resolveCharacterCanon, type CharacterCanonContext } from '@/lib/server/character-canon'
 import { characterChatRequestSchema } from '@/lib/schemas/character-chat'
 
 export const dynamic = 'force-dynamic'
@@ -115,6 +116,34 @@ async function postCharacterChat(request: NextRequest) {
     return chatError(400, 'Сообщение слишком длинное')
   }
 
+  // Проверенный канон читается только для персонажа с утверждённым
+  // манифестом. Сбой чтения источников не подменяется догадками: без
+  // источников отвечать «по памяти» нельзя, поэтому ход не резервируется.
+  // Утверждённый манифест без единого пригодного фрагмента — тоже отказ:
+  // это не «нет канона», а «канон есть, но подтвердить его нечем».
+  let canon: CharacterCanonContext | null = null
+  try {
+    const resolution = await resolveCharacterCanon({
+      characterId: character.id,
+      characterSlug: character.slug,
+    })
+
+    if (resolution.kind === 'unavailable') {
+      console.error('[character chat] canon unavailable', {
+        manifest: resolution.manifestId,
+        version: resolution.manifestVersion,
+        skipped: resolution.skipped.length,
+        reasons: [...new Set(resolution.skipped.map((segment) => segment.reason))],
+      })
+      return chatError(503, 'Проверенный контекст недоступен', 'canon_unavailable')
+    }
+
+    canon = resolution.kind === 'ready' ? resolution.context : null
+  } catch (error) {
+    console.error('[character chat] canon unavailable', errorCode(error))
+    return chatError(503, 'Проверенный контекст недоступен', 'canon_unavailable')
+  }
+
   // Replay того же requestId не должен списывать лимит и не должен
   // запускать модель. Резервирование хода и проверка дублей — в одной
   // транзакции на строке разговора.
@@ -135,6 +164,17 @@ async function postCharacterChat(request: NextRequest) {
   }
   if (turn.kind === 'conflict') {
     return chatError(409, 'Этот requestId уже отправлен с другим текстом.', turn.reason)
+  }
+
+  if (canon) {
+    // Версия и хеш контекста без текста глав и без реплик читателя.
+    console.info('[character chat] canon context', {
+      manifest: canon.metadata.manifestId,
+      version: canon.metadata.manifestVersion,
+      hash: canon.metadata.contentHash.slice(0, 12),
+      segments: canon.metadata.segments.length,
+      skipped: canon.metadata.skipped.length,
+    })
   }
 
   const limit = await checkRateLimit({
@@ -158,7 +198,7 @@ async function postCharacterChat(request: NextRequest) {
     aiConfig.historyLimit,
   )
   const modelMessages = buildModelContext(storedMessages, aiConfig.maxContextChars)
-  const systemPrompt = buildCharacterChatSystemPrompt(character, friendship)
+  const systemPrompt = buildCharacterChatSystemPrompt(character, friendship, canon?.prompt ?? null)
 
   const startedAt = Date.now()
   let streamFailed = false
@@ -220,6 +260,9 @@ async function postCharacterChat(request: NextRequest) {
               durationMs: Date.now() - startedAt,
               settingsSource: ai.source,
               settingsRevision: ai.settings?.revision ?? null,
+              // Только идентификаторы и хеши: текст источников и реплик
+              // читателя в metadata не дублируется.
+              canon: canon?.metadata ?? null,
             },
           })
         } catch (error) {
