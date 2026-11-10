@@ -161,6 +161,14 @@ curl -s http://localhost:3000/api/mcp \
   `canfly_search_characters_for_relationship`,
   `canfly_upsert_character_relationship`, `canfly_delete_character_relationship`
 
+**Новости**
+
+- `canfly_create_news` — создаёт черновик (`status=draft`) или публикует новость (`status=published`).
+  Поля: `title`, `section`, `tag`, `content` (HTML), `cover_image`, `status`.
+  Slug формируется автоматически, HTML очищается перед записью, ссылка — `/news/<slug>`.
+  Поскольку MCP подключён как администратор без Studio-сессии, автор новости
+  не назначается; администратор может отредактировать её в Studio.
+
 **Серии и поиск**
 
 - `canfly_list_series`, `canfly_get_series`, `canfly_create_series`,
