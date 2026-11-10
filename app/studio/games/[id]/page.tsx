@@ -69,10 +69,10 @@ export default async function StudioGameDetailPage({ params }: { params: Promise
         <h2 className="mb-2 text-sm font-semibold text-gray-500">Файлы игры</h2>
         <p className="text-sm text-gray-500">
           Ожидаемый путь:{' '}
-          <code className="text-gray-700">public/games/{game.slug}/index.html</code>
+          <code className="text-gray-700">public/games/{game.slug}/game.html</code>
         </p>
         <Button asChild variant="outline" className="mt-3 rounded-xl">
-          <Link href={`/games/${game.slug}/index.html`} target="_blank">
+          <Link href={`/games/${game.slug}/game.html`} target="_blank">
             Проверить файл
           </Link>
         </Button>
