@@ -353,6 +353,9 @@ export interface Game {
   tagline: string | null
   description: string | null
   cover_image: string | null
+  seo_title: string | null
+  seo_description: string | null
+  seo_noindex: boolean
   aspect_ratio: GameAspectRatio
   display_order: number
   is_published: boolean
