@@ -103,6 +103,19 @@ test.describe('доступность чата персонажа', () => {
       }).reason,
     ).toBe('blocked')
   })
+
+  test('недоступность персонажа у гостя не означает наличие user для чтения истории', () => {
+    for (const character of [
+      { ...readyCharacter, reply_mode: 'disabled' as const },
+      { ...readyCharacter, reply_mode: 'manual' as const },
+      { ...readyCharacter, reply_mode: 'hybrid' as const },
+      { ...readyCharacter, system_role: '' },
+    ]) {
+      const availability = resolveCharacterChatAvailability({ character, authenticated: false })
+      expect(availability.canGenerate).toBe(false)
+      expect(availability.reason).not.toBe('auth_required')
+    }
+  })
 })
 
 test.describe('текст хода', () => {

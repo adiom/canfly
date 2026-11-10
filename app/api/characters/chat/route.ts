@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { streamText } from 'ai'
 
 import { apiHandler } from '@/lib/api-handler'
 import { getCurrentUser } from '@/lib/server/session'
@@ -23,6 +22,7 @@ import {
 import { resolveCharacterAiRuntimeConfig } from '@/lib/server/character-ai-settings'
 import { resolveCharacterCanon, type CharacterCanonContext } from '@/lib/server/character-canon'
 import { characterChatRequestSchema } from '@/lib/schemas/character-chat'
+import { characterChatErrorCode, createCharacterReplyStream } from '@/lib/ai/character-chat/generate'
 
 export const dynamic = 'force-dynamic'
 
@@ -42,22 +42,7 @@ function toTextResponse(text: string, headers?: Record<string, string>) {
 }
 
 function errorCode(error: unknown): string {
-  if (error instanceof Error && error.name) return error.name
-  return 'unknown_error'
-}
-
-function usageMetadata(usage: {
-  inputTokens?: number
-  outputTokens?: number
-  totalTokens?: number
-  cachedInputTokens?: number
-} | undefined) {
-  return {
-    inputTokens: usage?.inputTokens ?? null,
-    outputTokens: usage?.outputTokens ?? null,
-    totalTokens: usage?.totalTokens ?? null,
-    cachedInputTokens: usage?.cachedInputTokens ?? null,
-  }
+  return characterChatErrorCode(error)
 }
 
 async function postCharacterChat(request: NextRequest) {
@@ -80,7 +65,7 @@ async function postCharacterChat(request: NextRequest) {
     return chatError(400, 'Некорректный запрос')
   }
 
-  const { characterSlug, requestId, message, messages } = parsed.data
+  const { characterSlug, requestId, retryAttemptId, message, messages } = parsed.data
 
   const user = await getCurrentUser()
   if (!user) return chatError(401, 'Unauthorized')
@@ -153,17 +138,23 @@ async function postCharacterChat(request: NextRequest) {
     requestId: requestId ?? null,
     content: latestText,
     model: aiConfig.modelId,
-    activeTtlSeconds: CHARACTER_CHAT_CONFIG.activeTurnTtlSeconds,
+    // Максимальный настроенный timeout тоже оставляет время финальной записи.
+    activeTtlSeconds: Math.max(aiConfig.activeTurnTtlSeconds, Math.ceil(aiConfig.totalTimeoutMs / 1000) + 60),
+    retryAttemptId,
   })
 
   if (turn.kind === 'replay') {
     return toTextResponse(turn.text, { 'X-Character-Chat-Replay': '1' })
   }
   if (turn.kind === 'busy') {
-    return chatError(409, 'Предыдущий ответ ещё готовится. Дождитесь его или обновите страницу.', 'turn_in_progress')
+    return chatError(409, turn.reason === 'turn_status_unknown'
+      ? 'Статус предыдущего хода неизвестен. Сначала проверьте его сохранение.'
+      : 'Предыдущий ответ ещё готовится. Дождитесь подтверждения его статуса.', turn.reason)
   }
   if (turn.kind === 'conflict') {
-    return chatError(409, 'Этот requestId уже отправлен с другим текстом.', turn.reason)
+    return chatError(409, turn.reason === 'request_mismatch'
+      ? 'Этот requestId уже отправлен с другим текстом.'
+      : 'Повтор требует проверки сохранённой попытки и отдельного подтверждения.', turn.reason)
   }
 
   if (canon) {
@@ -177,106 +168,65 @@ async function postCharacterChat(request: NextRequest) {
     })
   }
 
-  const limit = await checkRateLimit({
-    bucket: 'chat:character',
-    subject: user.id,
-    limit: aiConfig.userTurnsPerHour,
-    windowSeconds: 60 * 60,
-  })
-  if (!limit.allowed) {
+  const markFailed = async (code: string, retryAt?: string) => {
     await failCharacterTurn({
       conversationId: turn.conversationId,
       userMessageId: turn.userMessageId,
       requestId: requestId ?? null,
-      errorCode: 'rate_limited',
-    }).catch(() => undefined)
-    return rateLimitResponse(limit)
-  }
-
-  const storedMessages = await fetchConversationMessages(
-    turn.conversationId,
-    aiConfig.historyLimit,
-  )
-  const modelMessages = buildModelContext(storedMessages, aiConfig.maxContextChars)
-  const systemPrompt = buildCharacterChatSystemPrompt(character, friendship, canon?.prompt ?? null)
-
-  const startedAt = Date.now()
-  let streamFailed = false
-
-  const markFailed = async (code: string) => {
-    streamFailed = true
-    await failCharacterTurn({
-      conversationId: turn.conversationId,
-      userMessageId: turn.userMessageId,
-      requestId: requestId ?? null,
+      attemptId: turn.attemptId,
       errorCode: code,
-    }).catch((error: unknown) => {
-      console.error('[character chat] failed to record failed turn', errorCode(error))
+      retryAt,
     })
   }
 
-  let result
   try {
-    result = streamText({
+    const limit = await checkRateLimit({
+      bucket: 'chat:character',
+      subject: user.id,
+      limit: aiConfig.userTurnsPerHour,
+      windowSeconds: 60 * 60,
+    })
+    if (!limit.allowed) {
+      await markFailed('rate_limited', new Date(Date.now() + limit.resetAfter * 1000).toISOString())
+      return rateLimitResponse(limit)
+    }
+
+    const storedMessages = await fetchConversationMessages(turn.conversationId, aiConfig.historyLimit)
+    const modelMessages = buildModelContext(storedMessages, aiConfig.maxContextChars)
+    const systemPrompt = buildCharacterChatSystemPrompt(character, friendship, canon?.prompt ?? null)
+    const stream = createCharacterReplyStream({
       model: aiConfig.modelId,
+      config: aiConfig,
       system: systemPrompt,
       messages: modelMessages,
-      temperature: aiConfig.temperature,
-      maxOutputTokens: aiConfig.maxOutputTokens,
-      maxRetries: aiConfig.maxRetries,
-      abortSignal: request.signal,
-      timeout: {
-        totalMs: aiConfig.totalTimeoutMs,
-        chunkMs: aiConfig.chunkTimeoutMs,
+      signal: request.signal,
+      metadata: {
+        settingsSource: ai.source,
+        settingsRevision: ai.settings?.revision ?? null,
+        canon: canon?.metadata ?? null,
       },
-      onError: async ({ error }) => {
-        console.error('[character chat] model stream error', errorCode(error))
-        await markFailed(`model_${errorCode(error)}`)
-      },
-      onAbort: async () => {
-        await markFailed('aborted')
-      },
-      onFinish: async (event) => {
-        if (streamFailed) return
+      save: async (text, metadata) => Boolean(await completeCharacterTurn({
+        conversationId: turn.conversationId,
+        userMessageId: turn.userMessageId,
+        requestId: requestId ?? null,
+        attemptId: turn.attemptId,
+        text,
+        metadata,
+      })),
+      fail: markFailed,
+      diagnose: (event, code) => console.error('[character chat]', event, code),
+    })
 
-        const text = event.text.trim()
-        if (!text) {
-          await markFailed('empty_response')
-          return
-        }
-
-        try {
-          await completeCharacterTurn({
-            conversationId: turn.conversationId,
-            userMessageId: turn.userMessageId,
-            requestId: requestId ?? null,
-            text,
-            metadata: {
-              source: 'model',
-              requestedModel: aiConfig.modelId,
-              reportedModel: `${event.model.provider}/${event.model.modelId}`,
-              usage: usageMetadata(event.totalUsage),
-              finishReason: event.finishReason,
-              durationMs: Date.now() - startedAt,
-              settingsSource: ai.source,
-              settingsRevision: ai.settings?.revision ?? null,
-              // Только идентификаторы и хеши: текст источников и реплик
-              // читателя в metadata не дублируется.
-              canon: canon?.metadata ?? null,
-            },
-          })
-        } catch (error) {
-          // Поток уже отдан клиенту: честно логируем, но не подменяем ответ.
-          console.error('[character chat] failed to persist assistant turn', errorCode(error))
-        }
-      },
+    return new NextResponse(stream, {
+      headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' },
     })
   } catch (error) {
-    await markFailed(`setup_${errorCode(error)}`)
+    console.error('[character chat] setup failed', errorCode(error))
+    await markFailed(`setup_${errorCode(error)}`).catch((failure: unknown) => {
+      console.error('[character chat] failed to record failed turn', errorCode(failure))
+    })
     return chatError(502, 'AI-сервис временно недоступен')
   }
-
-  return result.toTextStreamResponse() as unknown as NextResponse
 }
 
 export const POST = apiHandler(postCharacterChat)

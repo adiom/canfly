@@ -24,6 +24,8 @@ const characterSlugSchema = z
 export const characterChatRequestSchema = z.object({
   characterSlug: characterSlugSchema,
   requestId: z.string().uuid().optional(),
+  // Только явный повтор подтверждённой неуспешной попытки после GET-сверки.
+  retryAttemptId: z.string().uuid().optional(),
   message: z
     .string()
     .trim()
@@ -31,6 +33,13 @@ export const characterChatRequestSchema = z.object({
     .max(CHARACTER_CHAT_CONFIG.maxQuestionChars)
     .optional(),
   messages: z.array(z.unknown()).max(CHARACTER_CHAT_CONFIG.maxLegacyMessages).optional(),
+}).refine((value) => !value.retryAttemptId || Boolean(value.requestId), {
+  message: 'Повтор требует requestId',
+  path: ['retryAttemptId'],
 })
 
 export type CharacterChatRequest = z.infer<typeof characterChatRequestSchema>
+
+export const characterChatTurnQuerySchema = z.object({
+  requestId: z.string().uuid(),
+})
