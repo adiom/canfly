@@ -13,7 +13,7 @@ import {
 } from '@/lib/server/chapters'
 import { fetchEditionById } from '@/lib/server/editions'
 import { countWords } from '@/lib/mcp/word-count'
-import { chapterReadPage, chapterWriteReceipt } from '@/lib/mcp/chapter-response'
+import { chapterReadPage, chapterTextMessage, chapterWriteReceipt } from '@/lib/mcp/chapter-response'
 import { json, notFound, toolError, withToolCatch } from '@/lib/mcp/tool-result'
 
 const uuid = z.uuid()
@@ -49,6 +49,30 @@ export function registerChaptersTools(server: McpServer) {
     withToolCatch(async ({ id, offset, limit }) => {
       const chapter = await fetchChapterById(id)
       return chapter ? json(chapterReadPage(chapter, offset, limit)) : notFound('Глава', id)
+    }),
+  )
+
+  // Резервный способ для клиентов, которым не удаётся распаковать
+  // JSON-ответ canfly_get_chapter: здесь один обычный текстовый MCP-блок.
+  server.registerTool(
+    'canfly_read_chapter_text',
+    {
+      title: 'Читать главу — текстовый ответ',
+      description:
+        'Чтение главы, включая черновики. Альтернатива canfly_get_chapter: возвращает фрагмент очищенного HTML непосредственно текстом, без JSON. NEXT_OFFSET указывает следующую позицию, END — конец. Начните с offset=0.',
+      inputSchema: z.object({
+        id: uuid.describe('UUID главы'),
+        offset: z.number().int().min(0).default(0).describe('Смещение в Unicode-символах'),
+        limit: z.number().int().min(1).max(3000).default(1500).describe('Не более 3000 символов'),
+      }),
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    withToolCatch(async ({ id, offset, limit }) => {
+      const chapter = await fetchChapterById(id)
+      if (!chapter) return notFound('Глава', id)
+      return {
+        content: [{ type: 'text', text: chapterTextMessage(chapter, offset, limit) }],
+      }
     }),
   )
 
