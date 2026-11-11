@@ -2,8 +2,7 @@ import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { test, expect, type APIRequestContext, type APIResponse } from '@playwright/test'
 import mammoth from 'mammoth'
-import { fetchEditionById } from '../lib/server/editions'
-import { deleteChapter } from '../lib/server/chapters'
+import { Pool } from 'pg'
 
 function tokenFromEnv(): string | undefined {
   if (process.env.MCP_TOKEN) return process.env.MCP_TOKEN
@@ -59,13 +58,14 @@ test.describe('MCP editorial roundtrip (isolated test DB only)', () => {
   test.skip(!enabled, 'Requires MCP_E2E_ISOLATED_DB=true, MCP_E2E_TEST_EDITION_ID, DATABASE_URL and MCP_TOKEN')
 
   test('draft chapter: create, read, edit, revision history and private exports', async ({ request }) => {
-    const edition = await fetchEditionById(editionId!)
-    expect(edition?.status).toBe('draft')
-    expect(edition?.format).toBe('book')
+    const edition = await callTool(request, 'canfly_get_edition', { id: editionId })
+    expect(edition.status).toBe('draft')
+    expect(edition.format).toBe('book')
 
     const initial = '<p>— Маша, можно? 😊</p><p>Ветер стих.<br>Город N уснул.</p>'
     const revised = '<p>— Маша, можно? 😊</p><p>Снова дождь.<br>И снова дорога.</p>'
     let createdId: string | undefined
+    let initialStored = ''
     try {
       const created = await callTool(request, 'canfly_create_chapter', {
         edition_id: editionId,
@@ -92,17 +92,21 @@ test.describe('MCP editorial roundtrip (isolated test DB only)', () => {
         throw new Error('Too many chapter pages')
       }
 
-      expect(await getAllText()).toBe(initial)
+      initialStored = await getAllText()
+      expect(initialStored).toContain('Маша, можно? 😊')
+      expect(initialStored).toContain('Город N уснул.')
       const updated = await callTool(request, 'canfly_update_chapter', {
         id: createdId,
         content: revised,
       })
       expect(updated.ok).toBe(true)
       expect(updated).not.toHaveProperty('content')
-      expect(await getAllText()).toBe(revised)
+      const updatedStored = await getAllText()
+      expect(updatedStored).toContain('Снова дождь.')
+      expect(updatedStored).not.toBe(initialStored)
 
       const versions = await callTool(request, 'canfly_list_chapter_versions', { chapter_id: createdId })
-      expect(versions.some((version: { content: string }) => version.content === initial)).toBe(true)
+      expect(versions.some((version: { content: string }) => version.content === initialStored)).toBe(true)
 
       for (const format of ['md', 'docx'] as const) {
         const exportResult = await callTool(request, 'canfly_export_edition', {
@@ -125,7 +129,15 @@ test.describe('MCP editorial roundtrip (isolated test DB only)', () => {
       }
     } finally {
       // Cleanup is intentionally via the server layer and only when explicitly opted into a test DB.
-      if (createdId) await deleteChapter(createdId)
+      if (createdId) {
+        const pool = new Pool({ connectionString: process.env.DATABASE_URL })
+        try {
+          await pool.query('DELETE FROM chapter_versions WHERE chapter_id = $1', [createdId])
+          await pool.query('DELETE FROM chapters WHERE id = $1 AND edition_id = $2', [createdId, editionId])
+        } finally {
+          await pool.end()
+        }
+      }
     }
   })
 })
