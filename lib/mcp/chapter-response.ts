@@ -36,3 +36,22 @@ export function chapterReadPage(chapter: Chapter, offset: number, limit: number)
     next_offset: next < symbols.length ? next : null,
   }
 }
+
+/**
+ * Альтернативный канал чтения для MCP-клиентов, не распаковывающих JSON
+ * результата canfly_get_chapter. Один текстовый блок, без вложенного JSON.
+ * Содержимое передаётся как HTML (без потери исходного форматирования).
+ */
+export function chapterTextMessage(chapter: Chapter, offset: number, limit: number): string {
+  const page = chapterReadPage(chapter, offset, limit)
+  return [
+    `CHAPTER ${page.id}: ${page.title}`,
+    `STATUS: ${page.status}`,
+    `OFFSET: ${page.offset}/${page.total_length}`,
+    `NEXT_OFFSET: ${page.next_offset ?? 'END'}`,
+    `CONTENT_SHA256: ${page.content_hash}`,
+    '--- HTML START ---',
+    page.content || '[Глава пуста или смещение за пределами текста]',
+    '--- HTML END ---',
+  ].join('\n')
+}

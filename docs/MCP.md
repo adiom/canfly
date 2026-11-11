@@ -154,6 +154,11 @@ curl -s http://localhost:3000/api/mcp \
 
 ### Редакторский цикл: запись → чтение → экспорт
 
+- `canfly_read_chapter_text({ id, offset = 0, limit = 1500 })` — резервный
+  способ для MCP-клиентов, у которых `canfly_get_chapter` возвращает пустой
+  объект. Возвращает чистый текстовый MCP-блок с HTML-фрагментом, смещением,
+  `NEXT_OFFSET` и SHA-256; JSON-обёртка не используется. Максимум 3000
+  символов за вызов. Сравнивайте SHA-256 между фрагментами.
 - `canfly_create_chapter`, `canfly_update_chapter`, publish и restore возвращают
   короткое подтверждение: `ok`, `id`, `status`, `word_count`,
   `content_hash` (SHA-256 очищенного полного HTML) и метаданные.

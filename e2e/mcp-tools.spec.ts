@@ -93,6 +93,7 @@ test.describe('MCP tools', () => {
       'canfly_update_edition',
       'canfly_reorder_chapters',
       'canfly_get_chapter',
+      'canfly_read_chapter_text',
       'canfly_create_chapter',
       'canfly_update_chapter',
       'canfly_export_edition',
