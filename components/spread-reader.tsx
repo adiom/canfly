@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react'
+import { type ReactNode, useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { X, AlignJustify, Bookmark, BookmarkPlus, Heart, ChevronLeft, Sun, Moon, Palette, MessageCircle, Check, Trash2, Type } from 'lucide-react'
@@ -47,6 +47,7 @@ export interface SpreadReaderProps {
   initialHighlights: ChapterHighlight[]
   userRole: ReaderUserRole | null
   userName: string | null
+  previewNotice?: ReactNode
   canManageNotes?: boolean
   initialHighlightId?: string
   initialChapterIndex?: number
@@ -63,6 +64,7 @@ export function SpreadReader({
   chapters,
   currentUserId,
   initialHighlights,
+  previewNotice,
   canManageNotes = false,
   initialHighlightId,
   initialChapterIndex = 0,
@@ -477,7 +479,7 @@ export function SpreadReader({
         className="reader-container"
         style={{
           display: 'grid',
-          gridTemplateRows: '50px 1fr 40px',
+          gridTemplateRows: previewNotice ? 'auto 50px minmax(0, 1fr) 40px' : '50px minmax(0, 1fr) 40px',
           // minmax(0, 1fr), а не неявная auto-колонка: без явной колонки её
           // ширину браузер считает по max-content детей (grid blowout) — на
           // узких экранах нерезолвимый maxWidth: '40%' у .book-title откатывался
@@ -493,6 +495,7 @@ export function SpreadReader({
           transition: 'background-color 0.4s, color 0.4s',
         }}
       >
+        {previewNotice}
         <header
           className="reader-header px-2 sm:px-4"
           style={{
