@@ -38,6 +38,9 @@ MCP_OAUTH_EXTRA_REDIRECT_URIS=
 
 # Необязательно: хосты, с которых разрешено читать Client ID Metadata Document.
 MCP_OAUTH_CLIENT_METADATA_HOSTS=
+
+# Необязательно: отдельный HMAC-ключ приватного экспорта (иначе AUTH_SECRET).
+MCP_EXPORT_SECRET=
 ```
 
 Встроенный allowlist callback-адресов:
@@ -137,7 +140,7 @@ curl -s http://localhost:3000/api/mcp \
 
 - `canfly_list_releases`, `canfly_get_release`, `canfly_create_release`,
   `canfly_update_release`, `canfly_set_release_status`
-- `canfly_get_edition`, `canfly_create_edition`, `canfly_update_edition`
+- `canfly_get_edition`, `canfly_create_edition`, `canfly_update_edition`, `canfly_export_edition`
 - `canfly_list_release_characters`, `canfly_set_release_characters`
 - `canfly_list_release_series`, `canfly_set_release_series`
 - `canfly_list_release_places`, `canfly_set_release_places`
@@ -148,6 +151,32 @@ curl -s http://localhost:3000/api/mcp \
   `canfly_update_chapter`
 - `canfly_reorder_chapters`, `canfly_publish_chapter`
 - `canfly_list_chapter_versions`, `canfly_restore_chapter_version`
+
+### Редакторский цикл: запись → чтение → экспорт
+
+- `canfly_create_chapter`, `canfly_update_chapter`, publish и restore возвращают
+  короткое подтверждение: `ok`, `id`, `status`, `word_count`,
+  `content_hash` (SHA-256 очищенного полного HTML) и метаданные.
+- `canfly_get_chapter({ id, offset = 0, limit = 8000 })` возвращает
+  `content` и `next_offset`; максимальный `limit` — 12000.
+  Смещения — в Unicode code points (не байтах и не UTF-16 units).
+  Повторяйте вызов, пока `next_offset` не станет `null`.
+  Если `content_hash` между страницами изменился, начните чтение заново:
+  текст мог быть отредактирован во время выгрузки.
+- `canfly_export_edition({ edition_id, format: "docx" | "md" })`:
+  приватный экспорт издания формата `book`, включает главы `draft`
+  и `published` в порядке `chapter_index`. Возвращает `url`,
+  `filename`, `expires_at`. Ссылка подписана HMAC и действует 5 минут.
+  Создать её может только клиент, уже прошедший авторизацию MCP.
+  **Не пересылайте ссылку третьим лицам:** до истечения TTL она является
+  временным bearer-ключом. Сервер запрещает кеширование и индексирование.
+- Обычные публичные `/vvvvv/*.docx` и `/vvvvv/*.md` не менялись и
+  продолжают требовать опубликованные издание и релиз.
+
+Тестировать полный цикл только на отдельной БД:
+`MCP_E2E_ISOLATED_DB=true`, `MCP_E2E_TEST_EDITION_ID` (UUID подготовленного
+`book` / `draft` издания), `DATABASE_URL` и `MCP_TOKEN`.
+Без этих переменных интеграционный E2E пропускается. Unit: `pnpm test:unit`.
 
 **Персонажи и места**
 

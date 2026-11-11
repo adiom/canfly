@@ -11,6 +11,7 @@ import { MCP_CONTENT_SCOPE } from '@/lib/schemas/mcp-oauth'
 import { registerCharactersTools } from '@/lib/mcp/tools/characters'
 import { registerCharacterRelationshipsTools } from '@/lib/mcp/tools/character-relationships'
 import { registerChaptersTools } from '@/lib/mcp/tools/chapters'
+import { registerEditionExportTools } from '@/lib/mcp/tools/edition-export'
 import { registerReleasesTools } from '@/lib/mcp/tools/releases'
 import { registerSearchTools } from '@/lib/mcp/tools/search'
 import { registerNewsTools } from '@/lib/mcp/tools/news'
@@ -99,6 +100,7 @@ const mcpHandler = createMcpHandler(
     registerCharactersTools(server)
     registerCharacterRelationshipsTools(server)
     registerChaptersTools(server)
+    registerEditionExportTools(server)
     registerReleasesTools(server)
     registerSearchTools(server)
     registerNewsTools(server)

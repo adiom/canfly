@@ -50,6 +50,17 @@ export async function fetchChaptersByEdition(editionId: string) {
   )
 }
 
+/** Все главы, включая черновики, только для приватного редакторского экспорта. */
+export async function fetchAllChaptersByEdition(editionId: string) {
+  const rows = await dbQuery<Chapter>(
+    `SELECT ${chapterColumns} FROM chapters
+     WHERE edition_id = $1
+     ORDER BY chapter_index ASC, id ASC`,
+    [editionId],
+  )
+  return rows.map(withSafeContent)
+}
+
 export async function fetchPublishedChaptersByEdition(editionId: string) {
   const rows = await dbQuery<Chapter>(
     `SELECT ${chapterColumns} FROM chapters

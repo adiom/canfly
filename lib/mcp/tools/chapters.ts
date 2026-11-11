@@ -13,6 +13,7 @@ import {
 } from '@/lib/server/chapters'
 import { fetchEditionById } from '@/lib/server/editions'
 import { countWords } from '@/lib/mcp/word-count'
+import { chapterReadPage, chapterWriteReceipt } from '@/lib/mcp/chapter-response'
 import { json, notFound, toolError, withToolCatch } from '@/lib/mcp/tool-result'
 
 const uuid = z.uuid()
@@ -35,15 +36,19 @@ export function registerChaptersTools(server: McpServer) {
   server.registerTool(
     'canfly_get_chapter',
     {
-      title: 'Глава целиком',
+      title: 'Текст главы (постранично)',
       description:
-        'Получить одну главу со всем текстом (content). Содержимое автоматически санитизируется.',
-      inputSchema: z.object({ id: uuid.describe('UUID главы') }),
+        'Получить текст главы, включая черновики. offset/limit в Unicode-символах; при next_offset != null продолжить чтение с него. content_hash сверяет целостность между страницами. По умолчанию до 8000 символов.',
+      inputSchema: z.object({
+        id: uuid.describe('UUID главы'),
+        offset: z.number().int().min(0).default(0).describe('Сдвиг от начала текста, в Unicode-символах'),
+        limit: z.number().int().min(1).max(12000).default(8000).describe('Максимум символов страницы'),
+      }),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    withToolCatch(async ({ id }) => {
+    withToolCatch(async ({ id, offset, limit }) => {
       const chapter = await fetchChapterById(id)
-      return chapter ? json(chapter) : notFound('Глава', id)
+      return chapter ? json(chapterReadPage(chapter, offset, limit)) : notFound('Глава', id)
     }),
   )
 
@@ -70,7 +75,7 @@ export function registerChaptersTools(server: McpServer) {
         ...data,
         word_count: countWords(data.content),
       })
-      return chapter ? json(chapter) : toolError('Не удалось создать главу')
+      return chapter ? json(chapterWriteReceipt(chapter)) : toolError('Не удалось создать главу')
     }),
   )
 
@@ -104,7 +109,7 @@ export function registerChaptersTools(server: McpServer) {
         // счётчик разъедется с содержимым при апдейте одного заголовка.
         ...(data.content === undefined ? {} : { word_count: countWords(data.content) }),
       })
-      return updated ? json(updated) : notFound('Глава', id)
+      return updated ? json(chapterWriteReceipt(updated)) : notFound('Глава', id)
     }),
   )
 
@@ -140,7 +145,7 @@ export function registerChaptersTools(server: McpServer) {
     },
     withToolCatch(async ({ id }) => {
       const chapter = await publishChapter(id)
-      return chapter ? json(chapter) : notFound('Глава', id)
+      return chapter ? json(chapterWriteReceipt(chapter)) : notFound('Глава', id)
     }),
   )
 
@@ -170,7 +175,7 @@ export function registerChaptersTools(server: McpServer) {
     },
     withToolCatch(async ({ chapter_id, version_id }) => {
       const restored = await restoreChapterVersion(chapter_id, version_id)
-      return restored ? json(restored) : toolError('Версия не найдена или не принадлежит главе')
+      return restored ? json(chapterWriteReceipt(restored)) : toolError('Версия не найдена или не принадлежит главе')
     }),
   )
 }
