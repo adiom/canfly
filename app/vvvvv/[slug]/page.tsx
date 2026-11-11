@@ -3,11 +3,12 @@ import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { fetchEditionByIdOrSlug } from '@/lib/server/editions'
 import { fetchReleaseById, fetchReleaseSeries } from '@/lib/server/releases'
-import { fetchPublishedChaptersByEdition } from '@/lib/server/chapters'
+import { fetchAllChaptersByEdition, fetchPublishedChaptersByEdition } from '@/lib/server/chapters'
 import { getCurrentUser, getSystemRoles } from '@/lib/server/session'
 import { z } from 'zod'
 import { fetchChapterHighlightById, canManageChapterEditorialNotes, fetchChapterHighlights } from '@/lib/server/chapter-highlights'
 import { fetchReadingProgress } from '@/lib/server/reading-progress'
+import { ReaderPreviewNotice } from '@/components/vvvvv/reader-preview-notice'
 import { SpreadReader } from '@/components/spread-reader'
 import type { ReaderUserRole } from '@/components/spread-reader'
 import { ReleaseComicReader } from '@/components/release-comic-reader'
@@ -29,7 +30,10 @@ export const dynamic = 'force-dynamic'
  */
 const loadEdition = cache((idOrSlug: string) => fetchEditionByIdOrSlug(idOrSlug))
 const loadRelease = cache((releaseId: string) => fetchReleaseById(releaseId))
-const loadChapters = cache((editionId: string) => fetchPublishedChaptersByEdition(editionId))
+const loadUser = cache(getCurrentUser)
+const loadChapters = cache((editionId: string, isAdmin: boolean) => isAdmin
+  ? fetchAllChaptersByEdition(editionId)
+  : fetchPublishedChaptersByEdition(editionId))
 
 export async function generateMetadata({
   params,
@@ -39,10 +43,18 @@ export async function generateMetadata({
   const { slug } = await params
   const edition = await loadEdition(slug)
 
-  if (!edition || edition.status !== 'published') return notFoundMetadata()
+  if (!edition) return notFoundMetadata()
 
   const release = await loadRelease(edition.release_id)
-  if (!release || release.status !== 'published') return notFoundMetadata()
+  if (!release) return notFoundMetadata()
+  if (edition.status !== 'published' || release.status !== 'published') {
+    const user = await loadUser()
+    if (!user?.is_admin) return notFoundMetadata()
+    return {
+      title: 'Предпросмотр администратора | canfly',
+      robots: { index: false, follow: false },
+    }
+  }
 
   const formatLabel = (EDITION_FORMAT_LABELS[edition.format] ?? edition.format).toLowerCase()
 
@@ -74,11 +86,16 @@ export default async function VvvvvReaderPage({
   searchParams: Promise<{ highlight?: string | string[] }>
 }) {
   const { slug } = await params
-  const edition = await loadEdition(slug)
-  if (!edition || edition.status !== 'published') notFound()
+  const [edition, user] = await Promise.all([loadEdition(slug), loadUser()])
+  const isAdmin = user?.is_admin === true
+  if (!edition || (!isAdmin && edition.status !== 'published')) notFound()
 
   const release = await loadRelease(edition.release_id)
-  if (!release || release.status !== 'published') notFound()
+  if (!release || (!isAdmin && release.status !== 'published')) notFound()
+
+  const previewNotice = isAdmin ? (
+    <ReaderPreviewNotice releaseStatus={release.status} editionStatus={edition.status} />
+  ) : null
   if (edition.format === 'artwork') {
     if (!edition.artwork_url) notFound()
 
@@ -109,7 +126,8 @@ export default async function VvvvvReaderPage({
 
     return (
       <>
-        <JsonLd schemas={[jsonLd]} />
+        {!isAdmin && <JsonLd schemas={[jsonLd]} />}
+        {previewNotice}
         <div className="mx-auto max-w-6xl px-5 pt-4 md:px-8">
           <Breadcrumbs items={breadcrumbItems} />
         </div>
@@ -122,12 +140,24 @@ export default async function VvvvvReaderPage({
     )
   }
 
-  // Главы и пользователь нужны только обычным ридерам; картине они не требуются.
-  const [chapters, user] = await Promise.all([
-    loadChapters(edition.id),
-    getCurrentUser(),
-  ])
-  if (chapters.length === 0) notFound()
+  // Полный текст черновиков загружается только после серверной проверки is_admin.
+  const chapters = await loadChapters(edition.id, isAdmin)
+  const readerPreview = isAdmin ? (
+    <ReaderPreviewNotice
+      releaseStatus={release.status}
+      editionStatus={edition.status}
+      unpublishedChapterCount={chapters.filter(chapter => chapter.status !== 'published').length}
+    />
+  ) : null
+  if (chapters.length === 0) {
+    if (!isAdmin) notFound()
+    return (
+      <>
+        {readerPreview}
+        <p className="px-5 py-10 text-center text-[var(--cf-text-2)]">В этом издании пока нет глав.</p>
+      </>
+    )
+  }
 
   // Серия нужна только разметке (`isPartOf`), поэтому берётся отдельно и не
   // блокирует основной круг запросов.
@@ -151,7 +181,7 @@ export default async function VvvvvReaderPage({
         { label: 'Читать', url: `/vvvvv/${editionSlug}` },
       ]
 
-  const jsonLd = (
+  const jsonLd = !isAdmin && (
     <JsonLd
       schemas={[
         generateEditionSchema({
@@ -169,6 +199,7 @@ export default async function VvvvvReaderPage({
     return (
       <>
         {jsonLd}
+        {readerPreview}
         <div className="mx-auto max-w-6xl px-5 pt-4 md:px-8">
           <Breadcrumbs items={breadcrumbItems} />
         </div>
@@ -185,6 +216,7 @@ export default async function VvvvvReaderPage({
     return (
       <>
         {jsonLd}
+        {readerPreview}
         <div className="mx-auto max-w-6xl px-5 pt-4 md:px-8">
           <Breadcrumbs items={breadcrumbItems} />
         </div>
@@ -236,6 +268,7 @@ export default async function VvvvvReaderPage({
         release={release}
         edition={edition}
         chapters={chapters}
+        previewNotice={readerPreview}
         initialChapterIndex={initialChapterIndex}
         canManageNotes={canManageNotes}
         initialHighlightId={targetIndex >= 0 ? target?.id : undefined}

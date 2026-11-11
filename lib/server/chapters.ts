@@ -50,7 +50,7 @@ export async function fetchChaptersByEdition(editionId: string) {
   )
 }
 
-/** Все главы, включая черновики, только для приватного редакторского экспорта. */
+/** Все главы, включая черновики. Вызывающий код обязан проверить приватный доступ. */
 export async function fetchAllChaptersByEdition(editionId: string) {
   const rows = await dbQuery<Chapter>(
     `SELECT ${chapterColumns} FROM chapters
