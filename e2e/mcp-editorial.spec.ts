@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { test, expect, type APIRequestContext, type APIResponse } from '@playwright/test'
 import mammoth from 'mammoth'
 import { Pool } from 'pg'
+import { pgConfig } from './setup/pg'
 
 function tokenFromEnv(): string | undefined {
   if (process.env.MCP_TOKEN) return process.env.MCP_TOKEN
@@ -130,7 +131,7 @@ test.describe('MCP editorial roundtrip (isolated test DB only)', () => {
     } finally {
       // Cleanup is intentionally via the server layer and only when explicitly opted into a test DB.
       if (createdId) {
-        const pool = new Pool({ connectionString: process.env.DATABASE_URL })
+        const pool = new Pool(pgConfig(process.env.DATABASE_URL!))
         try {
           await pool.query('DELETE FROM chapter_versions WHERE chapter_id = $1', [createdId])
           await pool.query('DELETE FROM chapters WHERE id = $1 AND edition_id = $2', [createdId, editionId])
