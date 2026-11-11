@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import type { Chapter } from '../../lib/releases-types'
-import { chapterReadPage, chapterWriteReceipt } from '../../lib/mcp/chapter-response'
+import { chapterReadPage, chapterTextMessage, chapterWriteReceipt } from '../../lib/mcp/chapter-response'
 import { signEditionExport, verifyEditionExport, EXPORT_LINK_LIFETIME_SECONDS } from '../../lib/server/mcp-export-links'
 
 const chapter: Chapter = {
@@ -58,4 +58,16 @@ test('Signed draft export rejects altered signatures and expired links', () => {
   expect(verifyEditionExport(chapter.id, 'docx', String(expires), signature, now, secret)).toBe(false)
   expect(verifyEditionExport(chapter.edition_id, 'docx', String(expires), signature, expires + 1, secret)).toBe(false)
   expect(verifyEditionExport(chapter.edition_id, 'docx', String(expires + 900), signature, now, secret)).toBe(false)
+})
+
+test('Fallback chapter reader returns plain text MCP message with safe pagination', () => {
+  const first = chapterTextMessage(chapter, 0, 7)
+  const page = chapterReadPage(chapter, 0, 7)
+  expect(first).toContain('CHAPTER ' + chapter.id)
+  expect(first).toContain('CONTENT_SHA256: ' + page.content_hash)
+  expect(first).toContain('NEXT_OFFSET: ' + page.next_offset)
+  expect(first).toContain(page.content)
+  expect(first).not.toContain('\\\"content\\\"')
+  const tail = chapterTextMessage(chapter, 10_000, 7)
+  expect(tail).toContain('NEXT_OFFSET: END')
 })
