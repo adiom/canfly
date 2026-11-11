@@ -279,7 +279,8 @@ test.describe('v2: адаптивность и темы', () => {
         await expect(page.locator('html')).toHaveClass(new RegExp(`\\b${theme}\\b`))
         const foreground = theme === 'light' ? 'rgb(244, 239, 229)' : 'rgb(17, 18, 16)'
         const background = theme === 'light' ? 'rgb(17, 18, 16)' : 'rgb(244, 239, 229)'
-        const primary = page.getByRole('link', { name: 'Войти в пространство', exact: true })
+        const primary = page.getByRole('link', { name: 'Читать ленту', exact: true })
+        await expect(primary).toHaveAttribute('href', '#journal')
         await expect(primary).toHaveCSS('color', foreground)
         await expect(primary).toHaveCSS('background-color', background)
         await primary.focus()
