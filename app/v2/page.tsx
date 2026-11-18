@@ -10,8 +10,10 @@ import { ReleaseScene } from '@/components/v2/release-scene'
 import { StatementSection } from '@/components/v2/statement-section'
 import { V2Footer } from '@/components/v2/v2-footer'
 import { V2Header } from '@/components/v2/v2-header'
+import { Journal } from '@/components/v2/journal'
 import styles from '@/components/v2/v2.module.css'
 import { getV2PageData } from '@/lib/server/v2'
+import { getV2FeedPage } from '@/lib/server/v2-feed'
 import { buildMetadata } from '@/lib/seo/metadata'
 
 /**
@@ -43,7 +45,7 @@ export const metadata: Metadata = {
 }
 
 export default async function V2Page() {
-  const data = await getV2PageData()
+  const [data, feed] = await Promise.all([getV2PageData(), getV2FeedPage()])
   const sections = {
     releases: Boolean(data.featured),
     characters: data.characters.length > 0,
@@ -57,7 +59,8 @@ export default async function V2Page() {
       <V2Header sections={sections} />
 
       <main>
-        <ArtHero hasFeatured={sections.releases} hasGraph={sections.connections} />
+        <ArtHero hasFeatured={sections.releases} hasGraph={sections.connections} hasFeed />
+        <Journal initialPage={feed} />
         <StatementSection />
         {data.featured ? <ReleaseScene release={data.featured} /> : null}
         <CharacterScene characters={data.characters} />

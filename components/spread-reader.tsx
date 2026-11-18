@@ -54,6 +54,7 @@ export interface SpreadReaderProps {
   initialPosition?: ReadingPosition | null
   initialProgressPercent?: number
   initialProgressUpdatedAt?: number
+  resumeProgress?: boolean
 }
 
 // ─── Компонент ────────────────────────────────────────────────────────────────
@@ -71,6 +72,7 @@ export function SpreadReader({
   initialPosition = null,
   initialProgressPercent = 0,
   initialProgressUpdatedAt = 0,
+  resumeProgress = true,
 }: SpreadReaderProps) {
   const accent = release.design_config?.accent_color ?? '#d52525'
   const isEditor = canManageNotes
@@ -212,7 +214,7 @@ export function SpreadReader({
     const root = contentRef.current
     const track = trackRef.current
     if (!root || !track || !mounted || !pagination.measured || pagination.chapterKey !== currentChapter?.id) return
-    if (!resumed.current && currentUserId) {
+    if (!resumed.current && currentUserId && resumeProgress) {
       try {
         const raw = localStorage.getItem(`cf-reading:${currentUserId}:${edition.id}`)
         const local = raw ? JSON.parse(raw) as {
@@ -242,7 +244,7 @@ export function SpreadReader({
       setCurrentPage(Math.round(fraction * (pageCount - 1)))
     }
     resumed.current = true
-  }, [currentChapter?.id, pageCount, pageWidth, gutter, isSpread, fontSize, mounted, pagination.measured, pagination.chapterKey, setCurrentPage, currentIndex, initialChapterIndex, initialProgressPercent, initialProgressUpdatedAt, chapters, currentUserId, edition.id])
+  }, [currentChapter?.id, pageCount, pageWidth, gutter, isSpread, fontSize, mounted, pagination.measured, pagination.chapterKey, setCurrentPage, currentIndex, initialChapterIndex, initialProgressPercent, initialProgressUpdatedAt, chapters, currentUserId, edition.id, resumeProgress])
 
   useEffect(() => {
     if (!currentChapter || !mounted || !pagination.measured || pagination.chapterKey !== currentChapter.id) return

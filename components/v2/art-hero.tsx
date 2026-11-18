@@ -8,7 +8,7 @@ import styles from './v2.module.css'
  * Декоративная пыль рендерится на уровне страницы (см. `app/v2/page.tsx`):
  * она лежит под контентом и не привязана к первому экрану.
  */
-export function ArtHero({ hasFeatured, hasGraph }: { hasFeatured: boolean; hasGraph: boolean }) {
+export function ArtHero({ hasFeatured, hasGraph, hasFeed = false }: { hasFeatured: boolean; hasGraph: boolean; hasFeed?: boolean }) {
   return (
     <section className={styles.hero} id="top">
       <div className={styles.heroGlow} aria-hidden="true" />
@@ -33,8 +33,8 @@ export function ArtHero({ hasFeatured, hasGraph }: { hasFeatured: boolean; hasGr
             читать. Исследовать.
           </p>
           <div className={styles.actions}>
-            <a href={hasFeatured ? '#releases' : '/releases'} className={`${styles.pill} ${styles.pillPrimary}`}>
-              Войти в пространство <span aria-hidden>↘</span>
+            <a href={hasFeed ? '#journal' : hasFeatured ? '#releases' : '/releases'} className={`${styles.pill} ${styles.pillPrimary}`}>
+              {hasFeed ? 'Читать ленту' : 'Войти в пространство'} <span aria-hidden>↘</span>
             </a>
             <a href={hasGraph ? '#connections' : '/characters'} className={styles.pill}>
               {hasGraph ? 'Увидеть связи ↗' : 'Встретить персонажей ↗'}

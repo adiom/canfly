@@ -40,6 +40,17 @@
   transition: background-color 600ms ease, color 600ms ease;
 }
 
+/* Mobile readers reach the journal without crossing a full-screen introduction. */
+@media (max-width: 600px) {
+  .page .hero { min-height: auto; padding-top: 76px; }
+  .page .heroContent { padding-top: 46px; padding-bottom: 32px; }
+  .page .heroTitle { font-size: clamp(40px, 10.5vw, 62px); line-height: .98; letter-spacing: -.065em; }
+  .page .heroOverline, .page .heroText, .page .scrollCue, .page .sideWord { display: none; }
+  .page .heroArt { opacity: .25; right: -15%; top: 12%; }
+  .page .heroDesc { display: block; }
+  .page .pill { min-height: 44px; padding: 11px 16px; font-size: 12px; }
+}
+
 :global(.dark) .page {
   --v2-fg: var(--cf-text-1);
   --v2-line: rgba(244, 239, 229, 0.15);

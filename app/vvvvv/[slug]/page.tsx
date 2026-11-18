@@ -83,7 +83,7 @@ export default async function VvvvvReaderPage({
   searchParams,
 }: {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ highlight?: string | string[] }>
+  searchParams: Promise<{ highlight?: string | string[]; chapter?: string | string[] }>
 }) {
   const { slug } = await params
   const [edition, user] = await Promise.all([loadEdition(slug), loadUser()])
@@ -247,10 +247,14 @@ export default async function VvvvvReaderPage({
   const progressChapterIndex = progress
     ? chapters.findIndex(chapter => chapter.id === progress.chapter_id)
     : -1
-  const requested = z.string().uuid().safeParse((await searchParams).highlight)
+  const query = await searchParams
+  const requested = z.string().uuid().safeParse(query.highlight)
+  const requestedChapter = z.string().uuid().safeParse(query.chapter)
   const target = requested.success ? await fetchChapterHighlightById(requested.data, user?.id ?? null) : null
   const targetIndex = target ? chapters.findIndex(chapter => chapter.id === target.chapter_id) : -1
-  const initialChapterIndex = targetIndex >= 0 ? targetIndex : Math.max(0, progressChapterIndex)
+  const requestedChapterIndex = requestedChapter.success ? chapters.findIndex(chapter => chapter.id === requestedChapter.data) : -1
+  const hasExplicitTarget = targetIndex >= 0 || requestedChapterIndex >= 0
+  const initialChapterIndex = targetIndex >= 0 ? targetIndex : requestedChapterIndex >= 0 ? requestedChapterIndex : Math.max(0, progressChapterIndex)
   const canManageNotes = user ? await canManageChapterEditorialNotes(chapters[initialChapterIndex].id, user.id, user.is_admin) : false
 
   const initialHighlights = await fetchChapterHighlights({
@@ -270,11 +274,12 @@ export default async function VvvvvReaderPage({
         chapters={chapters}
         previewNotice={readerPreview}
         initialChapterIndex={initialChapterIndex}
+        resumeProgress={!hasExplicitTarget}
         canManageNotes={canManageNotes}
         initialHighlightId={targetIndex >= 0 ? target?.id : undefined}
-        initialPosition={targetIndex < 0 ? progress?.position ?? null : null}
-        initialProgressPercent={targetIndex < 0 && progress ? Number(progress.progress_percent) : 0}
-        initialProgressUpdatedAt={targetIndex >= 0 ? 0 : progress?.last_read_at ? new Date(progress.last_read_at).getTime() : 0}
+        initialPosition={!hasExplicitTarget ? progress?.position ?? null : null}
+        initialProgressPercent={!hasExplicitTarget && progress ? Number(progress.progress_percent) : 0}
+        initialProgressUpdatedAt={hasExplicitTarget ? 0 : progress?.last_read_at ? new Date(progress.last_read_at).getTime() : 0}
         currentUserId={user?.id ?? null}
         initialHighlights={initialHighlights}
         userRole={userRole}
