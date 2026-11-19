@@ -6,7 +6,6 @@ import {
   createChapter,
   updateChapter,
   publishChapter,
-  createChapterVersion,
   fetchChapterVersions,
   restoreChapterVersion,
   reorderChapters,
@@ -120,19 +119,7 @@ export function registerChaptersTools(server: McpServer) {
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     },
     withToolCatch(async ({ id, ...data }) => {
-      const existing = await fetchChapterById(id)
-      if (!existing) return notFound('Глава', id)
-
-      if (data.content !== undefined && existing.content && data.content !== existing.content) {
-        await createChapterVersion(id, existing.content)
-      }
-
-      const updated = await updateChapter(id, {
-        ...data,
-        // word_count пересчитываем только когда пришёл новый текст: иначе
-        // счётчик разъедется с содержимым при апдейте одного заголовка.
-        ...(data.content === undefined ? {} : { word_count: countWords(data.content) }),
-      })
+      const updated = await updateChapter(id, data)
       return updated ? json(chapterWriteReceipt(updated)) : notFound('Глава', id)
     }),
   )
@@ -190,7 +177,7 @@ export function registerChaptersTools(server: McpServer) {
     {
       title: 'Откатить главу к версии',
       description:
-        'Откатить главу к сохранённой версии. Текущее содержимое тоже сохраняется как новая версия, поэтому откат не теряет данные.',
+        'Откатить главу к сохранённой версии. При изменении текста текущее непустое содержимое сохраняется как новая версия.',
       inputSchema: z.object({
         chapter_id: uuid.describe('UUID главы'),
         version_id: uuid.describe('UUID версии для восстановления'),
