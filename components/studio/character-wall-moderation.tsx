@@ -21,17 +21,8 @@ import {
   deleteStudioWallPostAction,
   setWallPostHiddenAction,
 } from '@/lib/actions/studio-characters'
+import { formatStudioDate } from '@/lib/studio/format-studio-date'
 import type { CharacterWallPostWithUser } from '@/lib/types'
-
-function formatDate(value: string) {
-  return new Date(value).toLocaleString('ru-RU', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
 
 export function CharacterWallModeration({
   wallPosts,
@@ -80,7 +71,7 @@ export function CharacterWallModeration({
                 <span className="text-gray-400">@{post.user.handle}</span>
                 {post.hidden ? <Badge variant="outline" className="bg-gray-100 text-gray-400 border-gray-200/80 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] rounded-lg">Скрыто</Badge> : null}
                 <span className="text-xs text-gray-400">
-                  · {formatDate(post.created_at)}
+                  · {formatStudioDate(post.created_at)}
                 </span>
               </div>
               <p className="whitespace-pre-wrap text-sm text-gray-700">{post.content}</p>
