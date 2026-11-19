@@ -2,6 +2,7 @@
 
 - Для аудита техдолга и небольших изменений с проверкой паритета используй [`$canfly-refactor`](../.agents/skills/canfly-refactor/SKILL.md). Для нескольких проходов возьми [шаблон ExecPlan](refactor/EXECPLAN.template.md).
 - Исправление очистки тестового администратора Playwright описано в [отдельном ExecPlan](refactor/PLAYWRIGHT-ADMIN-FIXTURE.execplan.md).
+- [Повторный аудит PostgreSQL от 19.11.2026](architecture/postgresql-schema-drift.md) фиксирует расхождения окружений и ограничения для рефакторинга. Источники сведений о Neon и результаты сверки по коду указаны отдельно.
 
 ## Изменение навыков и AGENTS.md
 
