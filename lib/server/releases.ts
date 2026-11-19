@@ -1,6 +1,8 @@
 import { dbQuery, dbQueryOne, dbUpdatePartial, withTransaction } from '@/lib/db'
 import type { UpdatableColumn } from '@/lib/db'
 import { generateSlug } from '@/lib/slug-utils'
+import type { CharacterChatAvailabilityInput } from '@/lib/ai/character-chat/availability'
+import type { Character } from '@/lib/types'
 import type {
   Release,
   ReleaseStatus,
@@ -142,6 +144,30 @@ export async function deleteRelease(id: string) {
 export async function fetchReleaseCharacters(releaseId: string) {
   return dbQuery<ReleaseCharacter>(
     `SELECT release_id, character_id, role FROM release_characters WHERE release_id = $1`,
+    [releaseId],
+  )
+}
+
+type ReleaseCharacterWithDetails =
+  & Pick<ReleaseCharacter, 'role'>
+  & Pick<Character, 'id' | 'name' | 'slug' | 'avatar' | 'bio'>
+  & CharacterChatAvailabilityInput['character']
+
+export async function fetchReleaseCharactersWithDetails(releaseId: string) {
+  // The old page followed the scan order of this release's links. Capture it
+  // before the join without defining a new sort order for the links.
+  return dbQuery<ReleaseCharacterWithDetails>(
+    `WITH links AS MATERIALIZED (
+       SELECT character_id, role, row_number() OVER () AS link_position
+       FROM release_characters
+       WHERE release_id = $1
+     )
+     SELECT c.id, c.name, c.slug, c.avatar, c.bio,
+            c.can_receive_messages, c.reply_mode, c.system_role, links.role
+     FROM links
+     JOIN characters c ON c.id = links.character_id
+     WHERE c.character_type = 'person'
+     ORDER BY links.link_position`,
     [releaseId],
   )
 }
