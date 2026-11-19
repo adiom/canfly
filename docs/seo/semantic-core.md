@@ -36,7 +36,7 @@ canfly стоит продвигать как **авторскую литера�
 
 ### Исходники
 
-Проверены `app/page.tsx`, `app/layout.tsx`, `app/releases/page.tsx`, `app/release/[slug]/page.tsx`, `app/characters/page.tsx`, `app/vvvvv/page.tsx`, `app/vvvvv/[slug]/page.tsx`, `app/sitemap.ts`, `app/robots.ts`, `lib/seo/entities.ts`; актуальный журнал `docs/UPDATES.md` сверялся с кодом. До анализа Next.js прочитана локальная документация metadata установленной версии.
+Проверены `app/page.tsx`, `app/layout.tsx`, `app/releases/page.tsx`, `app/release/[slug]/page.tsx`, `app/characters/page.tsx`, `app/vvvvv/page.tsx`, `app/vvvvv/[slug]/page.tsx`, `app/sitemap.ts`, `app/robots.ts`, `lib/seo/entities.ts`. До анализа Next.js прочитана локальная документация metadata установленной версии.
 
 ### Ограничения
 
