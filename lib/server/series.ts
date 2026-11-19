@@ -51,26 +51,76 @@ export async function fetchSeriesById(id: string) {
   )
 }
 
-export async function fetchSeriesWithReleases(slug: string) {
-  const series = await dbQueryOne<Series & { id: string }>(
-    `SELECT ${seriesColumns} FROM series WHERE slug = $1 LIMIT 1`,
-    [slug],
-  )
-  if (!series) return null
-
-  const releases = await dbQuery<SeriesRelease>(
+/**
+ * Fetch a series and its published releases in a single database round-trip.
+ *
+ * LEFT JOIN LATERAL keeps an empty series as one row with no release; the
+ * release projection intentionally uses the same PG types as the old query.
+ */
+async function fetchSeriesWithReleasesBy(
+  key: 'slug' | 'id',
+  value: string,
+): Promise<(Series & { releases: SeriesRelease[] }) | null> {
+  type SeriesRow = Series & {
+    release_id: string | null
+    release_title: string | null
+    release_slug: string | null
+    release_annotation: string | null
+    release_cover_image: string | null
+    release_date: string | null
+    phase_number: number | null
+  }
+  const rows = await dbQuery<SeriesRow>(
     `SELECT
-       r.id, r.title, r.slug, r.annotation, r.cover_image, r.release_date,
-       rs.phase_number
-     FROM release_series rs
-     JOIN releases r ON r.id = rs.release_id
-     WHERE rs.series_id = $1 AND r.status = 'published'
-     ORDER BY COALESCE(rs.phase_number, 0) ASC NULLS LAST,
-              r.release_date ASC NULLS LAST`,
-    [series.id],
+       s.id, s.title, s.slug, s.description, s.created_at, s.updated_at,
+       rel.id AS release_id, rel.title AS release_title, rel.slug AS release_slug,
+       rel.annotation AS release_annotation, rel.cover_image AS release_cover_image,
+       rel.release_date, rel.phase_number
+     FROM series s
+     LEFT JOIN LATERAL (
+       SELECT r.id, r.title, r.slug, r.annotation, r.cover_image, r.release_date,
+              rs.phase_number
+       FROM release_series rs
+       JOIN releases r ON r.id = rs.release_id
+       WHERE rs.series_id = s.id AND r.status = 'published'
+       ORDER BY COALESCE(rs.phase_number, 0) ASC NULLS LAST,
+                r.release_date ASC NULLS LAST
+     ) rel ON true
+     WHERE ${key === 'id' ? 's.id' : 's.slug'} = $1
+     ORDER BY COALESCE(rel.phase_number, 0) ASC NULLS LAST,
+              rel.release_date ASC NULLS LAST`,
+    [value],
   )
+  if (!rows.length) return null
 
+  const {
+    release_id: _releaseId, release_title: _releaseTitle, release_slug: _releaseSlug,
+    release_annotation: _releaseAnnotation, release_cover_image: _releaseCoverImage,
+    release_date: _releaseDate, phase_number: _phaseNumber,
+    ...series
+  } = rows[0]
+  const releases: SeriesRelease[] = rows.flatMap(row =>
+    row.release_id && row.release_title !== null && row.release_slug !== null
+      ? [{
+          id: row.release_id,
+          title: row.release_title,
+          slug: row.release_slug,
+          annotation: row.release_annotation,
+          cover_image: row.release_cover_image,
+          release_date: row.release_date,
+          phase_number: row.phase_number,
+        }]
+      : [],
+  )
   return { ...series, releases }
+}
+
+export function fetchSeriesWithReleases(slug: string) {
+  return fetchSeriesWithReleasesBy('slug', slug)
+}
+
+export function fetchSeriesWithReleasesById(id: string) {
+  return fetchSeriesWithReleasesBy('id', id)
 }
 
 

@@ -4,7 +4,7 @@ import { cache } from 'react'
 import { fetchReleaseBySlug, fetchReleaseCharactersWithDetails, fetchReleaseSeries } from '@/lib/server/releases'
 import { fetchEditionsWithPublishedChapterCounts } from '@/lib/server/editions'
 import { fetchPublishedChapterListByEdition } from '@/lib/server/chapters'
-import { fetchSeriesById, fetchSeriesWithReleases } from '@/lib/server/series'
+import { fetchSeriesWithReleasesById } from '@/lib/server/series'
 import { fetchGamesByRelease } from '@/lib/server/games'
 import { fetchPlacesByRelease } from '@/lib/server/places'
 import { fetchPublicHighlightsByRelease } from '@/lib/server/chapter-highlights'
@@ -33,11 +33,12 @@ async function getEditions(releaseId: string) {
 
 async function getSeries(releaseId: string) {
   const [link] = await fetchReleaseSeries(releaseId)
-  const series = link ? await fetchSeriesById(link.series_id) : null
-  const seriesData = series ? await fetchSeriesWithReleases(series.slug) : null
+  const seriesData = link ? await fetchSeriesWithReleasesById(link.series_id) : null
+  if (!seriesData) return { link: null, otherReleases: [] }
+  const { releases: seriesReleases, ...series } = seriesData
   return {
-    link: link && series ? { series, phase_number: link.phase_number } : null,
-    otherReleases: (seriesData?.releases ?? []).filter(release => release.id !== releaseId),
+    link: { series, phase_number: link?.phase_number ?? null },
+    otherReleases: seriesReleases.filter(release => release.id !== releaseId),
   }
 }
 
