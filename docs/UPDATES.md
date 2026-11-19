@@ -1,3 +1,8 @@
+## 19 ноября 2026 — инфраструктура безопасного рефакторинга
+
+- Для аудита техдолга и небольших изменений с проверкой паритета используй [`$canfly-refactor`](../.agents/skills/canfly-refactor/SKILL.md). Для нескольких проходов возьми [шаблон ExecPlan](refactor/EXECPLAN.template.md).
+- Исправление очистки тестового администратора Playwright описано в [отдельном ExecPlan](refactor/PLAYWRIGHT-ADMIN-FIXTURE.execplan.md).
+
 ## Изменение навыков и AGENTS.md
 
 - Обновлены навыки для корректной работы с текущей архитектурой.
