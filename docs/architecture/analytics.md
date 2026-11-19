@@ -2,6 +2,8 @@
 
 Код проверен по [коммиту](README.md) от 10.11.2026; структура тестовой Neon проверялась 06.11.2026, повторно не читалась. Подробный исходный аудит: [docs/ARCHITECTURE.md](../ARCHITECTURE.md).
 
+[Сводка повторного аудита 19.11.2026](postgresql-schema-drift.md) содержит переданные наблюдения о production, включая `position` и счётчики просмотров, и локальную проверку `fetchShelf()`.
+
 ```mermaid
 sequenceDiagram
   participant R as SpreadReader
@@ -18,7 +20,7 @@ sequenceDiagram
 | Событие | Состояние |
 | --- | --- |
 | Перелистывание книги/журнала авторизованным пользователем | **Факт:** `SpreadReader` вызывает [`POST /api/reading-progress`](../../app/api/reading-progress/route.ts); [`upsertReadingProgress`](../../lib/server/reading-progress.ts) обновляет процент и `last_read_at` по главе. |
-| Точная позиция между устройствами | **Факт по тестовой схеме:** колонки `reading_progress.position` нет; сервер пропускает её, клиент хранит якорь в `localStorage`. Состояние production требует отдельной проверки. |
+| Точная позиция между устройствами | **Факт по снимку test от 06.11:** колонки `reading_progress.position` нет; сервер пропускает её, клиент хранит якорь в `localStorage`. Сведения о production и их источник приведены в [повторном аудите](postgresql-schema-drift.md). |
 | Комикс, аудио, artwork и гость | **Факт по коду:** в этих ветках ридера прогресс в БД не записывается. |
 | Открытие релиза или главы | **Факт по коду:** нет вызова инкремента `releases.view_count`; [`incrementChapterViews`](../../lib/server/chapters.ts) не вызывается. Поля существуют в проверенной схеме. |
 | «Читает сейчас» | **Факт:** [`fetchShelf`](../../lib/server/user-profile.ts) показывает до шести изданий из `reading_progress`, по одной последней строке на издание; это не журнал всех открытий. |

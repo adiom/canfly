@@ -1,68 +1,54 @@
+import { randomBytes } from 'node:crypto'
+import { mkdtempSync, rmSync, rmdirSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { Client } from 'pg'
-import { writeFileSync, mkdirSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { loadEnvLocal, pgConfig } from './pg'
-
-const TEST_ADMIN_EMAIL = 'studio-test-admin@canfly.test'
-const TEST_ADMIN_LOGIN = 'studio_test_admin'
-const TEST_ADMIN_DISPLAY = 'Studio Test Admin'
-const TEST_ADMIN_HANDLE = 'studio_test_admin'
-const CREDENTIALS_FILE = join(process.cwd(), 'e2e', '.test-credentials.json')
+import { ADMIN_CREDENTIALS_ENV, adminLogin } from './credentials'
+import { deleteTestAdmin } from './global-teardown'
+import { pgConfig } from './pg'
 
 export default async function globalSetup() {
-  loadEnvLocal()
+  delete process.env[ADMIN_CREDENTIALS_ENV]
 
   const url = process.env.DATABASE_URL
-  if (!url) {
-    console.warn('[e2e setup] DATABASE_URL is not set — skipping admin test setup')
-    return
-  }
+  if (!url) throw new Error('DATABASE_URL is required to set up the Playwright admin')
 
+  const email = `studio-test-admin-${randomBytes(8).toString('hex')}@canfly.test`
+  const login = adminLogin(email)
   const client = new Client(pgConfig(url))
 
   try {
     await client.connect()
-
-    const userResult = await client.query<{ id: string }>(
-      `
-        INSERT INTO users (login, email, handle, display_name)
-        VALUES ($1, $2, $3, $4)
-        ON CONFLICT (login) DO UPDATE
-          SET display_name = EXCLUDED.display_name,
-              email = EXCLUDED.email
-        RETURNING id
-      `,
-      [TEST_ADMIN_LOGIN, TEST_ADMIN_EMAIL, TEST_ADMIN_HANDLE, TEST_ADMIN_DISPLAY],
+    const { rows } = await client.query<{ id: string }>(
+      `INSERT INTO users (login, email, handle, display_name, is_admin, public_role)
+       VALUES ($1, $2, $1, 'Studio Test Admin', TRUE, 'author')
+       RETURNING id`,
+      [login, email],
     )
-    const userId = userResult.rows[0]?.id
-    if (!userId) throw new Error('Failed to upsert test admin user')
+    const userId = rows[0]?.id
+    if (!userId) throw new Error('Failed to create Playwright admin')
 
-    await client.query(
-      `
-        UPDATE users
-        SET is_admin = TRUE, public_role = 'author'
-        WHERE id = $1
-      `,
-      [userId],
-    )
+    let directory: string | undefined
+    let path: string | undefined
+    try {
+      directory = mkdtempSync(join(tmpdir(), 'canfly-playwright-'))
+      path = join(directory, 'admin.json')
+      writeFileSync(path, JSON.stringify({ email, userId }), { flag: 'wx', mode: 0o600 })
+    } catch (error) {
+      try {
+        await deleteTestAdmin(client, { email, userId })
+        if (path) rmSync(path, { force: true })
+        if (directory) rmdirSync(directory)
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [error, cleanupError],
+          `Failed to publish and clean up Playwright admin ${userId} (${email})`,
+        )
+      }
+      throw error
+    }
 
-    mkdirSync(dirname(CREDENTIALS_FILE), { recursive: true })
-    writeFileSync(
-      CREDENTIALS_FILE,
-      JSON.stringify(
-        {
-          email: TEST_ADMIN_EMAIL,
-          userId,
-        },
-        null,
-        2,
-      ),
-    )
-
-    console.log(`[e2e setup] ✓ Test admin ready: ${TEST_ADMIN_LOGIN} <${TEST_ADMIN_EMAIL}>`)
-  } catch (error) {
-    console.error('[e2e setup] ✗ Failed to create test admin:', error)
-    throw error
+    process.env[ADMIN_CREDENTIALS_ENV] = path
   } finally {
     await client.end()
   }

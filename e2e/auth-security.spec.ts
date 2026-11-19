@@ -12,7 +12,7 @@ import { loadTestCredentials } from './setup/credentials'
 
 function testAdminEmail(): string {
   const creds = loadTestCredentials()
-  if (!creds) throw new Error('e2e/.test-credentials.json отсутствует — не отработал global-setup')
+  if (!creds) throw new Error('Нет учётных данных тестового администратора Playwright')
   return creds.email
 }
 
