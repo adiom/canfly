@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { cache } from 'react'
 import { fetchReleaseBySlug, fetchReleaseCharacters, fetchReleaseSeries } from '@/lib/server/releases'
-import { fetchEditionsByRelease, fetchReleaseChapterCounts } from '@/lib/server/editions'
+import { fetchEditionsWithPublishedChapterCounts } from '@/lib/server/editions'
 import { fetchPublishedChapterListByEdition } from '@/lib/server/chapters'
 import { fetchSeriesById, fetchSeriesWithReleases } from '@/lib/server/series'
 import { fetchCharactersList } from '@/lib/server/characters'
@@ -22,11 +22,11 @@ const getRelease = cache(fetchReleaseBySlug)
 const getViewer = cache(getReleaseViewer)
 
 async function getEditions(releaseId: string) {
-  const [editions, chapterCounts] = await Promise.all([
-    fetchEditionsByRelease(releaseId),
-    fetchReleaseChapterCounts(releaseId),
-  ])
-  const available = editions.filter(edition => canOpenEdition(edition, chapterCounts[edition.id] ?? 0))
+  const editionsWithCounts = await fetchEditionsWithPublishedChapterCounts(releaseId)
+  const editions = editionsWithCounts.map(({ published_chapter_count: _count, ...edition }) => edition)
+  const available = editionsWithCounts
+    .filter(edition => canOpenEdition(edition, edition.published_chapter_count))
+    .map(({ published_chapter_count: _count, ...edition }) => edition)
   const primary = getPrimaryEdition(available)
   const chapters = primary ? await fetchPublishedChapterListByEdition(primary.id) : []
   return { editions, available, primary, meta: computeEditionMeta(chapters) }
