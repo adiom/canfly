@@ -9,9 +9,15 @@ import {
   publishChapter,
   updateChapter,
 } from '@/lib/server/chapters'
-import { createEdition } from '@/lib/server/editions'
+import {
+  createEdition,
+  fetchEditionsByRelease,
+  fetchEditionsWithPublishedChapterCounts,
+  fetchReleaseChapterCounts,
+} from '@/lib/server/editions'
 import { fetchReadingProgress, upsertReadingProgress } from '@/lib/server/reading-progress'
 import { createRelease } from '@/lib/server/releases'
+import { canOpenEdition, getPrimaryEdition } from '@/lib/utils/editions'
 
 
 test('persists chapters and versions, reads published chapters and upserts reading progress', async () => {
@@ -78,5 +84,63 @@ test('persists chapters and versions, reads published chapters and upserts readi
   } finally {
     await dbQuery('DELETE FROM releases WHERE id = $1', [release.id])
     await dbQuery('DELETE FROM users WHERE id = $1', [userId])
+  }
+})
+
+test('one-query release editions preserve the published counts and visibility rules', async () => {
+  const slug = `edition-counts-${randomUUID()}`
+  const release = await createRelease({ title: 'Synthetic edition listing', slug, status: 'published' })
+  try {
+    const book = await createEdition({
+      release_id: release.id, slug: `${slug}-book`, format: 'book',
+      status: 'published', is_primary: true,
+    })
+    const emptyBook = await createEdition({
+      release_id: release.id, slug: `${slug}-empty`, format: 'book', status: 'published',
+    })
+    const digital = await createEdition({
+      release_id: release.id, slug: `${slug}-digital`, format: 'digital', status: 'published',
+      external_url: 'https://example.test/edition',
+    })
+    const artwork = await createEdition({
+      release_id: release.id, slug: `${slug}-art`, format: 'artwork', status: 'published',
+      artwork_url: 'https://example.test/cover.png',
+    })
+    const draft = await createEdition({
+      release_id: release.id, slug: `${slug}-draft`, format: 'book', status: 'draft',
+    })
+    await createChapter({
+      edition_id: book.id, chapter_index: 1, title: 'Published', status: 'published',
+    })
+    await createChapter({
+      edition_id: book.id, chapter_index: 2, title: 'Unpublished', status: 'draft',
+    })
+    await createChapter({
+      edition_id: draft.id, chapter_index: 1, title: 'Draft edition published chapter', status: 'published',
+    })
+
+    const originalEditions = await fetchEditionsByRelease(release.id)
+    const originalCounts = await fetchReleaseChapterCounts(release.id)
+    const withCounts = await fetchEditionsWithPublishedChapterCounts(release.id)
+    const stripped = withCounts.map(({ published_chapter_count: _count, ...edition }) => edition)
+    expect(stripped).toEqual(originalEditions)
+    expect(withCounts.map(({ id, published_chapter_count }) => [id, published_chapter_count]))
+      .toEqual(originalEditions.map(edition => [edition.id, originalCounts[edition.id] ?? 0]))
+
+    const originalAvailable = originalEditions.filter(
+      edition => canOpenEdition(edition, originalCounts[edition.id] ?? 0),
+    )
+    const optimizedAvailable = withCounts
+      .filter(edition => canOpenEdition(edition, edition.published_chapter_count))
+      .map(({ published_chapter_count: _count, ...edition }) => edition)
+    expect(optimizedAvailable).toEqual(originalAvailable)
+    expect(getPrimaryEdition(optimizedAvailable)?.id).toBe(book.id)
+    expect(optimizedAvailable.map(edition => edition.id)).toEqual(
+      expect.arrayContaining([book.id, digital.id, artwork.id]),
+    )
+    expect(optimizedAvailable.map(edition => edition.id)).not.toContain(emptyBook.id)
+    expect(optimizedAvailable.map(edition => edition.id)).not.toContain(draft.id)
+  } finally {
+    await dbQuery('DELETE FROM releases WHERE id = $1', [release.id])
   }
 })
