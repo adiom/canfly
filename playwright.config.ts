@@ -1,7 +1,9 @@
 import { defineConfig, devices } from '@playwright/test'
+import { e2eEnvironment } from './e2e/setup/environment'
 
-const PORT = Number(process.env.PORT) || 3000
-const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`
+// Config loads before Playwright starts its web server, fixtures or workers.
+const { baseURL, databaseUrl, webServer } = e2eEnvironment(process.env)
+process.env.DATABASE_URL = databaseUrl
 
 export default defineConfig({
   testDir: './e2e',
@@ -16,7 +18,7 @@ export default defineConfig({
   globalSetup: './e2e/setup/global-setup.ts',
   globalTeardown: './e2e/setup/global-teardown.ts',
   use: {
-    baseURL: BASE_URL,
+    baseURL,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
@@ -24,12 +26,5 @@ export default defineConfig({
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
   ],
-  webServer: {
-    command: process.env.CI ? 'pnpm start' : 'pnpm dev',
-    url: BASE_URL,
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-    stdout: 'ignore',
-    stderr: 'pipe',
-  },
+  webServer,
 })

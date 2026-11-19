@@ -1,17 +1,14 @@
 import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ClientConfig } from 'pg'
+import { requireE2eDatabaseUrl } from './environment'
 
-/**
- * Настройки подключения к БД для e2e. Локальный Postgres (Postgres.app) не
- * говорит по SSL, Neon — только по нему. Включаем ssl лишь для не-localhost.
- */
 export function pgConfig(url: string): ClientConfig {
-  const isLocal = /localhost|127\.0\.0\.1|::1/.test(url)
-  return {
-    connectionString: url,
-    ...(isLocal ? {} : { ssl: { rejectUnauthorized: false } }),
+  const confirmedUrl = requireE2eDatabaseUrl()
+  if (url !== confirmedUrl) {
+    throw new Error('PostgreSQL connection does not match the configured Playwright database')
   }
+  return { connectionString: confirmedUrl, ssl: false }
 }
 
 export function loadEnvLocal() {
@@ -24,6 +21,7 @@ export function loadEnvLocal() {
     const eq = trimmed.indexOf('=')
     if (eq < 0) continue
     const key = trimmed.slice(0, eq).trim()
+    if (key === 'CANFLY_E2E_DATABASE_URL' || key === 'DATABASE_URL' || key.startsWith('POSTGRES_') || key.startsWith('PG')) continue
     let value = trimmed.slice(eq + 1).trim()
     if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
       value = value.slice(1, -1)

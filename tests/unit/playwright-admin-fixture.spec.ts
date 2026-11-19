@@ -11,6 +11,7 @@ import { ADMIN_CREDENTIALS_ENV, loadTestCredentials } from '../../e2e/setup/cred
 const firstUserId = '00000000-0000-4000-8000-000000000001'
 const secondUserId = '00000000-0000-4000-8000-000000000002'
 const controlId = '00000000-0000-4000-8000-000000000003'
+const testDatabaseUrl = 'postgresql://unused@127.0.0.1:55432/canfly_e2e_fixture'
 
 let environment: NodeJS.ProcessEnv
 let directory: string
@@ -23,7 +24,8 @@ test.beforeEach(() => {
   environment = { ...process.env }
   directory = fs.mkdtempSync(join(tmpdir(), 'canfly-fixture-test-'))
   process.env.TMPDIR = directory
-  process.env.DATABASE_URL = 'postgresql://unused@localhost/unused'
+  process.env.CANFLY_E2E_DATABASE_URL = testDatabaseUrl
+  process.env.DATABASE_URL = testDatabaseUrl
   users = new Map([[controlId, { login: 'control', email: 'control@canfly.test' }]])
   tokens = new Set(['control@canfly.test'])
   insertError = undefined
@@ -58,6 +60,26 @@ test.beforeEach(() => {
     }
     throw new Error(`Unexpected SQL: ${sql}`)
   })
+})
+
+test('setup refuses an unconfirmed database before opening a connection', async () => {
+  const connect = mock.method(Client.prototype, 'connect', async () => {})
+  delete process.env.CANFLY_E2E_DATABASE_URL
+  await expect(globalSetup()).rejects.toThrow('Set CANFLY_E2E_DATABASE_URL')
+  expect(connect.mock.callCount()).toBe(0)
+  expect([...users.keys()]).toEqual([controlId])
+})
+
+test('teardown refuses a different database and retains the cleanup file', async () => {
+  await globalSetup()
+  const credentials = loadTestCredentials()
+  const connect = mock.method(Client.prototype, 'connect', async () => {})
+  process.env.DATABASE_URL = 'postgresql://unused@ep-production.example.invalid/neondb'
+
+  await expect(globalTeardown()).rejects.toThrow('does not match the configured Playwright database')
+  expect(connect.mock.callCount()).toBe(0)
+  expect(loadTestCredentials()).toEqual(credentials)
+  expect(users.has(firstUserId)).toBe(true)
 })
 
 test.afterEach(() => {
