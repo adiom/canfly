@@ -12,6 +12,7 @@ import {
 import { createEdition } from '@/lib/server/editions'
 import { fetchReadingProgress, upsertReadingProgress } from '@/lib/server/reading-progress'
 import { createRelease } from '@/lib/server/releases'
+import { createSeries, fetchSeriesWithReleases, fetchSeriesWithReleasesById } from '@/lib/server/series'
 
 test.afterAll(() => getPool().end())
 
@@ -75,5 +76,66 @@ test('persists chapters and versions, reads published chapters and upserts readi
   } finally {
     await dbQuery('DELETE FROM releases WHERE id = $1', [release.id])
     await dbQuery('DELETE FROM users WHERE id = $1', [userId])
+  }
+})
+
+
+test('series JOIN returns identical series, publication ordering, and empty results', async () => {
+  const slug = `series-join-${randomUUID()}`
+  const series = await createSeries({ title: 'Synthetic series', slug })
+  const emptySeries = await createSeries({ title: 'Empty series', slug: `${slug}-empty` })
+  const releases: string[] = []
+  try {
+    for (const [i, status, date] of [
+      [1, 'published', '2026-01-01'],
+      [2, 'draft', '2026-02-02'],
+      [3, 'published', null],
+      [4, 'published', '2026-03-03'],
+    ] as const) {
+      const release = await createRelease({
+        title: `Synthetic part ${i}`, slug: `${slug}-part-${i}`,
+        release_date: date, status,
+      })
+      releases.push(release.id)
+      await dbQuery(
+        'INSERT INTO release_series (release_id, series_id, phase_number) VALUES ($1, $2, $3)',
+        [release.id, series.id, i === 3 ? null : i === 4 ? 0 : i],
+      )
+    }
+    const originalSeries = await dbQueryOne<{
+      id: string; title: string; slug: string; description: string | null;
+      created_at: string; updated_at: string
+    }>(
+      'SELECT id, title, slug, description, created_at, updated_at FROM series WHERE slug = $1 LIMIT 1',
+      [slug],
+    )
+    expect(originalSeries).not.toBeNull()
+    const originalReleases = await dbQuery(
+      `SELECT r.id, r.title, r.slug, r.annotation, r.cover_image, r.release_date,
+              rs.phase_number
+       FROM release_series rs JOIN releases r ON r.id = rs.release_id
+       WHERE rs.series_id = $1 AND r.status = 'published'
+       ORDER BY COALESCE(rs.phase_number, 0) ASC NULLS LAST,
+                r.release_date ASC NULLS LAST`,
+      [series.id],
+    )
+    const legacyResult = { ...originalSeries, releases: originalReleases }
+    expect(await fetchSeriesWithReleases(slug)).toEqual(legacyResult)
+    expect(await fetchSeriesWithReleasesById(series.id)).toEqual(legacyResult)
+    expect((await fetchSeriesWithReleases(slug))?.releases.map(r => r.id)).not.toContain(releases[1])
+
+    const oldEmpty = await dbQueryOne(
+      'SELECT id, title, slug, description, created_at, updated_at FROM series WHERE id = $1',
+      [emptySeries.id],
+    )
+    expect(await fetchSeriesWithReleasesById(emptySeries.id))
+      .toEqual({ ...oldEmpty, releases: [] })
+    expect(await fetchSeriesWithReleases(`${slug}-not-found`)).toBeNull()
+    expect(await fetchSeriesWithReleasesById(randomUUID())).toBeNull()
+  } finally {
+    for (const id of releases) {
+      await dbQuery('DELETE FROM releases WHERE id = $1', [id])
+    }
+    await dbQuery('DELETE FROM series WHERE id = ANY($1::uuid[])', [[series.id, emptySeries.id]])
   }
 })
