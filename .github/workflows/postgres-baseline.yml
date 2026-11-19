@@ -1,0 +1,68 @@
+name: PostgreSQL 17 baseline
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  database:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        database: [canfly_e2e_ci_a, canfly_e2e_ci_b]
+    services:
+      postgres:
+        image: postgres:17.12-bookworm
+        env:
+          POSTGRES_PASSWORD: local-admin
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      TEST_DATABASE: ${{ matrix.database }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm install --global pnpm@12.15.0
+      - run: pnpm install --frozen-lockfile
+      - name: Create database and local roles
+        env:
+          PGPASSWORD: local-admin
+          TEST_PG_PORT: ${{ job.services.postgres.ports[5432] }}
+        run: |
+          psql -X -h 127.0.0.1 -p "$TEST_PG_PORT" -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            -v db="$TEST_DATABASE" <<'SQL'
+          CREATE ROLE canfly_owner LOGIN PASSWORD 'local-owner';
+          CREATE ROLE canfly_app LOGIN PASSWORD 'local-app';
+          CREATE DATABASE :"db" OWNER canfly_owner TEMPLATE template0
+            ENCODING 'UTF8' LOCALE_PROVIDER builtin LOCALE 'C.UTF-8';
+          SQL
+      - name: Bootstrap and verify the catalog
+        env:
+          CANFLY_E2E_DATABASE_URL: postgresql://canfly_owner:local-owner@127.0.0.1:${{ job.services.postgres.ports[5432] }}/${{ matrix.database }}
+        run: |
+          pnpm db:bootstrap:test
+          pnpm db:verify-schema
+      - name: Grant application access
+        env:
+          PGPASSWORD: local-owner
+          TEST_PG_PORT: ${{ job.services.postgres.ports[5432] }}
+        run: |
+          psql -X -h 127.0.0.1 -p "$TEST_PG_PORT" -U canfly_owner -d "$TEST_DATABASE" -v ON_ERROR_STOP=1 <<'SQL'
+          GRANT USAGE ON SCHEMA public TO canfly_app;
+          GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO canfly_app;
+          GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO canfly_app;
+          SQL
+      - name: Run repository contracts as the application role
+        env:
+          CANFLY_E2E_DATABASE_URL: postgresql://canfly_app:local-app@127.0.0.1:${{ job.services.postgres.ports[5432] }}/${{ matrix.database }}
+        run: pnpm test:db
