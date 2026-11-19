@@ -1,19 +1,18 @@
 import { randomUUID } from 'node:crypto'
 import { expect, test } from '@playwright/test'
-import { dbQuery, dbQueryOne, getPool } from '@/lib/db'
+import { dbQuery, dbQueryOne } from '@/lib/db'
 import {
   createChapter,
-  createChapterVersion,
   fetchAllChaptersByEdition,
   fetchChapterVersions,
   fetchPublishedChaptersByEdition,
   publishChapter,
+  updateChapter,
 } from '@/lib/server/chapters'
 import { createEdition } from '@/lib/server/editions'
 import { fetchReadingProgress, upsertReadingProgress } from '@/lib/server/reading-progress'
 import { createRelease } from '@/lib/server/releases'
 
-test.afterAll(() => getPool().end())
 
 test('persists chapters and versions, reads published chapters and upserts reading progress', async () => {
   const slug = `fixture-${randomUUID()}`
@@ -33,12 +32,16 @@ test('persists chapters and versions, reads published chapters and upserts readi
     if (!draft) throw new Error('Expected persisted draft')
 
     await test.step('stores a version and filters drafts from the public reader', async () => {
-      const version = await createChapterVersion(chapter.id, content)
-      expect(version).toMatchObject({ chapter_id: chapter.id, content, version_number: 1 })
-      expect(await fetchChapterVersions(chapter.id)).toEqual([version])
+      const updatedContent = '<p>Updated synthetic chapter</p>'
+      await updateChapter(chapter.id, { content: updatedContent })
+      expect(await fetchChapterVersions(chapter.id)).toMatchObject([
+        { chapter_id: chapter.id, content, version_number: 1 },
+      ])
       expect(await fetchPublishedChaptersByEdition(edition.id)).toEqual([])
       await publishChapter(chapter.id)
-      expect(await fetchPublishedChaptersByEdition(edition.id)).toMatchObject([{ id: chapter.id, content }])
+      expect(await fetchPublishedChaptersByEdition(edition.id)).toMatchObject([
+        { id: chapter.id, content: updatedContent },
+      ])
       expect(await fetchAllChaptersByEdition(edition.id)).toMatchObject([{ id: chapter.id }, { id: draft.id }])
     })
 

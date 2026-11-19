@@ -109,8 +109,9 @@ export async function dbUpdatePartial<T extends QueryResultRow>(options: {
   data: Record<string, unknown>
   columns: Record<string, UpdatableColumn>
   returning: string
+  client?: PoolClient
 }): Promise<T | null> {
-  const { table, id, data, columns, returning } = options
+  const { table, id, data, columns, returning, client } = options
 
   const assignments: string[] = []
   const params: unknown[] = [id]
@@ -124,14 +125,13 @@ export async function dbUpdatePartial<T extends QueryResultRow>(options: {
     assignments.push(`${spec.column} = $${params.length}${spec.cast ?? ''}`)
   }
 
-  if (assignments.length === 0) {
-    return dbQueryOne<T>(`SELECT ${returning} FROM ${table} WHERE id = $1`, [id])
-  }
+  const query = assignments.length === 0
+    ? `SELECT ${returning} FROM ${table} WHERE id = $1`
+    : `UPDATE ${table} SET ${assignments.join(', ')} WHERE id = $1 RETURNING ${returning}`
 
-  return dbQueryOne<T>(
-    `UPDATE ${table} SET ${assignments.join(', ')} WHERE id = $1 RETURNING ${returning}`,
-    params,
-  )
+  if (!client) return dbQueryOne<T>(query, params)
+  const { rows } = await client.query<T>(query, params)
+  return rows[0] ?? null
 }
 
 /**
