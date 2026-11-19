@@ -1,17 +1,33 @@
-import { readFileSync, existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { readFileSync } from 'node:fs'
 
 export interface TestCredentials {
   email: string
   userId: string
 }
 
-const CREDENTIALS_FILE = join(process.cwd(), 'e2e', '.test-credentials.json')
+export const ADMIN_CREDENTIALS_ENV = 'CANFLY_E2E_ADMIN_FILE'
+
+export function adminLogin(email: string): string {
+  const suffix = /^studio-test-admin-([0-9a-f]{16})@canfly\.test$/.exec(email)?.[1]
+  if (!suffix) throw new Error('Invalid Playwright admin email')
+  return `studio_test_${suffix}`
+}
+
+export function readTestCredentials(path: string): TestCredentials {
+  const data: Partial<TestCredentials> | null = JSON.parse(readFileSync(path, 'utf-8'))
+  if (typeof data?.email !== 'string' || typeof data.userId !== 'string' ||
+      !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(data.userId)) {
+    throw new Error('Invalid Playwright admin credentials')
+  }
+  adminLogin(data.email)
+  return { email: data.email, userId: data.userId }
+}
 
 export function loadTestCredentials(): TestCredentials | null {
-  if (!existsSync(CREDENTIALS_FILE)) return null
+  const path = process.env[ADMIN_CREDENTIALS_ENV]
+  if (!path) return null
   try {
-    return JSON.parse(readFileSync(CREDENTIALS_FILE, 'utf-8')) as TestCredentials
+    return readTestCredentials(path)
   } catch {
     return null
   }
