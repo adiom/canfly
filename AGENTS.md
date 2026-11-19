@@ -59,7 +59,7 @@ Route Handlers оборачивай в `apiHandler()`, если не требу�
 
 ## Инструменты агента
 
-- `.agents/skills/` — скиллы рабочей копии: `next-dev-loop` (официальный Vercel: правка → проверка в живом `next dev` через `/_next/mcp` и `agent-browser`), `canfly-architecture`, `canfly-data-access`, `canfly-guardrails`, `canfly-e2e`. Папка в `.gitignore`, на новой машине скиллы ставятся заново: `npx skills add vercel/next.js --skill next-dev-loop -a pi --copy`.
+- `.agents/skills/` — скиллы рабочей копии: `next-dev-loop` (официальный Vercel: правка → проверка в живом `next dev` через `/_next/mcp` и `agent-browser`), `canfly-architecture`, `canfly-data-access`, `canfly-guardrails`, `canfly-e2e`. Папка в `.gitignore`, на новой машине скиллы ставятся заново: `npx skills add vercel/next.js --skill next-dev-loop вручную --copy`.
 - `.mcp.json` — MCP-серверы: `next-devtools` (ошибки, роуты, server actions работающего dev-сервера) и `playwright` (браузерная проверка страниц). `next-devtools` подключается только при запущенном `pnpm dev`.
 - Рабочий цикл: локальные доки Next → минимальная правка → проверка в браузере → `pnpm lint` + `pnpm build` → узкий e2e.
 

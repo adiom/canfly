@@ -28,6 +28,15 @@ test-results/
 playwright/.cache/
 e2e/.test-credentials.json
 
+!.agents/
+!.agents/skills/
+!.agents/skills/*/
+!.agents/skills/canfly-architecture/SKILL.md
+!.agents/skills/canfly-data-access/SKILL.md
+!.agents/skills/canfly-e2e/SKILL.md
+!.agents/skills/canfly-guardrails/SKILL.md
+!.agents/skills/next-dev-loop/SKILL.md
+
 # AI stop
 .cursor/
 .kiro/
