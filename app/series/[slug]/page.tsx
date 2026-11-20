@@ -1,14 +1,18 @@
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
+import { cache } from 'react'
 import { fetchSeriesWithReleases } from '@/lib/server/series'
 import { SeriesPage } from '@/components/series-page'
 import { generateSeriesSchema } from '@/lib/seo/schema'
 import { buildMetadata, notFoundMetadata } from '@/lib/seo/metadata'
 import { JsonLd } from '@/components/seo/json-ld'
 
+// Reuse the same database read for metadata and page within one React request.
+const loadSeries = cache(fetchSeriesWithReleases)
+
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params
-  const series = await fetchSeriesWithReleases(slug)
+  const series = await loadSeries(slug)
   if (!series) return notFoundMetadata('Серия не найдена')
 
   return buildMetadata({
@@ -22,7 +26,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 export default async function SeriesPageRoute({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
-  const series = await fetchSeriesWithReleases(slug)
+  const series = await loadSeries(slug)
   if (!series) notFound()
 
   return (

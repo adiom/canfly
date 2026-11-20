@@ -1,11 +1,10 @@
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { cache } from 'react'
-import { fetchReleaseBySlug, fetchReleaseCharacters, fetchReleaseSeries } from '@/lib/server/releases'
-import { fetchEditionsByRelease, fetchReleaseChapterCounts } from '@/lib/server/editions'
+import { fetchReleaseBySlug, fetchReleaseCharactersWithDetails, fetchReleaseSeries } from '@/lib/server/releases'
+import { fetchEditionsWithPublishedChapterCounts } from '@/lib/server/editions'
 import { fetchPublishedChapterListByEdition } from '@/lib/server/chapters'
-import { fetchSeriesById, fetchSeriesWithReleases } from '@/lib/server/series'
-import { fetchCharactersList } from '@/lib/server/characters'
+import { fetchSeriesWithReleasesById } from '@/lib/server/series'
 import { fetchGamesByRelease } from '@/lib/server/games'
 import { fetchPlacesByRelease } from '@/lib/server/places'
 import { fetchPublicHighlightsByRelease } from '@/lib/server/chapter-highlights'
@@ -22,11 +21,11 @@ const getRelease = cache(fetchReleaseBySlug)
 const getViewer = cache(getReleaseViewer)
 
 async function getEditions(releaseId: string) {
-  const [editions, chapterCounts] = await Promise.all([
-    fetchEditionsByRelease(releaseId),
-    fetchReleaseChapterCounts(releaseId),
-  ])
-  const available = editions.filter(edition => canOpenEdition(edition, chapterCounts[edition.id] ?? 0))
+  const editionsWithCounts = await fetchEditionsWithPublishedChapterCounts(releaseId)
+  const editions = editionsWithCounts.map(({ published_chapter_count: _count, ...edition }) => edition)
+  const available = editionsWithCounts
+    .filter(edition => canOpenEdition(edition, edition.published_chapter_count))
+    .map(({ published_chapter_count: _count, ...edition }) => edition)
   const primary = getPrimaryEdition(available)
   const chapters = primary ? await fetchPublishedChapterListByEdition(primary.id) : []
   return { editions, available, primary, meta: computeEditionMeta(chapters) }
@@ -34,11 +33,12 @@ async function getEditions(releaseId: string) {
 
 async function getSeries(releaseId: string) {
   const [link] = await fetchReleaseSeries(releaseId)
-  const series = link ? await fetchSeriesById(link.series_id) : null
-  const seriesData = series ? await fetchSeriesWithReleases(series.slug) : null
+  const seriesData = link ? await fetchSeriesWithReleasesById(link.series_id) : null
+  if (!seriesData) return { link: null, otherReleases: [] }
+  const { releases: seriesReleases, ...series } = seriesData
   return {
-    link: link && series ? { series, phase_number: link.phase_number } : null,
-    otherReleases: (seriesData?.releases ?? []).filter(release => release.id !== releaseId),
+    link: { series, phase_number: link?.phase_number ?? null },
+    otherReleases: seriesReleases.filter(release => release.id !== releaseId),
   }
 }
 
@@ -83,11 +83,10 @@ export default async function ReleasePublicPage({ params }: { params: Promise<{ 
     viewerCanEdit = viewer.canEdit
   }
 
-  const [editionData, seriesData, releaseChars, allCharacters, highlights, releasePlaces, games] = await Promise.all([
+  const [editionData, seriesData, releaseChars, highlights, releasePlaces, games] = await Promise.all([
     getEditions(release.id),
     getSeries(release.id),
-    fetchReleaseCharacters(release.id),
-    fetchCharactersList(),
+    fetchReleaseCharactersWithDetails(release.id),
     preview ? [] : fetchPublicHighlightsByRelease(release.id, 12),
     fetchPlacesByRelease(release.id),
     fetchGamesByRelease(release.id),
@@ -95,13 +94,10 @@ export default async function ReleasePublicPage({ params }: { params: Promise<{ 
   const { editions, available: availableEditions, primary: primaryEdition, meta } = editionData
   const { link: validSeriesLink, otherReleases: otherSeriesReleases } = seriesData
 
-  const charactersById = new Map(allCharacters.map(character => [character.id, character]))
-  const characters = releaseChars.flatMap(({ character_id, role }) => {
-    const character = charactersById.get(character_id)
-    if (!character) return []
-    const { id, name, slug, avatar, bio } = character
+  const characters = releaseChars.map(character => {
+    const { id, name, slug, avatar, bio, role } = character
     const canChat = resolveCharacterChatAvailability({ character }).canGenerate
-    return [{ id, name, slug, avatar: avatar ?? null, bio, role, canChat }]
+    return { id, name, slug, avatar: avatar ?? null, bio, role, canChat }
   })
 
   // Карта slug → role. Используется в JSON-LD, чтобы выделить protagonist

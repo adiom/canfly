@@ -1,7 +1,7 @@
 export function requireE2eDatabaseUrl(env: Partial<NodeJS.ProcessEnv> = process.env): string {
   const value = env.CANFLY_E2E_DATABASE_URL
   if (!value) {
-    throw new Error('Set CANFLY_E2E_DATABASE_URL explicitly to a disposable local database before running browser tests')
+    throw new Error('Set CANFLY_E2E_DATABASE_URL explicitly to a disposable local database')
   }
 
   let url: URL
