@@ -56,7 +56,7 @@
 | Issue | Задача | Текущее состояние |
 |---|---|---|
 | [#40](https://github.com/adiom/canfly/issues/40) | Уборка: слипшаяся строка в lib/db.ts:5 и недостижимое условие в proxy.ts:66 | Перенесено в backlog; исправление не подтверждено |
-| [#37](https://github.com/adiom/canfly/issues/37) | /api/chapters/rate отвечает 200 status:retired вместо 410, как /api/orders | Перенесено в backlog; исправление не подтверждено |
+| [#37](https://github.com/adiom/canfly/issues/37) | /api/chapters/rate отвечает 200 status:retired вместо 410, как /api/orders | Исправлено в refactor; unit-тест пройден, ещё не в main |
 | [#24](https://github.com/adiom/canfly/issues/24) | Ридер: нечисловой номер главы в URL даёт 500 вместо 404 (parseInt → NaN) | Перенесено в backlog; исправление не подтверждено |
 
 ## Продуктовые задачи и UX
