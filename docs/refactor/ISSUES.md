@@ -14,7 +14,7 @@
 | [#49](https://github.com/adiom/canfly/issues/49) | /api/user/session глотает ошибки БД и отвечает 200 «не авторизован» | Перенесено в backlog; исправление не подтверждено |
 | [#43](https://github.com/adiom/canfly/issues/43) | Magic link: лимит только по email — рассылка писем и рост magic_tokens без предела | Перенесено в backlog; исправление не подтверждено |
 | [#42](https://github.com/adiom/canfly/issues/42) | /api/search: нет рейт-лимита, три LIKE '%…%' без индексов → исчерпание пула | Перенесено в backlog; исправление не подтверждено |
-| [#41](https://github.com/adiom/canfly/issues/41) | /api/search: нечисловой ?limit доходит до SQL как NaN → 500 | Перенесено в backlog; исправление не подтверждено |
+| [#41](https://github.com/adiom/canfly/issues/41) | /api/search: нечисловой ?limit доходит до SQL как NaN → 500 | Исправлено в refactor; unit-тесты пройдены, ещё не в main |
 | [#38](https://github.com/adiom/canfly/issues/38) | /api/cron/cleanup: без apiHandler, прямой getPool() вместо dbQuery, метод в AGENTS.md указан неверно | Перенесено в backlog; исправление не подтверждено |
 | [#35](https://github.com/adiom/canfly/issues/35) | /api/feedback: обращения не сохраняются (только console.info), PII в логах, нет лимитов | Перенесено в backlog; исправление не подтверждено |
 | [#34](https://github.com/adiom/canfly/issues/34) | Стена персонажа: POST без рейт-лимита (+ revalidatePath на каждый пост) | Перенесено в backlog; исправление не подтверждено |
