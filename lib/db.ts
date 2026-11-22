@@ -1,6 +1,10 @@
-import { Pool, PoolClient, QueryResultRow } from 'pg'
+import { Client, Pool, type ClientConfig, type PoolClient, type QueryResultRow } from 'pg'
 
 let cachedPool: Pool | null = null
+
+export function createDedicatedDatabaseClient(config: ClientConfig) {
+  return new Client({ connectionTimeoutMillis: 5000, keepAlive: true, ...config })
+}
 
 function getDatabaseUrl() {  const databaseUrl =
     process.env.DATABASE_URL ||

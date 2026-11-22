@@ -66,3 +66,29 @@ jobs:
         env:
           CANFLY_E2E_DATABASE_URL: postgresql://canfly_app:local-app@127.0.0.1:${{ job.services.postgres.ports[5432] }}/${{ matrix.database }}
         run: pnpm test:db
+      - name: Apply and verify the versioned migration chain
+        env:
+          CANFLY_MIGRATION_DATABASE_URL: postgresql://canfly_owner:local-owner@127.0.0.1:${{ job.services.postgres.ports[5432] }}/${{ matrix.database }}
+          TEST_PG_PORT: ${{ job.services.postgres.ports[5432] }}
+        run: |
+          target="127.0.0.1:$TEST_PG_PORT/$TEST_DATABASE"
+          pnpm db:migrate:verify
+          pnpm db:migrate:baseline --confirm="$target"
+          pnpm db:migrate:up --confirm="$target"
+          pnpm db:migrate:up --confirm="$target"
+          pnpm db:migrate:verify
+          pnpm db:migrate:status
+      - name: Test migration rollback, concurrency and checksums
+        if: matrix.database == 'canfly_e2e_ci_a'
+        env:
+          PGPASSWORD: local-admin
+          TEST_PG_PORT: ${{ job.services.postgres.ports[5432] }}
+          CANFLY_E2E_DATABASE_URL: postgresql://canfly_owner:local-owner@127.0.0.1:${{ job.services.postgres.ports[5432] }}/canfly_e2e_migration_system
+          CANFLY_MIGRATION_TEST_DATABASE_URL: postgresql://canfly_owner:local-owner@127.0.0.1:${{ job.services.postgres.ports[5432] }}/canfly_e2e_migration_system
+        run: |
+          psql -X -h 127.0.0.1 -p "$TEST_PG_PORT" -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE DATABASE canfly_e2e_migration_system OWNER canfly_owner TEMPLATE template0
+            ENCODING 'UTF8' LOCALE_PROVIDER builtin LOCALE 'C.UTF-8';
+          SQL
+          pnpm db:bootstrap:test
+          pnpm test:db:migrations
