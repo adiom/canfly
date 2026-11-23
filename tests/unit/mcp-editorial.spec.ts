@@ -4,6 +4,7 @@ import { chapterReadPage, chapterTextMessage, chapterWriteReceipt } from '../../
 import { signEditionExport, verifyEditionExport, EXPORT_LINK_LIFETIME_SECONDS } from '../../lib/server/mcp-export-links'
 
 const chapter: Chapter = {
+  revision: 4,
   id: '22a646a6-27bc-4c64-8f1c-5de468767acd',
   edition_id: 'ae4d7384-c8b8-4c34-9ab6-36192d3d36e1',
   title: 'Диалоги и стихи',
@@ -28,6 +29,7 @@ test('MCP writing receipts never return the manuscript body', () => {
   const receipt = chapterWriteReceipt(chapter)
   expect(receipt.ok).toBe(true)
   expect(receipt.status).toBe('draft')
+  expect(receipt.revision).toBe(4)
   expect(receipt).not.toHaveProperty('content')
   expect(receipt.content_hash).toMatch(/^[a-f0-9]{64}$/)
 })

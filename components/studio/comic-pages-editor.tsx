@@ -1,35 +1,39 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useSyncExternalStore } from 'react'
 import Image from 'next/image'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { Plus, Trash2, Check, Loader2 } from 'lucide-react'
-import { updateComicChapterPagesAction } from '@/lib/actions/studio'
+import type { Chapter } from '@/lib/releases-types'
+import { AutosaveQueue } from '@/lib/studio/autosave-queue'
+import type { ChapterWriteResult } from '@/lib/studio/chapter-write'
 
 interface ComicPagesEditorProps {
-  chapterId: string
   initialPages: string[]
+  savePages: (pages: string[]) => Promise<ChapterWriteResult<Chapter>>
 }
 
-export function ComicPagesEditor({ chapterId, initialPages }: ComicPagesEditorProps) {
+export function ComicPagesEditor({ initialPages, savePages }: ComicPagesEditorProps) {
   const [pages, setPages] = useState<string[]>(initialPages)
   const [uploading, setUploading] = useState(false)
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
-  const [isPending, startTransition] = useTransition()
-  const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [queue] = useState(() => new AutosaveQueue({ pages: initialPages }, async ({ pages }) => {
+    const result = await savePages(pages)
+    if (!result.ok) {
+      toast.error(result.message)
+      setSaveError(result.message)
+      throw new Error(result.message)
+    }
+    setSaveError(null)
+  }))
+  const status = useSyncExternalStore(queue.subscribe, queue.getStatus, () => 'saved' as const)
+  const isPending = status === 'pending' || status === 'saving'
 
   function persist(newPages: string[]) {
-    setSaved(false)
-    startTransition(async () => {
-      try {
-        await updateComicChapterPagesAction(chapterId, newPages)
-        setSaved(true)
-        setTimeout(() => setSaved(false), 2000)
-      } catch {
-        toast.error('Ошибка сохранения')
-      }
-    })
+    queue.update({ pages: newPages })
+    void queue.flush().catch(() => {})
   }
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -117,8 +121,10 @@ export function ComicPagesEditor({ chapterId, initialPages }: ComicPagesEditorPr
           <h3 className="font-semibold">Страницы комикса ({pages.length})</h3>
           <span className="text-xs text-muted-foreground">
             {isPending && <Loader2 className="inline h-3 w-3 animate-spin mr-1" />}
-            {!isPending && saved && <Check className="inline h-3 w-3 text-emerald-500 mr-1" />}
-            {isPending ? 'Сохраняю...' : saved ? 'Сохранено' : ''}
+            {status === 'saved' && !saveError && <Check className="inline h-3 w-3 text-emerald-500 mr-1" />}
+            {isPending && 'Сохраняю...'}
+            {status === 'saved' && !saveError && 'Сохранено'}
+            {saveError || (status === 'error' && 'Ошибка сохранения')}
           </span>
         </div>
         <div className="flex gap-2">

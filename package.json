@@ -15,7 +15,7 @@
     "db:migrate:baseline": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/db-migrate.mjs baseline",
     "db:structure": "node scripts/read-db-structure.mjs",
     "lint": "eslint .",
-    "test:db": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-db.mjs verify && node --conditions=react-server node_modules/@playwright/test/cli.js test -c playwright.db.config.ts",
+    "test:db": "node --conditions=react-server node_modules/@playwright/test/cli.js test -c playwright.db.config.ts",
     "test:db:migrations": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/db-migrations.test.mjs",
     "test:db:migrations:neon": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/db-migrations.test.mjs --neon",
     "test:e2e": "node --conditions=react-server node_modules/@playwright/test/cli.js test",

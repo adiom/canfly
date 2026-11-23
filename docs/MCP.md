@@ -160,8 +160,12 @@ curl -s http://localhost:3000/api/mcp \
   `NEXT_OFFSET` и SHA-256; JSON-обёртка не используется. Максимум 3000
   символов за вызов. Сравнивайте SHA-256 между фрагментами.
 - `canfly_create_chapter`, `canfly_update_chapter`, publish и restore возвращают
-  короткое подтверждение: `ok`, `id`, `status`, `word_count`,
+  короткое подтверждение: `ok`, `id`, `status`, `word_count`, `revision`,
   `content_hash` (SHA-256 очищенного полного HTML) и метаданные.
+- Для `canfly_update_chapter` и `canfly_restore_chapter_version` передавайте
+  `expected_revision` из `canfly_get_chapter`. При конфликте перечитайте главу
+  и сверяйте правки перед повтором. Старые клиенты могут опускать этот параметр
+  и сохраняют прежнее поведение без проверки ревизии.
 - `canfly_get_chapter({ id, offset = 0, limit = 8000 })` возвращает
   `content` и `next_offset`; максимальный `limit` — 12000.
   Смещения — в Unicode code points (не байтах и не UTF-16 units).

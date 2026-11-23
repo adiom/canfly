@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type RefObject } from 'react'
 import Image from 'next/image'
 import { put } from '@vercel/blob/client'
 import { toast } from 'sonner'
@@ -22,6 +22,7 @@ import { cn } from '@/lib/utils'
 
 interface AudioChapterEditorProps {
   chapter: Chapter
+  revisionRef: RefObject<number>
   onSaveStatus: (status: 'idle' | 'saving' | 'saved' | 'error') => void
 }
 
@@ -40,7 +41,7 @@ function numberMeta(metadata: Record<string, unknown>, key: string) {
 
 type LyricsMode = 'edit' | 'sync' | 'preview'
 
-export function AudioChapterEditor({ chapter, onSaveStatus }: AudioChapterEditorProps) {
+export function AudioChapterEditor({ chapter, revisionRef, onSaveStatus }: AudioChapterEditorProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const previewAudioRef = useRef<HTMLAudioElement>(null)
   const syncLineRef = useRef<HTMLDivElement>(null)
@@ -152,6 +153,7 @@ export function AudioChapterEditor({ chapter, onSaveStatus }: AudioChapterEditor
     }
 
     setUploading(true)
+    const expectedRevision = revisionRef.current
     setProgress(0)
     onSaveStatus('saving')
 
@@ -179,16 +181,17 @@ export function AudioChapterEditor({ chapter, onSaveStatus }: AudioChapterEditor
         onUploadProgress: event => setProgress(event.percentage),
       })
 
-      const result = await finalizeAudioChapterUploadAction(chapter.id, {
+      const result = await finalizeAudioChapterUploadAction(chapter.id, expectedRevision, {
         url: blob.url,
         pathname: blob.pathname,
         contentType: blob.contentType ?? file.type,
         size: file.size,
       })
 
-      if (!result?.chapter) throw new Error('Не удалось сохранить аудиотрек')
+      if (!result.ok) throw new Error(result.message)
 
-      const updated = result.chapter
+      const updated = result.value.chapter
+      revisionRef.current = updated.revision
       const metadata = updated.audio_metadata ?? {}
       setTitle(updated.title)
       setAudioUrl(updated.audio_url ?? '')
@@ -200,7 +203,7 @@ export function AudioChapterEditor({ chapter, onSaveStatus }: AudioChapterEditor
       setCodec(stringMeta(metadata, 'codec'))
       setBitrate(numberMeta(metadata, 'bitrate'))
       setSampleRate(numberMeta(metadata, 'sampleRate'))
-      setCoverUrl(result.coverUrl)
+      setCoverUrl(result.value.coverUrl)
       onSaveStatus('saved')
       toast.success('Аудиотрек загружен')
     } catch (error) {
@@ -209,7 +212,7 @@ export function AudioChapterEditor({ chapter, onSaveStatus }: AudioChapterEditor
     } finally {
       setUploading(false)
     }
-  }, [chapter.id, onSaveStatus])
+  }, [chapter.id, onSaveStatus, revisionRef])
 
   const handleFile = useCallback((file: File | null) => {
     if (file) void uploadAudio(file)
@@ -220,19 +223,19 @@ export function AudioChapterEditor({ chapter, onSaveStatus }: AudioChapterEditor
     onSaveStatus('saving')
     startTransition(async () => {
       try {
-        const updated = await updateChapterAction(chapter.id, {
+        const result = await updateChapterAction(chapter.id, revisionRef.current, {
           title: title.trim(),
           duration_seconds: durationSeconds,
           audio_metadata: buildMetadata(),
         })
-        if (updated) {
-          setTitle(updated.title)
-          onSaveStatus('saved')
-          toast.success('Трек сохранён')
-        }
-      } catch {
+        if (!result.ok) throw new Error(result.message)
+        revisionRef.current = result.value.revision
+        setTitle(result.value.title)
+        onSaveStatus('saved')
+        toast.success('Трек сохранён')
+      } catch (error) {
         onSaveStatus('error')
-        toast.error('Ошибка сохранения')
+        toast.error(error instanceof Error ? error.message : 'Ошибка сохранения')
       }
     })
   }
@@ -241,24 +244,24 @@ export function AudioChapterEditor({ chapter, onSaveStatus }: AudioChapterEditor
     startTransition(async () => {
       onSaveStatus('saving')
       try {
-        const updated = await removeAudioChapterFileAction(chapter.id)
-        if (updated) {
-          setAudioUrl('')
-          setDurationSeconds(null)
-          setArtist('')
-          setAlbum('')
-          setYear('')
-          setTrackNo('')
-          setCodec('')
-          setBitrate(null)
-          setSampleRate(null)
-          setCoverUrl(null)
-        }
+        const result = await removeAudioChapterFileAction(chapter.id, revisionRef.current)
+        if (!result.ok) throw new Error(result.message)
+        revisionRef.current = result.value.revision
+        setAudioUrl('')
+        setDurationSeconds(null)
+        setArtist('')
+        setAlbum('')
+        setYear('')
+        setTrackNo('')
+        setCodec('')
+        setBitrate(null)
+        setSampleRate(null)
+        setCoverUrl(null)
         onSaveStatus('saved')
         toast.success('Аудиофайл удалён')
-      } catch {
+      } catch (error) {
         onSaveStatus('error')
-        toast.error('Ошибка удаления аудио')
+        toast.error(error instanceof Error ? error.message : 'Ошибка удаления аудио')
       }
     })
   }

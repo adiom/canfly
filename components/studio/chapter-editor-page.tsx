@@ -3,11 +3,15 @@
 import { useState, useRef, useCallback, type ReactNode } from 'react'
 import { useRouter, unstable_rethrow } from 'next/navigation'
 import { useAutosave } from '@/lib/studio/use-autosave'
+import type { ChapterWriteFailure } from '@/lib/studio/chapter-write'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import type { Editor } from '@tiptap/react'
 import type { Chapter, ChapterEditorialNote, EditionFormat } from '@/lib/releases-types'
-import { publishChapterAction, deleteChapterAction, updateChapterAction } from '@/lib/actions/studio'
+import {
+  publishChapterAction, deleteChapterAction, updateChapterAction,
+  restoreChapterVersionAction, updateComicChapterPagesAction,
+} from '@/lib/actions/studio'
 import { TelegraphEditor } from '@/components/studio/telegraph-editor'
 import { AudioChapterEditor } from '@/components/studio/audio-chapter-editor'
 import { ComicPagesEditor } from '@/components/studio/comic-pages-editor'
@@ -105,23 +109,75 @@ export function ChapterEditorPage({
     setEditorContainer(node)
   }, [])
   const tiptapRef = useRef<Editor | null>(null)
+  const revisionRef = useRef(chapter.revision)
+  const getRevision = useCallback(() => revisionRef.current, [])
+  const saveComicPages = useCallback(async (pages: string[]) => {
+    const result = await updateComicChapterPagesAction(chapter.id, revisionRef.current, pages)
+    if (result.ok) revisionRef.current = result.value.revision
+    return result
+  }, [chapter.id])
+  const restorePending = useRef(false)
+  const [restoring, setRestoring] = useState(false)
+  const [saveError, setSaveError] = useState<ChapterWriteFailure | null>(null)
   const [, setContentVersion] = useState(0)
+  const applyDraft = useCallback((draft: { title: string; content: string }) => {
+    setChapterTitle(draft.title)
+    setInitialContent(draft.content)
+    setHtmlContent(draft.content)
+    const editor = tiptapRef.current
+    if (editor && !editor.isDestroyed) editor.commands.setContent(draft.content, { emitUpdate: false })
+  }, [])
   const autosave = useAutosave({
     storageKey: `cf-chapter-draft:${chapter.id}`,
     initial: { title: chapter.title, content: chapter.content ?? '' },
-    save: async (draft) => { await updateChapterAction(chapter.id, draft) },
-    onRestore: (draft) => {
-      setChapterTitle(draft.title)
-      setInitialContent(draft.content)
-      tiptapRef.current?.commands.setContent(draft.content, { emitUpdate: false })
+    getRevision,
+    save: async (_draft, patch) => {
+      const result = await updateChapterAction(chapter.id, revisionRef.current, patch)
+      if (!result.ok) {
+        setSaveError(error => error?.code === 'conflict' || error?.code === 'not-found' ? error : result)
+        throw new Error(result.message)
+      }
+      revisionRef.current = result.value.revision
+      setSaveError(null)
     },
+    onRestore: applyDraft,
   })
   const saveStatus = isAudioEditor || isComic ? mediaSaveStatus : autosave.status
   const updateDraft = autosave.update
   const handleDraftChange = useCallback((patch: { title?: string; content?: string }) => {
-    if (patch.title !== undefined) setChapterTitle(patch.title)
+    if (restorePending.current) return
+    if (patch.title !== undefined) {
+      setChapterTitle(patch.title)
+      if (patch.title.trim()) {
+        setSaveError(error => error?.code === 'validation' ? null : error)
+      }
+    }
     updateDraft(patch)
   }, [updateDraft])
+
+  async function handleRestoreVersion(versionId: string) {
+    if (restorePending.current) return
+    restorePending.current = true
+    setRestoring(true)
+    try {
+      if (tiptapRef.current && !tiptapRef.current.isDestroyed) tiptapRef.current.setEditable(false, false)
+      await autosave.flush()
+      const result = await restoreChapterVersionAction(chapter.id, versionId, revisionRef.current)
+      if (!result.ok) {
+        setSaveError(result)
+        throw new Error(result.message)
+      }
+      revisionRef.current = result.value.revision
+      const draft = { title: result.value.title, content: result.value.content ?? '' }
+      autosave.reset(draft)
+      applyDraft(draft)
+      setSaveError(null)
+    } finally {
+      if (tiptapRef.current && !tiptapRef.current.isDestroyed) tiptapRef.current.setEditable(true, false)
+      restorePending.current = false
+      setRestoring(false)
+    }
+  }
 
   const handleEditorReady = useCallback((editor: Editor) => {
     tiptapRef.current = editor
@@ -213,9 +269,16 @@ export function ChapterEditorPage({
   }
 
   async function handlePublish() {
+    if (restorePending.current) return
     try {
       await autosave.flush()
-      await publishChapterAction(chapter.id)
+      const result = await publishChapterAction(chapter.id, revisionRef.current)
+      if (!result.ok) {
+        setSaveError(result)
+        toast.error(result.message)
+        return
+      }
+      revisionRef.current = result.value.revision
       toast.success('Глава опубликована')
       router.refresh()
     } catch (error) {
@@ -225,9 +288,14 @@ export function ChapterEditorPage({
   }
 
   async function handleDelete() {
+    if (restorePending.current) return
     try {
       await autosave.flush()
-      await deleteChapterAction(chapter.id)
+      const result = await deleteChapterAction(chapter.id, revisionRef.current)
+      if (!result.ok) {
+        setSaveError(result)
+        toast.error(result.message)
+      }
     } catch (error) {
       unstable_rethrow(error)
       toast.error('Ошибка удаления')
@@ -251,11 +319,11 @@ export function ChapterEditorPage({
             <span className="text-sm text-cf-text-3" role="status" aria-live="polite">
               {saveStatus === 'pending' && 'Есть несохранённые правки'}
               {saveStatus === 'saving' && <Loader2 className="inline h-3 w-3 animate-spin text-cf-accent" />}
-              {saveStatus === 'saved' && <Check className="inline h-3 w-3 text-cf-status-resolved" />}
-              {saveStatus === 'error' && <AlertCircle className="inline h-3 w-3 text-cf-accent" />}
+              {saveStatus === 'saved' && !saveError && <Check className="inline h-3 w-3 text-cf-status-resolved" />}
+              {(saveStatus === 'error' || saveError) && <AlertCircle className="inline h-3 w-3 text-cf-accent" />}
               {saveStatus === 'saving' && ' Сохраняю...'}
-              {saveStatus === 'saved' && ' Сохранено'}
-              {saveStatus === 'error' && ' Ошибка'}
+              {saveStatus === 'saved' && !saveError && ' Сохранено'}
+              {saveError?.message || (saveStatus === 'error' && ' Ошибка')}
             </span>
           </div>
 
@@ -274,6 +342,7 @@ export function ChapterEditorPage({
             <Button
               variant="ghost"
               size="sm"
+              disabled={restoring}
               onClick={isHtmlMode ? switchToWysiwyg : switchToHtml}
               className={`rounded-xl ${isHtmlMode ? 'bg-cf-status-open/15 text-cf-status-open border border-cf-status-open/40 font-semibold' : 'text-cf-text-3 hover:text-cf-accent hover:bg-cf-accent/10'}`}
             >
@@ -282,10 +351,10 @@ export function ChapterEditorPage({
             </Button>
           )}
 
-          {!isAudioEditor && !isComic && <VersionHistory chapterId={chapter.id} />}
+          {!isAudioEditor && !isComic && <VersionHistory chapterId={chapter.id} onRestore={handleRestoreVersion} />}
 
           {chapter.status !== 'published' && (
-            <Button size="sm" onClick={handlePublish} className="rounded-xl bg-cf-status-resolved text-cf-bg hover:opacity-90">
+            <Button size="sm" disabled={restoring} onClick={handlePublish} className="rounded-xl bg-cf-status-resolved text-cf-bg hover:opacity-90">
               <Globe className="mr-2 h-4 w-4" />
               Опубликовать
             </Button>
@@ -293,7 +362,7 @@ export function ChapterEditorPage({
 
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button variant="ghost" size="icon-sm" className="rounded-xl text-cf-text-4 hover:text-cf-accent hover:bg-cf-accent/10">
+              <Button variant="ghost" size="icon-sm" disabled={restoring} className="rounded-xl text-cf-text-4 hover:text-cf-accent hover:bg-cf-accent/10">
                 <Trash2 className="h-4 w-4" />
               </Button>
             </AlertDialogTrigger>
@@ -316,14 +385,14 @@ export function ChapterEditorPage({
       <div className="mx-auto max-w-6xl px-4 md:px-8 py-8">
         {isAudioEditor ? (
           <div className="mx-auto max-w-4xl">
-            <AudioChapterEditor chapter={chapter} onSaveStatus={setSaveStatus} />
+            <AudioChapterEditor chapter={chapter} revisionRef={revisionRef} onSaveStatus={setSaveStatus} />
           </div>
         ) : isComic ? (
           <div className="mx-auto max-w-4xl">
             <div className="bg-cf-bg-2 border border-cf-text-1/10 rounded-2xl p-5 md:p-6">
               <ComicPagesEditor
-                chapterId={chapter.id}
                 initialPages={parseComicPages(chapter.content)}
+                savePages={saveComicPages}
               />
             </div>
           </div>
@@ -333,6 +402,7 @@ export function ChapterEditorPage({
               <div className="bg-cf-bg-2 border border-cf-text-1/10 rounded-2xl p-4">
                 <label className="text-sm font-semibold text-cf-text-2 mb-2 block">HTML код главы</label>
                 <textarea
+                  disabled={restoring}
                   value={htmlContent}
                   onChange={(e) => {
                     setHtmlContent(e.target.value)
@@ -344,6 +414,7 @@ export function ChapterEditorPage({
                 <div className="flex justify-end gap-3 mt-4">
                   <Button
                     variant="outline"
+                    disabled={restoring}
                     onClick={switchToWysiwyg}
                     className="rounded-xl border-cf-text-1/10 bg-cf-bg text-cf-text-2 hover:bg-cf-bg-2"
                   >
@@ -351,7 +422,7 @@ export function ChapterEditorPage({
                   </Button>
                   <Button
                     onClick={handleHtmlSave}
-                    disabled={saveStatus === 'saving'}
+                    disabled={restoring || saveStatus === 'saving'}
                     className="rounded-xl bg-cf-accent text-cf-bg hover:bg-cf-accent-hover"
                   >
                     {saveStatus === 'saving' ? 'Сохраняю...' : 'Сохранить'}
@@ -380,6 +451,7 @@ export function ChapterEditorPage({
               />
               <TelegraphEditor
                 ref={editorCallbackRef}
+                disabled={restoring}
                 initialTitle={chapterTitle}
                 initialContent={initialContent}
                 onDraftChange={handleDraftChange}

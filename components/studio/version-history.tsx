@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import type { ChapterVersion } from '@/lib/releases-types'
-import { getChapterVersions, restoreChapterVersionAction } from '@/lib/actions/studio'
+import { getChapterVersions } from '@/lib/actions/studio'
 import { Button } from '@/components/ui/button'
 import {
   Sheet,
@@ -14,7 +14,10 @@ import {
 } from '@/components/ui/sheet'
 import { History, RotateCcw } from 'lucide-react'
 
-export function VersionHistory({ chapterId }: { chapterId: string }) {
+export function VersionHistory({ chapterId, onRestore }: {
+  chapterId: string
+  onRestore: (versionId: string) => Promise<void>
+}) {
   const [versions, setVersions] = useState<ChapterVersion[]>([])
   const [loading, setLoading] = useState(false)
   const [restoring, setRestoring] = useState<string | null>(null)
@@ -34,10 +37,11 @@ export function VersionHistory({ chapterId }: { chapterId: string }) {
   async function handleRestore(versionId: string) {
     setRestoring(versionId)
     try {
-      await restoreChapterVersionAction(chapterId, versionId)
-      toast.success('Версия восстановлена. Перезагрузите страницу.')
-    } catch {
-      toast.error('Ошибка восстановления')
+      await onRestore(versionId)
+      toast.success('Версия восстановлена')
+      await loadVersions()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Ошибка восстановления')
     } finally {
       setRestoring(null)
     }
@@ -68,7 +72,7 @@ export function VersionHistory({ chapterId }: { chapterId: string }) {
                   <Button
                     variant="ghost"
                     size="sm"
-                    disabled={restoring === v.id}
+                    disabled={restoring !== null}
                     onClick={() => handleRestore(v.id)}
                   >
                     <RotateCcw className="mr-1 h-3 w-3" />

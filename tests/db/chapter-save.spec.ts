@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import { expect, test as base } from '@playwright/test'
+import { createMcpHandler } from 'mcp-handler'
 import { dbQuery, withTransaction } from '@/lib/db'
 import type { Chapter } from '@/lib/releases-types'
 import { chapterUpdateSchema } from '@/lib/schemas/studio'
+import { registerChaptersTools } from '@/lib/mcp/tools/chapters'
 import {
   createChapter,
   fetchChapterById,
@@ -157,4 +159,67 @@ test('preserves comic pages and can restore the empty first revision once', asyn
     { version_number: 2, content: pages },
     { version_number: 1, content: '' },
   ])
+})
+
+test('only one guarded writer wins and the rejected write creates no history', async ({ chapter }) => {
+  const { id, revision } = chapter
+  expect(revision).toBe(0)
+  const results = await Promise.allSettled([
+    updateChapter(id, { content: edited }, { expectedRevision: revision }),
+    updateChapter(id, { content: '<p>Third draft</p>' }, { expectedRevision: revision }),
+  ])
+  expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1)
+  expect(results.find(result => result.status === 'rejected')).toMatchObject({
+    reason: { code: 'conflict' },
+  })
+  expect(await fetchChapterById(id)).toMatchObject({ revision: revision + 1 })
+  expect(await fetchChapterVersions(id)).toMatchObject([{ version_number: 1, content: original }])
+})
+
+test('unguarded writes advance the revision and a guarded restore invalidates other drafts', async ({ chapter }) => {
+  const { id, revision } = chapter
+  const saved = await updateChapter(id, { content: edited })
+  expect(saved).toMatchObject({ revision: revision + 1 })
+  const [previous] = await fetchChapterVersions(id)
+  await expect(restoreChapterVersion(id, previous.id, revision)).rejects.toMatchObject({ code: 'conflict' })
+  const restored = await restoreChapterVersion(id, previous.id, revision + 1)
+  expect(restored).toMatchObject({ revision: revision + 2, content: original })
+  await expect(updateChapter(id, { title: 'Stale' }, { expectedRevision: revision + 1 }))
+    .rejects.toMatchObject({ code: 'conflict' })
+  expect(await updateChapter(id, { title: 'Renamed' }, { expectedRevision: revision + 2 }))
+    .toMatchObject({ title: 'Renamed', content: original, revision: revision + 3 })
+  expect(await fetchChapterVersions(id)).toHaveLength(2)
+})
+
+test('a guarded write fails if the chapter disappeared', async ({ chapter }) => {
+  await dbQuery('DELETE FROM chapters WHERE id = $1', [chapter.id])
+  await expect(updateChapter(chapter.id, { title: 'Lost' }, { expectedRevision: chapter.revision }))
+    .rejects.toMatchObject({ code: 'not-found' })
+})
+
+test('MCP accepts legacy writes and optionally rejects stale edits', async ({ chapter }) => {
+  const handler = createMcpHandler(registerChaptersTools)
+  async function call(name: string, args: object) {
+    const response = await handler(new Request('http://localhost/api/mcp', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+      body: JSON.stringify({
+        jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args },
+      }),
+    }))
+    const body = await response.text()
+    const data = body.split('\n').find(line => line.startsWith('data: '))?.slice(6) ?? body
+    expect(response.status, body).toBe(200)
+    return (JSON.parse(data) as { result: { isError?: boolean; content: { text: string }[] } }).result
+  }
+
+  const { id, revision } = chapter
+  const legacy = await call('canfly_update_chapter', { id, content: edited })
+  expect(legacy.isError).not.toBe(true)
+  expect(JSON.parse(legacy.content[0].text)).toMatchObject({ revision: revision + 1 })
+
+  const stale = await call('canfly_update_chapter', { id, expected_revision: revision, content: original })
+  expect(stale.isError).toBe(true)
+  const current = await call('canfly_get_chapter', { id })
+  expect(JSON.parse(current.content[0].text)).toMatchObject({ revision: revision + 1, content: edited })
 })

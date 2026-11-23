@@ -3,6 +3,7 @@ import { dbQuery, dbQueryOne, dbUpdatePartial, withTransaction } from '@/lib/db'
 import type { UpdatableColumn } from '@/lib/db'
 import { sanitizeChapterHtml } from '@/lib/sanitize'
 import type { Chapter, ChapterVersion } from '@/lib/releases-types'
+import { ChapterWriteError } from '@/lib/studio/chapter-write'
 
 /**
  * Контент чистится здесь, в серверном слое, а не в ридерах: ридеры клиентские,
@@ -29,14 +30,14 @@ function countChapterWords(html: string | null | undefined): number {
 }
 
 const chapterColumns = `
-  id, edition_id, title, content, audio_url, audio_blob_path, duration_seconds,
+  id, revision, edition_id, title, content, audio_url, audio_blob_path, duration_seconds,
   audio_metadata, audio_content_type, audio_file_size_bytes, audio_uploaded_at, chapter_index,
   status, word_count, view_count,
   created_at, updated_at, published_at
 `
 
 const chapterListColumns = `
-  id, edition_id, title, audio_url, audio_blob_path, duration_seconds,
+  id, revision, edition_id, title, audio_url, audio_blob_path, duration_seconds,
   audio_metadata, audio_content_type, audio_file_size_bytes, audio_uploaded_at, chapter_index,
   status, word_count, view_count,
   created_at, updated_at, published_at
@@ -193,12 +194,16 @@ function updateChapterFields(id: string, data: Record<string, unknown>, client?:
   })
 }
 
-async function lockChapterContent(client: PoolClient, id: string) {
-  const { rows } = await client.query<{ content: string | null }>(
-    'SELECT content FROM chapters WHERE id = $1 FOR UPDATE',
+async function lockChapterContent(client: PoolClient, id: string, expectedRevision?: number) {
+  const { rows: [current] } = await client.query<Pick<Chapter, 'content' | 'revision'>>(
+    'SELECT content, revision FROM chapters WHERE id = $1 FOR UPDATE',
     [id],
   )
-  return rows[0] ?? null
+  if (expectedRevision !== undefined) {
+    if (!current) throw new ChapterWriteError('not-found')
+    if (current.revision !== expectedRevision) throw new ChapterWriteError('conflict')
+  }
+  return current ?? null
 }
 
 /** Вызывается только после блокировки главы на том же клиенте. */
@@ -233,18 +238,25 @@ async function updateLockedChapter(
 export async function updateChapter(
   id: string,
   data: Record<string, unknown>,
-  { archiveEmptyContent = false } = {},
+  { archiveEmptyContent = false, expectedRevision }: {
+    archiveEmptyContent?: boolean
+    expectedRevision?: number
+  } = {},
 ) {
-  if (data.content === undefined) {
+  if (data.content === undefined && expectedRevision === undefined) {
     const chapter = await updateChapterFields(id, data)
     return chapter ? withSafeContent(chapter) : null
   }
 
-  const content = safeContent(data.content)
   return withTransaction(async (client) => {
-    const current = await lockChapterContent(client, id)
+    const current = await lockChapterContent(client, id, expectedRevision)
     if (!current) return null
-    return updateLockedChapter(client, id, current.content, data, content, archiveEmptyContent)
+    if (data.content === undefined) {
+      const chapter = await updateChapterFields(id, data, client)
+      if (!chapter) throw new ChapterWriteError('not-found')
+      return withSafeContent(chapter)
+    }
+    return updateLockedChapter(client, id, current.content, data, safeContent(data.content), archiveEmptyContent)
   })
 }
 
@@ -276,17 +288,22 @@ export async function reorderChapters(editionId: string, chapterIds: string[]) {
   })
 }
 
-export async function publishChapter(id: string) {
-  return dbQueryOne<Chapter>(
-    `UPDATE chapters SET status = 'published', published_at = COALESCE(published_at, NOW())
-     WHERE id = $1
-     RETURNING ${chapterColumns}`,
-    [id],
-  )
+export async function publishChapter(id: string, expectedRevision?: number) {
+  const sql = `UPDATE chapters SET status = 'published', published_at = COALESCE(published_at, NOW())
+     WHERE id = $1 RETURNING ${chapterColumns}`
+  if (expectedRevision === undefined) return dbQueryOne<Chapter>(sql, [id])
+  return withTransaction(async (client) => {
+    await lockChapterContent(client, id, expectedRevision)
+    const { rows: [chapter] } = await client.query<Chapter>(sql, [id])
+    return chapter ?? null
+  })
 }
 
-export async function deleteChapter(id: string) {
-  await dbQuery('DELETE FROM chapters WHERE id = $1', [id])
+export async function deleteChapter(id: string, expectedRevision: number) {
+  await withTransaction(async (client) => {
+    await lockChapterContent(client, id, expectedRevision)
+    await client.query('DELETE FROM chapters WHERE id = $1', [id])
+  })
 }
 
 export async function incrementChapterViews(id: string) {
@@ -319,9 +336,9 @@ export async function fetchChapterVersion(versionId: string) {
  * Обе операции — в одной транзакции, чтобы параллельное сохранение не вклинилось
  * между снимком и обновлением.
  */
-export async function restoreChapterVersion(chapterId: string, versionId: string) {
+export async function restoreChapterVersion(chapterId: string, versionId: string, expectedRevision?: number) {
   return withTransaction(async (client) => {
-    const current = await lockChapterContent(client, chapterId)
+    const current = await lockChapterContent(client, chapterId, expectedRevision)
     if (!current) return null
 
     const { rows } = await client.query<{ content: string }>(

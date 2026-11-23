@@ -18,6 +18,7 @@ import { changeReleaseGameLink } from '@/lib/server/games'
 import { changeReleasePlaceLink } from '@/lib/server/places'
 import { dbQuery } from '@/lib/db'
 import { parseAudioBlobMetadata } from '@/lib/server/audio-metadata'
+import { ChapterWriteError, chapterWriteMessages, type ChapterWriteResult } from '@/lib/studio/chapter-write'
 import type { QualityTier, ReleaseCharacterRole, ReleaseDesignConfig } from '@/lib/releases-types'
 import {
   releaseFormSchema,
@@ -26,6 +27,9 @@ import {
   editionFormSchema,
   chapterFormSchema,
   chapterUpdateSchema,
+  chapterRevisionSchema,
+  chapterIdSchema,
+  comicChapterPagesSchema,
   seriesFormSchema,
   releaseStatusSchema,
   editionStatusSchema,
@@ -398,8 +402,25 @@ export async function reorderChaptersAction(editionId: string, chapterIds: strin
   return true
 }
 
-export async function updateChapterAction(id: string, data: {
-  title?: string | null
+async function runChapterWrite<T>(
+  id: string,
+  expectedRevision: number,
+  write: () => Promise<T>,
+): Promise<ChapterWriteResult<T>> {
+  try {
+    if (!chapterIdSchema.safeParse(id).success || !chapterRevisionSchema.safeParse(expectedRevision).success) {
+      throw new ChapterWriteError('validation')
+    }
+    await requireChapterOwnership(id, { missingIsWriteError: true })
+    return { ok: true, value: await write() }
+  } catch (error) {
+    if (error instanceof ChapterWriteError) return { ok: false, code: error.code, message: error.message }
+    throw error
+  }
+}
+
+export async function updateChapterAction(id: string, expectedRevision: number, data: {
+  title?: string
   content?: string | null
   audio_url?: string | null
   audio_blob_path?: string | null
@@ -410,77 +431,82 @@ export async function updateChapterAction(id: string, data: {
   audio_uploaded_at?: string | null
   chapter_index?: number
 }) {
-  await requireChapterOwnership(id)
-
   const parsed = chapterUpdateSchema.safeParse(data)
-  if (!parsed.success) {
-    throw new Error(parsed.error.issues[0]?.message ?? 'Ошибка валидации главы')
+  if (!parsed.success) return {
+    ok: false as const,
+    code: 'validation' as const,
+    message: parsed.error.issues[0]?.message ?? chapterWriteMessages.validation,
   }
-  const { title, ...patch } = parsed.data
-  const updated = await chaptersDb.updateChapter(id, { ...patch, title: title ?? undefined })
-  if (updated) revalidatePath(`/studio/editions/${updated.edition_id}`)
-  return updated
+  return runChapterWrite(id, expectedRevision, async () => {
+    const updated = await chaptersDb.updateChapter(id, parsed.data, { expectedRevision })
+    if (!updated) throw new ChapterWriteError('not-found')
+    revalidatePath(`/studio/editions/${updated.edition_id}`)
+    return updated
+  })
 }
 
-export async function updateComicChapterPagesAction(chapterId: string, pages: string[]) {
-  await requireChapterOwnership(chapterId)
-  const updated = await chaptersDb.updateChapter(chapterId, {
-    content: JSON.stringify(pages),
-    word_count: 0,
-  }, { archiveEmptyContent: true })
-  if (!updated) throw new Error('Глава не найдена')
-
-  revalidatePath(`/studio/editions/${updated.edition_id}`)
-  return updated
+export async function updateComicChapterPagesAction(chapterId: string, expectedRevision: number, pages: string[]) {
+  return runChapterWrite(chapterId, expectedRevision, async () => {
+    if (!comicChapterPagesSchema.safeParse(pages).success) throw new ChapterWriteError('validation')
+    const updated = await chaptersDb.updateChapter(chapterId, {
+      content: JSON.stringify(pages),
+      word_count: 0,
+    }, { archiveEmptyContent: true, expectedRevision })
+    if (!updated) throw new ChapterWriteError('not-found')
+    revalidatePath(`/studio/editions/${updated.edition_id}`)
+    return updated
+  })
 }
 
-export async function finalizeAudioChapterUploadAction(id: string, data: {
+export async function finalizeAudioChapterUploadAction(id: string, expectedRevision: number, data: {
   url: string
   pathname: string
   contentType?: string | null
   size?: number | null
 }) {
-  await requireChapterOwnership(id)
+  return runChapterWrite(id, expectedRevision, async () => {
+    const chapter = await chaptersDb.fetchChapterById(id)
+    if (!chapter) throw new ChapterWriteError('not-found')
+    if (chapter.revision !== expectedRevision) throw new ChapterWriteError('conflict')
 
-  const chapter = await chaptersDb.fetchChapterById(id)
-  if (!chapter) return null
+    if (!data.pathname.startsWith(`audio/chapters/${id}/`)) {
+      throw new Error('Некорректный путь аудиофайла')
+    }
 
-  if (!data.pathname.startsWith(`audio/chapters/${id}/`)) {
-    throw new Error('Некорректный путь аудиофайла')
-  }
+    const blobToken = process.env.BLOB_READ_WRITE_TOKEN
+    const blobInfo = await head(data.pathname, { token: blobToken })
+    if (blobInfo.url !== data.url) {
+      throw new Error('Blob URL не соответствует загруженному файлу')
+    }
 
-  const blobToken = process.env.BLOB_READ_WRITE_TOKEN
-  const blobInfo = await head(data.pathname, { token: blobToken })
-  if (blobInfo.url !== data.url) {
-    throw new Error('Blob URL не соответствует загруженному файлу')
-  }
+    const parsed = await parseAudioBlobMetadata({
+      url: blobInfo.url,
+      pathname: blobInfo.pathname,
+      contentType: blobInfo.contentType ?? data.contentType ?? null,
+      size: blobInfo.size ?? data.size ?? null,
+      chapterId: id,
+    })
 
-  const parsed = await parseAudioBlobMetadata({
-    url: blobInfo.url,
-    pathname: blobInfo.pathname,
-    contentType: blobInfo.contentType ?? data.contentType ?? null,
-    size: blobInfo.size ?? data.size ?? null,
-    chapterId: id,
+    const previousPath = chapter.audio_blob_path
+    const updated = await chaptersDb.updateChapter(id, {
+      title: parsed.metadata.title ?? undefined,
+      audio_url: blobInfo.url,
+      audio_blob_path: blobInfo.pathname,
+      duration_seconds: parsed.durationSeconds ?? undefined,
+      audio_metadata: parsed.metadata,
+      audio_content_type: blobInfo.contentType ?? data.contentType ?? null,
+      audio_file_size_bytes: blobInfo.size ?? data.size ?? null,
+      audio_uploaded_at: blobInfo.uploadedAt.toISOString(),
+    }, { expectedRevision })
+    if (!updated) throw new ChapterWriteError('not-found')
+
+    if (previousPath && previousPath !== blobInfo.pathname && previousPath.startsWith(`audio/chapters/${id}/`)) {
+      await del(previousPath, { token: blobToken }).catch(() => undefined)
+    }
+
+    revalidatePath(`/studio/editions/${chapter.edition_id}`)
+    return { chapter: updated, coverUrl: parsed.coverUrl }
   })
-
-  const previousPath = chapter.audio_blob_path
-  const updated = await chaptersDb.updateChapter(id, {
-    title: parsed.metadata.title ?? undefined,
-    audio_url: blobInfo.url,
-    audio_blob_path: blobInfo.pathname,
-    duration_seconds: parsed.durationSeconds ?? undefined,
-    audio_metadata: parsed.metadata,
-    audio_content_type: blobInfo.contentType ?? data.contentType ?? null,
-    audio_file_size_bytes: blobInfo.size ?? data.size ?? null,
-    audio_uploaded_at: blobInfo.uploadedAt.toISOString(),
-  })
-
-  if (previousPath && previousPath !== blobInfo.pathname && previousPath.startsWith(`audio/chapters/${id}/`)) {
-    await del(previousPath, { token: blobToken }).catch(() => undefined)
-  }
-
-  revalidatePath(`/studio/editions/${chapter.edition_id}`)
-  return { chapter: updated, coverUrl: parsed.coverUrl }
 }
 
 export async function applyAudioCoverToReleaseAction(chapterId: string, coverUrl: string) {
@@ -511,43 +537,48 @@ export async function applyAudioCoverToReleaseAction(chapterId: string, coverUrl
   return updated
 }
 
-export async function removeAudioChapterFileAction(id: string) {
-  await requireChapterOwnership(id)
-  const chapter = await chaptersDb.fetchChapterById(id)
-  if (!chapter) return null
+export async function removeAudioChapterFileAction(id: string, expectedRevision: number) {
+  return runChapterWrite(id, expectedRevision, async () => {
+    const chapter = await chaptersDb.fetchChapterById(id)
+    if (!chapter) throw new ChapterWriteError('not-found')
 
-  if (chapter.audio_blob_path?.startsWith(`audio/chapters/${id}/`)) {
-    await del(chapter.audio_blob_path, { token: process.env.BLOB_READ_WRITE_TOKEN }).catch(() => undefined)
-  }
+    const updated = await chaptersDb.updateChapter(id, {
+      audio_url: null,
+      audio_blob_path: null,
+      duration_seconds: null,
+      audio_metadata: {},
+      audio_content_type: null,
+      audio_file_size_bytes: null,
+      audio_uploaded_at: null,
+    }, { expectedRevision })
+    if (!updated) throw new ChapterWriteError('not-found')
 
-  const updated = await chaptersDb.updateChapter(id, {
-    audio_url: null,
-    audio_blob_path: null,
-    duration_seconds: null,
-    audio_metadata: {},
-    audio_content_type: null,
-    audio_file_size_bytes: null,
-    audio_uploaded_at: null,
+    if (chapter.audio_blob_path?.startsWith(`audio/chapters/${id}/`)) {
+      await del(chapter.audio_blob_path, { token: process.env.BLOB_READ_WRITE_TOKEN }).catch(() => undefined)
+    }
+
+    revalidatePath(`/studio/editions/${chapter.edition_id}`)
+    return updated
   })
-
-  revalidatePath(`/studio/editions/${chapter.edition_id}`)
-  return updated
 }
 
-export async function publishChapterAction(id: string) {
-  await requireChapterOwnership(id)
-  const chapter = await chaptersDb.publishChapter(id)
-  if (chapter) revalidatePath(`/studio/editions/${chapter.edition_id}`)
-  return chapter
+export async function publishChapterAction(id: string, expectedRevision: number) {
+  return runChapterWrite(id, expectedRevision, async () => {
+    const chapter = await chaptersDb.publishChapter(id, expectedRevision)
+    if (!chapter) throw new ChapterWriteError('not-found')
+    revalidatePath(`/studio/editions/${chapter.edition_id}`)
+    return chapter
+  })
 }
 
-export async function deleteChapterAction(id: string) {
-  await requireChapterOwnership(id)
-  const chapter = await chaptersDb.fetchChapterById(id)
-  if (!chapter) return
-  await chaptersDb.deleteChapter(id)
-  revalidatePath(`/studio/editions/${chapter.edition_id}`)
-  redirect(`/studio/editions/${chapter.edition_id}`)
+export async function deleteChapterAction(id: string, expectedRevision: number) {
+  return runChapterWrite(id, expectedRevision, async () => {
+    const chapter = await chaptersDb.fetchChapterById(id)
+    if (!chapter) throw new ChapterWriteError('not-found')
+    await chaptersDb.deleteChapter(id, expectedRevision)
+    revalidatePath(`/studio/editions/${chapter.edition_id}`)
+    redirect(`/studio/editions/${chapter.edition_id}`)
+  })
 }
 
 // === Chapter Versions ===
@@ -557,11 +588,14 @@ export async function getChapterVersions(chapterId: string) {
   return chaptersDb.fetchChapterVersions(chapterId)
 }
 
-export async function restoreChapterVersionAction(chapterId: string, versionId: string) {
-  await requireChapterOwnership(chapterId)
-  const chapter = await chaptersDb.restoreChapterVersion(chapterId, versionId)
-  if (chapter) revalidatePath(`/studio/editions/${chapter.edition_id}/chapters/${chapterId}`)
-  return chapter
+export async function restoreChapterVersionAction(chapterId: string, versionId: string, expectedRevision: number) {
+  return runChapterWrite(chapterId, expectedRevision, async () => {
+    if (!chapterIdSchema.safeParse(versionId).success) throw new ChapterWriteError('validation')
+    const chapter = await chaptersDb.restoreChapterVersion(chapterId, versionId, expectedRevision)
+    if (!chapter) throw new ChapterWriteError('version-not-found')
+    revalidatePath(`/studio/editions/${chapter.edition_id}/chapters/${chapterId}`)
+    return chapter
+  })
 }
 
 // === Series ===

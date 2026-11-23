@@ -144,8 +144,13 @@ export const lyricsSchema = z.object({
   lines: z.array(lyricLineSchema).min(1),
 })
 
+export const chapterRevisionSchema = z.number().int().min(0).max(2147483647)
+export const chapterIdSchema = z.string().uuid()
+export const comicChapterPagesSchema = z.array(z.string())
+
 export const chapterUpdateSchema = z.object({
-  title: optionalString.optional(),
+  title: z.string({ invalid_type_error: 'Введите заголовок главы' })
+    .trim().min(1, 'Введите заголовок главы').optional(),
   content: z.string().trim().nullable().optional(),
   audio_url: optionalString.optional(),
   audio_blob_path: optionalString.optional(),

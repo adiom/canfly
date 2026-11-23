@@ -17,6 +17,7 @@ export function chapterWriteReceipt(chapter: Chapter) {
     status: chapter.status,
     word_count: chapter.word_count,
     content_hash: chapterDigest(chapter.content),
+    revision: chapter.revision,
     updated_at: chapter.updated_at,
   }
 }

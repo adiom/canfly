@@ -18,6 +18,7 @@ import { json, notFound, toolError, withToolCatch } from '@/lib/mcp/tool-result'
 const uuid = z.uuid()
 
 const chapterStatus = z.enum(['draft', 'published'])
+const expectedRevision = z.number().int().min(0).max(2147483647).optional()
 
 export function registerChaptersTools(server: McpServer) {
   server.registerTool(
@@ -107,10 +108,11 @@ export function registerChaptersTools(server: McpServer) {
     {
       title: 'Обновить главу',
       description:
-        'Обновить главу. Апдейт частичный: непереданные поля (включая аудио) сохраняют текущее значение. Если контент меняется и там уже был текст, старая версия автоматически уходит в chapter_versions. HTML очищается перед записью.',
+        'Обновить главу. Непереданные поля сохраняются. Передайте expected_revision из чтения главы, чтобы отклонить запись при изменении главы. Старая непустая версия текста сохраняется, HTML очищается.',
       inputSchema: z.object({
         id: uuid.describe('UUID главы'),
-        title: z.string().optional().describe('Название главы'),
+        expected_revision: expectedRevision,
+        title: z.string().refine(title => title.trim().length > 0).optional().describe('Название главы'),
         content: z.string().optional().describe('Новый HTML-контент'),
         chapter_index: z.number().int().min(1).optional().describe('Новый порядковый номер'),
         status: chapterStatus.optional().describe('Статус'),
@@ -118,8 +120,8 @@ export function registerChaptersTools(server: McpServer) {
       }),
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     },
-    withToolCatch(async ({ id, ...data }) => {
-      const updated = await updateChapter(id, data)
+    withToolCatch(async ({ id, expected_revision, ...data }) => {
+      const updated = await updateChapter(id, data, { expectedRevision: expected_revision })
       return updated ? json(chapterWriteReceipt(updated)) : notFound('Глава', id)
     }),
   )
@@ -177,15 +179,16 @@ export function registerChaptersTools(server: McpServer) {
     {
       title: 'Откатить главу к версии',
       description:
-        'Откатить главу к сохранённой версии. При изменении текста текущее непустое содержимое сохраняется как новая версия.',
+        'Откатить главу к сохранённой версии. Передайте expected_revision из чтения главы для защиты от перезаписи. Текущее непустое содержимое сохраняется как новая версия.',
       inputSchema: z.object({
         chapter_id: uuid.describe('UUID главы'),
         version_id: uuid.describe('UUID версии для восстановления'),
+        expected_revision: expectedRevision,
       }),
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
     },
-    withToolCatch(async ({ chapter_id, version_id }) => {
-      const restored = await restoreChapterVersion(chapter_id, version_id)
+    withToolCatch(async ({ chapter_id, version_id, expected_revision }) => {
+      const restored = await restoreChapterVersion(chapter_id, version_id, expected_revision)
       return restored ? json(chapterWriteReceipt(restored)) : toolError('Версия не найдена или не принадлежит главе')
     }),
   )

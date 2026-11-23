@@ -3,6 +3,7 @@ import { dbQueryOne } from '@/lib/db'
 import { redirect } from 'next/navigation'
 import type { PublicRole, SystemRole } from '@/lib/types'
 import type { SessionUser } from '@/lib/server/session'
+import { ChapterWriteError } from '@/lib/studio/chapter-write'
 
 export interface StudioSession {
   user: SessionUser
@@ -117,7 +118,10 @@ export async function requireEditionOwnership(editionId: string): Promise<Owners
 /**
  * Извлекает цепочку chapter → edition → release и проверяет владение релизом.
  */
-export async function requireChapterOwnership(chapterId: string): Promise<OwnershipContext> {
+export async function requireChapterOwnership(
+  chapterId: string,
+  { missingIsWriteError = false } = {},
+): Promise<OwnershipContext> {
   const link = await dbQueryOne<{ release_id: string }>(
     `SELECT e.release_id
      FROM chapters c
@@ -126,6 +130,10 @@ export async function requireChapterOwnership(chapterId: string): Promise<Owners
      LIMIT 1`,
     [chapterId],
   )
+  if (!link && missingIsWriteError) {
+    if (!await requireStudioSession()) redirect('/login')
+    throw new ChapterWriteError('not-found')
+  }
   if (!link) redirect('/studio')
   return requireReleaseOwnership(link.release_id)
 }
