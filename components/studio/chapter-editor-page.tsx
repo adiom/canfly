@@ -5,6 +5,8 @@ import { useRouter, unstable_rethrow } from 'next/navigation'
 import { useAutosave } from '@/lib/studio/use-autosave'
 import type { ChapterWriteFailure } from '@/lib/studio/chapter-write'
 import { archiveChapterDraft, type ChapterDraft } from '@/lib/studio/chapter-drafts'
+import { saveChapterAutosave } from '@/lib/studio/chapter-autosave'
+import { planLeaseReacquire } from '@/lib/studio/chapter-reacquire'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import type { Editor } from '@tiptap/react'
@@ -103,6 +105,8 @@ export function ChapterEditorPage({
   const isComic = editionFormat === 'comic'
   const [mediaSaveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [chapterTitle, setChapterTitle] = useState(chapter.title)
+  const [chapterSnapshot, setChapterSnapshot] = useState(chapter)
+  const [recoveryNotice, setRecoveryNotice] = useState<string | null>(null)
   const [editorialNotes, setEditorialNotes] = useState<ChapterEditorialNote[]>([])
   const [isHtmlMode, setIsHtmlMode] = useState(false)
   const [htmlContent, setHtmlContent] = useState('')
@@ -120,6 +124,8 @@ export function ChapterEditorPage({
   const leaseProofRef = useRef<ChapterLeaseProof | null>(null)
   const leaseLostRef = useRef(false)
   const readOnlyRef = useRef(true)
+  const comicPagesRef = useRef<string[]>(parseComicPages(chapter.content))
+  const audioDraftRef = useRef<ChapterDraft | null>(null)
   const isReadOnly = useCallback(() => readOnlyRef.current, [])
   const getRevision = useCallback(() => revisionRef.current, [])
   const saveComicPages = useCallback(async (pages: string[]) => {
@@ -149,6 +155,12 @@ export function ChapterEditorPage({
     const editor = tiptapRef.current
     if (editor && !editor.isDestroyed) editor.commands.setContent(draft.content, { emitUpdate: false })
   }, [])
+  const handleComicPagesChange = useCallback((pages: string[]) => {
+    comicPagesRef.current = pages
+  }, [])
+  const handleAudioDraftChange = useCallback((draft: ChapterDraft) => {
+    audioDraftRef.current = draft
+  }, [])
   const autosave = useAutosave({
     storageKey: `cf-chapter-draft:${editorUserId}:${chapter.id}`,
     legacyStorageKey: `cf-chapter-draft:${chapter.id}`,
@@ -157,47 +169,67 @@ export function ChapterEditorPage({
     archiveDraft,
     isReadOnly,
     save: async (draft, patch) => {
-      const { title, ...contentPatch } = patch
-      const invalidTitle = title !== undefined && !title.trim()
-      const revision = revisionRef.current
-      const proof = leaseProofRef.current
-      if (!proof) {
-        archiveDraft(draft, revision)
-        const failure: ChapterWriteFailure = {
-          ok: false,
-          code: 'lease-lost',
-          message: 'Редактирование недоступно: глава открыта в другой сессии.',
-        }
-        setSaveError(failure)
-        return
-      }
-      if (!invalidTitle || contentPatch.content !== undefined) {
-        const result = await updateChapterAction(
+      const outcome = await saveChapterAutosave(draft, patch, {
+        revision: revisionRef.current,
+        proof: leaseProofRef.current,
+        archive: archiveDraft,
+        update: (revision, proof, nextPatch) => updateChapterAction(
           chapter.id,
           revision,
           proof,
-          invalidTitle ? contentPatch : patch,
-        )
-        if (!result.ok) {
-          const archive = result.code === 'conflict' || result.code === 'lease-lost' || result.code === 'lease-required'
-          if (archive && !archiveDraft(draft, revision)) {
-            toast.warning('Браузер не смог записать архив. Скопируйте текст из редактора.')
-          }
-          setSaveError(error => error && (error.code === 'conflict' || error.code === 'not-found')
-            ? error
-            : result)
-          throw new Error(result.message)
-        }
-        revisionRef.current = result.value.revision
+          nextPatch,
+        ),
+      })
+
+      if (outcome.archiveFailed) {
+        toast.warning('Браузер не смог записать архив. Скопируйте текст из редактора.')
+      }
+      if (outcome.revision !== undefined) revisionRef.current = outcome.revision
+      if (outcome.failure) {
+        setSaveError(error => error && (error.code === 'conflict' || error.code === 'not-found')
+          ? error
+          : outcome.failure!)
+      } else {
         setSaveError(null)
+        setRecoveryNotice(null)
       }
-      if (invalidTitle) return {
-        acknowledged: contentPatch,
-        error: new Error('Введите заголовок главы'),
-      }
+      return outcome.result
     },
     onRestore: applyDraft,
   })
+
+  function archiveLocalMedia() {
+    if (isComic) {
+      const pages = comicPagesRef.current
+      if (JSON.stringify(pages) !== JSON.stringify(parseComicPages(chapterSnapshot.content))) {
+        archiveDraft({ title: chapterTitle, content: JSON.stringify(pages) }, revisionRef.current)
+      }
+    }
+    if (isAudioEditor && audioDraftRef.current) {
+      const serverDraft = JSON.stringify({
+        duration_seconds: chapterSnapshot.duration_seconds,
+        audio_metadata: chapterSnapshot.audio_metadata,
+      })
+      if (audioDraftRef.current.title !== chapterSnapshot.title ||
+          audioDraftRef.current.content !== serverDraft) {
+        archiveDraft(audioDraftRef.current, revisionRef.current)
+      }
+    }
+  }
+
+  function applyServerSnapshot(fresh: Chapter, { archive = true }: { archive?: boolean } = {}) {
+    if (archive) {
+      const current = autosave.getValue()
+      if (autosave.isDirty()) archiveDraft(current, revisionRef.current)
+      archiveLocalMedia()
+    }
+    revisionRef.current = fresh.revision
+    setChapterSnapshot(fresh)
+    const draft = { title: fresh.title, content: fresh.content ?? '' }
+    autosave.reset(draft)
+    if (!isAudioEditor && !isComic) applyDraft(draft)
+    setSaveError(null)
+  }
 
   const lease = useChapterLease({
     chapterId: chapter.id,
@@ -207,23 +239,55 @@ export function ChapterEditorPage({
       if (autosave.isDirty() && !archiveDraft(current, revisionRef.current)) {
         toast.error('Не удалось сохранить черновик в архив. Скопируйте текст из редактора.')
       }
+      archiveLocalMedia()
       toast.warning('Право редактирования потеряно. Текст сохранён в локальных черновиках.')
     },
-    onAcquired: async () => {
+    onAcquired: async (acquired) => {
       if (!leaseLostRef.current) return
-      const { chapter: fresh } = await getChapter(chapter.id)
-      if (!fresh) return
-      if (fresh.revision !== revisionRef.current) {
-        const current = autosave.getValue()
-        if (autosave.isDirty()) archiveDraft(current, revisionRef.current)
-        revisionRef.current = fresh.revision
-        const draft = { title: fresh.title, content: fresh.content ?? '' }
-        autosave.reset(draft)
-        applyDraft(draft)
-        toast.info('Глава перечитана после освобождения: пока вы читали, её изменили.')
+      leaseProofRef.current = {
+        sessionId: acquired.sessionId,
+        token: acquired.token,
+        generation: acquired.generation,
       }
-      leaseLostRef.current = false
-      setSaveError(null)
+      try {
+        const { chapter: fresh } = await getChapter(chapter.id)
+        if (!fresh) return
+        const action = planLeaseReacquire({
+          dirty: autosave.isDirty(),
+          currentRevision: revisionRef.current,
+          freshRevision: fresh.revision,
+        })
+        if (action === 'retry') {
+          leaseLostRef.current = false
+          setSaveError(null)
+          if (autosave.isDirty()) {
+            try {
+              await autosave.flush()
+            } catch {
+              // Ошибка остаётся видимой, черновик уже в архиве/sessionStorage.
+            }
+          }
+          return
+        }
+        if (action === 'none') {
+          leaseLostRef.current = false
+          setSaveError(null)
+          return
+        }
+
+        applyServerSnapshot(fresh)
+        setRecoveryNotice(
+          'Глава изменилась, пока вы были в режиме чтения. Загружена серверная версия; ваш текст сохранён в «Локальные черновики».',
+        )
+        toast.warning('Глава изменилась. Откройте «Локальные черновики», чтобы восстановить свой текст.')
+        leaseLostRef.current = false
+      } catch {
+        setSaveError({
+          ok: false,
+          code: 'error',
+          message: 'Не удалось перечитать главу после возврата права редактирования.',
+        })
+      }
     },
   })
 
@@ -235,11 +299,11 @@ export function ChapterEditorPage({
   }, [lease.proof, readOnly])
   const saveStatus = isAudioEditor || isComic ? mediaSaveStatus : autosave.status
   const titleError = !isAudioEditor && !isComic && !chapterTitle.trim() ? 'Введите заголовок главы' : null
-  const saveMessage = saveError?.code === 'conflict'
+  const saveMessage = recoveryNotice ?? (saveError?.code === 'conflict'
     ? 'Глава изменилась после открытия. Проверьте локальные черновики перед перезагрузкой.'
     : saveError?.code === 'lease-lost' || saveError?.code === 'lease-held'
       ? 'Режим только для чтения: правки сохраняются в локальные черновики.'
-      : saveError?.message ?? titleError
+      : saveError?.message ?? titleError)
   const canRestoreDraft = !restoring && !readOnly && saveError?.code !== 'conflict' && saveError?.code !== 'not-found'
   const updateDraft = autosave.update
   const handleDraftChange = useCallback((patch: { title?: string; content?: string }) => {
@@ -288,10 +352,12 @@ export function ChapterEditorPage({
         throw new Error(result.message)
       }
       revisionRef.current = result.value.revision
+      setChapterSnapshot(result.value)
       const draft = { title: result.value.title, content: result.value.content ?? '' }
       autosave.reset(draft)
       applyDraft(draft)
       setSaveError(null)
+      setRecoveryNotice(null)
     } finally {
       if (tiptapRef.current && !tiptapRef.current.isDestroyed) tiptapRef.current.setEditable(true, false)
       restorePending.current = false
@@ -517,20 +583,24 @@ export function ChapterEditorPage({
         {isAudioEditor ? (
           <div className="mx-auto max-w-4xl">
             <AudioChapterEditor
-              chapter={chapter}
+              key={`audio:${chapterSnapshot.revision}`}
+              chapter={chapterSnapshot}
               revisionRef={revisionRef}
               leaseRef={leaseProofRef}
               readOnly={readOnly}
               onSaveStatus={setSaveStatus}
+              onLocalDraft={handleAudioDraftChange}
             />
           </div>
         ) : isComic ? (
           <div className="mx-auto max-w-4xl">
             <div className="bg-cf-bg-2 border border-cf-text-1/10 rounded-2xl p-5 md:p-6">
               <ComicPagesEditor
-                initialPages={parseComicPages(chapter.content)}
+                key={`comic:${chapterSnapshot.revision}`}
+                initialPages={parseComicPages(chapterSnapshot.content)}
                 savePages={saveComicPages}
                 readOnly={readOnly}
+                onPagesChange={handleComicPagesChange}
               />
             </div>
           </div>

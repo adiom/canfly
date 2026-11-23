@@ -27,6 +27,7 @@ interface AudioChapterEditorProps {
   leaseRef: RefObject<ChapterLeaseProof | null>
   readOnly: boolean
   onSaveStatus: (status: 'idle' | 'saving' | 'saved' | 'error') => void
+  onLocalDraft?: (draft: { title: string; content: string }) => void
 }
 
 const MAX_AUDIO_SIZE = 500 * 1024 * 1024
@@ -44,7 +45,7 @@ function numberMeta(metadata: Record<string, unknown>, key: string) {
 
 type LyricsMode = 'edit' | 'sync' | 'preview'
 
-export function AudioChapterEditor({ chapter, revisionRef, leaseRef, readOnly, onSaveStatus }: AudioChapterEditorProps) {
+export function AudioChapterEditor({ chapter, revisionRef, leaseRef, readOnly, onSaveStatus, onLocalDraft }: AudioChapterEditorProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const previewAudioRef = useRef<HTMLAudioElement>(null)
   const syncLineRef = useRef<HTMLDivElement>(null)
@@ -86,6 +87,14 @@ export function AudioChapterEditor({ chapter, revisionRef, leaseRef, readOnly, o
     sampleRate: sampleRate ?? undefined,
     lyrics: lyrics ?? undefined,
   }), [album, artist, bitrate, codec, initialMetadata, lyrics, sampleRate, trackNo, year])
+
+  const localDraftJson = JSON.stringify({
+    duration_seconds: durationSeconds,
+    audio_metadata: buildMetadata(),
+  })
+  useEffect(() => {
+    onLocalDraft?.({ title, content: localDraftJson })
+  }, [localDraftJson, onLocalDraft, title])
 
   const parseLyricsText = useCallback((text: string) => {
     if (!text.trim()) {
@@ -360,7 +369,12 @@ export function AudioChapterEditor({ chapter, revisionRef, leaseRef, readOnly, o
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2 sm:col-span-2">
             <Label className="text-gray-600">Название</Label>
-            <Input value={title} onChange={event => setTitle(event.target.value)} className="rounded-xl bg-white/70" />
+            <Input
+              value={title}
+              aria-label="Название"
+              onChange={event => setTitle(event.target.value)}
+              className="rounded-xl bg-white/70"
+            />
           </div>
           <div className="space-y-2">
             <Label className="text-gray-600">Автор / артист</Label>

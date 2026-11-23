@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import Image from 'next/image'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
@@ -13,9 +13,15 @@ interface ComicPagesEditorProps {
   initialPages: string[]
   savePages: (pages: string[]) => Promise<ChapterWriteResult<Chapter>>
   readOnly?: boolean
+  onPagesChange?: (pages: string[]) => void
 }
 
-export function ComicPagesEditor({ initialPages, savePages, readOnly = false }: ComicPagesEditorProps) {
+export function ComicPagesEditor({
+  initialPages,
+  savePages,
+  readOnly = false,
+  onPagesChange,
+}: ComicPagesEditorProps) {
   const [pages, setPages] = useState<string[]>(initialPages)
   const [uploading, setUploading] = useState(false)
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
@@ -31,13 +37,26 @@ export function ComicPagesEditor({ initialPages, savePages, readOnly = false }: 
   }))
   const status = useSyncExternalStore(queue.subscribe, queue.getStatus, () => 'saved' as const)
   const isPending = status === 'pending' || status === 'saving'
+  const wasReadOnly = useRef(readOnly)
+
+  useEffect(() => {
+    onPagesChange?.(pages)
+  }, [onPagesChange, pages])
+
+  useEffect(() => {
+    // Возврат lease при неизменной ревизии: повторяем грязную очередь.
+    if (wasReadOnly.current && !readOnly) void queue.flush().catch(() => {})
+    wasReadOnly.current = readOnly
+  }, [queue, readOnly])
 
   function persist(newPages: string[]) {
+    if (readOnly) return
     queue.update({ pages: newPages })
     void queue.flush().catch(() => {})
   }
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    if (readOnly) return
     const files = e.target.files
     if (!files || files.length === 0) return
 
@@ -76,6 +95,7 @@ export function ComicPagesEditor({ initialPages, savePages, readOnly = false }: 
   }
 
   function handleAddByUrl() {
+    if (readOnly) return
     const url = window.prompt('URL изображения:')
     if (url) {
       const newPages = [...pages, url]
@@ -85,6 +105,7 @@ export function ComicPagesEditor({ initialPages, savePages, readOnly = false }: 
   }
 
   function handleDelete(index: number) {
+    if (readOnly) return
     const newPages = pages.filter((_, i) => i !== index)
     setPages(newPages)
     persist(newPages)
@@ -92,12 +113,13 @@ export function ComicPagesEditor({ initialPages, savePages, readOnly = false }: 
   }
 
   function handleDragStart(index: number) {
+    if (readOnly) return
     setDraggedIndex(index)
   }
 
   function handleDragOver(e: React.DragEvent, index: number) {
     e.preventDefault()
-    if (draggedIndex === null || draggedIndex === index) return
+    if (readOnly || draggedIndex === null || draggedIndex === index) return
 
     const newPages = [...pages]
     const draggedItem = newPages[draggedIndex]
@@ -109,7 +131,7 @@ export function ComicPagesEditor({ initialPages, savePages, readOnly = false }: 
   }
 
   function handleDragEnd() {
-    if (draggedIndex !== null) {
+    if (!readOnly && draggedIndex !== null) {
       persist(pages)
     }
     setDraggedIndex(null)
@@ -167,13 +189,13 @@ export function ComicPagesEditor({ initialPages, savePages, readOnly = false }: 
           {pages.map((url, index) => (
             <div
               key={`${url}-${index}`}
-              draggable
+              draggable={!readOnly}
               onDragStart={() => handleDragStart(index)}
               onDragOver={e => handleDragOver(e, index)}
               onDragEnd={handleDragEnd}
-              className={`relative group cursor-move rounded-xl overflow-hidden border border-white/70 shadow-sm ${
-                draggedIndex === index ? 'opacity-50' : ''
-              }`}
+              className={`relative group rounded-xl overflow-hidden border border-white/70 shadow-sm ${
+                readOnly ? 'cursor-default' : 'cursor-move'
+              } ${draggedIndex === index ? 'opacity-50' : ''}`}
             >
               <div className="relative aspect-[3/4] bg-muted">
                 <Image
@@ -189,7 +211,9 @@ export function ComicPagesEditor({ initialPages, savePages, readOnly = false }: 
                 <Button
                   variant="destructive"
                   size="icon-sm"
+                  disabled={readOnly}
                   onClick={() => handleDelete(index)}
+                  aria-label={`Удалить страницу ${index + 1}`}
                 >
                   <Trash2 className="h-3 w-3" />
                 </Button>
@@ -199,7 +223,9 @@ export function ComicPagesEditor({ initialPages, savePages, readOnly = false }: 
         </div>
       )}
 
-      <p className="text-xs text-muted-foreground">Перетаскивайте карточки для изменения порядка</p>
+      <p className="text-xs text-muted-foreground">
+        {readOnly ? 'Режим только для чтения: страницы нельзя менять.' : 'Перетаскивайте карточки для изменения порядка'}
+      </p>
     </div>
   )
 }

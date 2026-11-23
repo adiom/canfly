@@ -14,6 +14,7 @@ import {
   type ChapterLeaseState,
   type ChapterLeaseView,
 } from '@/lib/studio/chapter-lease'
+import { settleLeaseRenewal } from '@/lib/studio/chapter-lease-renewal'
 
 const SESSION_KEY = 'cf-editor-session-id'
 const SESSION_CHANNEL = 'cf-editor-sessions'
@@ -170,13 +171,15 @@ export function useChapterLease({
       const proof = toLeaseProof(leaseRef.current)
       if (!proof) return
       void (async () => {
-        const renewed = await renewChapterLeaseAction(chapterId, proof.sessionId, proof)
-        if (renewed.ok) {
-          leaseRef.current = renewed.lease
-          setState({ status: 'active', lease: renewed.lease, degraded: false })
+        const outcome = await settleLeaseRenewal(
+          () => renewChapterLeaseAction(chapterId, proof.sessionId, proof),
+        )
+        if (outcome.status === 'ok') {
+          leaseRef.current = outcome.lease
+          setState({ status: 'active', lease: outcome.lease, degraded: false })
           return
         }
-        if (renewed.code === 'lease-lost') {
+        if (outcome.status === 'lost') {
           markLost(null)
           return
         }
