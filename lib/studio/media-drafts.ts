@@ -30,6 +30,8 @@ export interface MediaDraftInput {
 }
 
 const storageNames = ['localStorage', 'sessionStorage'] as const
+// Переходы App Router сохраняют документ, даже если редактор размонтирован.
+const memoryDrafts = new WeakMap<Window, Map<string, MediaDraft>>()
 
 export function mediaDraftKey(kind: MediaDraftKind, userId: string, chapterId: string) {
   return `cf-media-draft:${kind}:${userId}:${chapterId}`
@@ -61,40 +63,62 @@ function parseDraft(raw: string | null, kind: MediaDraftKind, userId: string, ch
 
 /**
  * Пытается сохранить черновик в localStorage, затем в sessionStorage.
- * `null` означает, что оба хранилища недоступны/переполнены: вызывающий код
- * обязан сохранить текст в памяти и предложить копирование.
+ * При отказе обоих хранилищ снимок остаётся в памяти текущего документа.
+ * Вызывающий код предлагает копирование, пока persisted === false.
  */
-export function storeMediaDraft(input: MediaDraftInput): MediaDraft | null {
-  const previous = loadMediaDraft(input.kind, input.userId, input.chapterId)
-  if (previous && previous.baseRevision === input.baseRevision && previous.title === input.title &&
-      previous.content === input.content && JSON.stringify(previous.pendingAudio) === JSON.stringify(input.pendingAudio)) {
-    return previous
+export function storeMediaDraft(input: MediaDraftInput): { draft: MediaDraft; persisted: boolean } {
+  const key = mediaDraftKey(input.kind, input.userId, input.chapterId)
+  const stored = loadStoredDraft(key, input.kind, input.userId, input.chapterId)
+  const memory = typeof window === 'undefined' ? undefined : memoryDrafts.get(window)
+  const pending = memory?.get(key)
+  const previous = pending && (!stored || pending.savedAt > stored.savedAt) ? pending : stored
+  const unchanged = previous && previous.baseRevision === input.baseRevision && previous.title === input.title &&
+    previous.content === input.content && JSON.stringify(previous.pendingAudio) === JSON.stringify(input.pendingAudio)
+  if (unchanged && previous === stored && stored) {
+    memory?.delete(key)
+    return { draft: stored, persisted: true }
   }
-  const draft: MediaDraft = {
+  const draft: MediaDraft = unchanged && previous ? previous : {
     ...input,
     version: 1,
     savedAt: Math.max(Date.now(), (previous?.savedAt ?? 0) + 1),
   }
-  const key = mediaDraftKey(input.kind, input.userId, input.chapterId)
   for (const name of storageNames) {
     try {
       const target = storage(name)
       if (!target) continue
       target.setItem(key, JSON.stringify(draft))
-      return draft
+      memory?.delete(key)
+      return { draft, persisted: true }
     } catch {
       // Пробуем следующее хранилище.
     }
   }
-  return null
+  if (typeof window !== 'undefined') {
+    const drafts = memory ?? new Map<string, MediaDraft>()
+    drafts.set(key, draft)
+    if (!memory) memoryDrafts.set(window, drafts)
+  }
+  return { draft, persisted: false }
 }
 
 export function saveMediaDraft(input: MediaDraftInput): boolean {
-  return storeMediaDraft(input) !== null
+  return storeMediaDraft(input).persisted
 }
 
 export function loadMediaDraft(kind: MediaDraftKind, userId: string, chapterId: string): MediaDraft | null {
   const key = mediaDraftKey(kind, userId, chapterId)
+  const stored = loadStoredDraft(key, kind, userId, chapterId)
+  const pending = typeof window === 'undefined' ? undefined : memoryDrafts.get(window)?.get(key)
+  return pending && (!stored || pending.savedAt > stored.savedAt) ? pending : stored
+}
+
+export function isMemoryMediaDraft(draft: MediaDraft): boolean {
+  return typeof window !== 'undefined' &&
+    memoryDrafts.get(window)?.get(mediaDraftKey(draft.kind, draft.userId, draft.chapterId)) === draft
+}
+
+function loadStoredDraft(key: string, kind: MediaDraftKind, userId: string, chapterId: string): MediaDraft | null {
   let latest: MediaDraft | null = null
   for (const name of storageNames) {
     try {
@@ -110,6 +134,9 @@ export function loadMediaDraft(kind: MediaDraftKind, userId: string, chapterId: 
 /** При подтверждении записи удаляем только этот снимок и более старые копии. */
 export function removeMediaDraft(kind: MediaDraftKind, userId: string, chapterId: string, through?: number) {
   const key = mediaDraftKey(kind, userId, chapterId)
+  const memory = typeof window === 'undefined' ? undefined : memoryDrafts.get(window)
+  const pending = memory?.get(key)
+  if (pending && (through === undefined || pending.savedAt <= through)) memory?.delete(key)
   for (const name of storageNames) {
     try {
       const target = storage(name)

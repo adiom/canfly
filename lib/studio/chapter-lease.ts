@@ -32,7 +32,7 @@ export type ChapterLeaseState =
   | { status: 'active'; lease: ChapterLeaseView; degraded: boolean }
   | { status: 'read-only'; holder: ChapterLeaseHolderView | null }
   | { status: 'lost'; holder: ChapterLeaseHolderView | null }
-  | { status: 'error'; message: string }
+  | { status: 'error'; message: string; revoked?: true }
 
 export function toLeaseProof(lease: ChapterLeaseView | null | undefined): ChapterLeaseProof | null {
   if (!lease) return null

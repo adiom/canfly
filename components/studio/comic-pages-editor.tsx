@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import Image from 'next/image'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
@@ -10,6 +10,7 @@ import { AutosaveQueue } from '@/lib/studio/autosave-queue'
 import type { ChapterWriteResult } from '@/lib/studio/chapter-write'
 import {
   loadMediaDraft,
+  isMemoryMediaDraft,
   removeMediaDraft,
   storeMediaDraft,
   type MediaDraft,
@@ -19,7 +20,9 @@ import {
 interface ComicPagesEditorProps {
   initialPages: string[]
   savePages: (pages: string[]) => Promise<ChapterWriteResult<Chapter>>
+  getRevision: () => number
   readOnly?: boolean
+  accessRevoked?: boolean
   onLocalDraft?: (draft: MediaDraftInput | null, saved?: boolean) => void
   onUploadPending?: (pending: boolean) => void
   draftOwner: string
@@ -30,7 +33,9 @@ interface ComicPagesEditorProps {
 export function ComicPagesEditor({
   initialPages,
   savePages,
+  getRevision,
   readOnly = false,
+  accessRevoked = false,
   onLocalDraft,
   onUploadPending,
   draftOwner,
@@ -60,6 +65,21 @@ export function ComicPagesEditor({
   const [draftLoaded, setDraftLoaded] = useState(false)
   const editingDisabled = readOnly || !draftLoaded || !!recovery || uploading
 
+  const recordDraft = useCallback((content: string, baseRevision: number) => {
+    const draft: MediaDraftInput = {
+      kind: 'comic',
+      chapterId,
+      userId: draftOwner,
+      baseRevision,
+      title: 'Комикс',
+      content,
+    }
+    const stored = storeMediaDraft(draft)
+    ownDraft.current = stored.draft.savedAt
+    onLocalDraft?.(draft, stored.persisted)
+    return stored.persisted
+  }, [chapterId, draftOwner, onLocalDraft])
+
   useEffect(() => {
     // Читаем хранилище после гидратации, чтобы SSR и клиент совпадали.
     // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage недоступен на сервере
@@ -69,7 +89,8 @@ export function ComicPagesEditor({
 
   useEffect(() => {
     if (!draftLoaded || recovery) {
-      onLocalDraft?.(null)
+      const memoryDraft = recovery && isMemoryMediaDraft(recovery) ? recovery : null
+      onLocalDraft?.(memoryDraft, !memoryDraft)
       return
     }
     const content = JSON.stringify(pages)
@@ -81,22 +102,10 @@ export function ComicPagesEditor({
       }
       return
     }
-    const draft: MediaDraftInput = {
-      kind: 'comic',
-      chapterId,
-      userId: draftOwner,
-      baseRevision: revision,
-      title: 'Комикс',
-      content,
-    }
-    const saved = storeMediaDraft(draft)
-    onLocalDraft?.(draft, !!saved)
-    if (saved) {
-      ownDraft.current = saved.savedAt
-    } else {
+    if (!recordDraft(content, revision)) {
       toast.error('Не удалось сохранить локальный черновик: хранилище переполнено')
     }
-  }, [chapterId, draftLoaded, draftOwner, onLocalDraft, pages, queue, recovery, revision, status])
+  }, [chapterId, draftLoaded, draftOwner, onLocalDraft, pages, queue, recordDraft, recovery, revision, status])
 
   useEffect(() => {
     // Возврат lease при неизменной ревизии: повторяем грязную очередь.
@@ -129,6 +138,8 @@ export function ComicPagesEditor({
 
   function persist(newPages: string[]) {
     queue.update({ pages: newPages })
+    // Загрузка может завершиться уже после внутрисайтового Back.
+    if (queue.isDirty()) recordDraft(JSON.stringify(newPages), getRevision())
     void queue.flush().catch(() => {})
   }
 
@@ -238,14 +249,14 @@ export function ComicPagesEditor({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h3 className="font-semibold">Страницы комикса ({pages.length})</h3>
-          <span className="text-xs text-muted-foreground">
+          {!accessRevoked && <span className="text-xs text-muted-foreground">
             {isPending && <Loader2 className="inline h-3 w-3 animate-spin mr-1" />}
             {!recovery && status === 'saved' && !saveError && <Check className="inline h-3 w-3 text-emerald-500 mr-1" />}
             {isPending && 'Сохраняю...'}
             {recovery && 'Есть локальный черновик'}
             {!recovery && status === 'saved' && !saveError && 'Сохранено'}
             {saveError || (status === 'error' && 'Ошибка сохранения')}
-          </span>
+          </span>}
         </div>
         <div className="flex gap-2">
           {status === 'error' && !recovery && (

@@ -55,9 +55,22 @@ test('переходит на sessionStorage, если localStorage перепо
   expect(loadMediaDraft('audio', 'user-1', 'chapter-1')).toMatchObject(base)
 })
 
-test('возвращает false, если недоступны оба хранилища', () => {
-  installWindow(new FakeStorage(true), new FakeStorage(true))
-  expect(saveMediaDraft(base)).toBe(false)
+test('при отказе обоих хранилищ читает актуальный снимок из памяти документа', () => {
+  const local = new FakeStorage()
+  const session = new FakeStorage(true)
+  installWindow(local, session)
+  const first = storeMediaDraft(base)
+  local.fail = true
+  const latest = { ...base, title: 'Правка после переполнения' }
+  expect(saveMediaDraft(latest)).toBe(false)
+  removeMediaDraft('audio', 'user-1', 'chapter-1', first.draft.savedAt)
+  expect(loadMediaDraft('audio', 'user-1', 'chapter-1')).toMatchObject(latest)
+
+  local.fail = false
+  expect(saveMediaDraft(latest)).toBe(true)
+  installWindow(local, session)
+  expect(loadMediaDraft('audio', 'user-1', 'chapter-1')).toMatchObject(latest)
+  removeMediaDraft('audio', 'user-1', 'chapter-1')
   expect(loadMediaDraft('audio', 'user-1', 'chapter-1')).toBeNull()
 })
 
@@ -76,11 +89,11 @@ test('восстанавливает новый fallback, даже если ст
 
 test('подтверждение старого снимка не удаляет более новую правку', () => {
   const first = storeMediaDraft(base)
-  expect(first).not.toBeNull()
+  expect(first.persisted).toBe(true)
   const latest = storeMediaDraft({ ...base, title: 'Новая правка' })
   expect(storeMediaDraft({ ...base, title: 'Новая правка' })).toEqual(latest)
-  removeMediaDraft('audio', 'user-1', 'chapter-1', first!.savedAt)
-  expect(loadMediaDraft('audio', 'user-1', 'chapter-1')).toEqual(latest)
+  removeMediaDraft('audio', 'user-1', 'chapter-1', first.draft.savedAt)
+  expect(loadMediaDraft('audio', 'user-1', 'chapter-1')).toEqual(latest.draft)
 })
 
 test('удаляет черновик и сохраняет pending audio', () => {

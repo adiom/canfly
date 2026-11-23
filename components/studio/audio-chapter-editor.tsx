@@ -24,6 +24,7 @@ import {
   loadMediaDraft,
   removeMediaDraft,
   storeMediaDraft,
+  isMemoryMediaDraft,
   type MediaDraft,
   type MediaDraftInput,
   type PendingAudioUpload,
@@ -144,7 +145,8 @@ export function AudioChapterEditor({ chapter, revisionRef, leaseRef, readOnly, o
 
   useEffect(() => {
     if (!draftLoaded || recovery) {
-      onLocalDraft?.(null)
+      const memoryDraft = recovery && isMemoryMediaDraft(recovery) ? recovery : null
+      onLocalDraft?.(memoryDraft, !memoryDraft)
       return
     }
     if (!metadataDirty && !pendingAudio) {
@@ -164,14 +166,14 @@ export function AudioChapterEditor({ chapter, revisionRef, leaseRef, readOnly, o
       content: localDraftJson,
       pendingAudio: pendingAudio ?? undefined,
     }
-    const saved = storeMediaDraft(draft)
-    onLocalDraft?.(draft, !!saved)
-    if (!saved) {
+    const stored = storeMediaDraft(draft)
+    ownDraft.current = stored.draft.savedAt
+    onLocalDraft?.(draft, stored.persisted)
+    if (!stored.persisted) {
       onSaveStatus('error')
       toast.error('Не удалось сохранить локальный черновик аудио: хранилище переполнено')
       return
     }
-    ownDraft.current = saved.savedAt
     onSaveStatus('pending')
   }, [
     chapter.id,
@@ -369,9 +371,9 @@ export function AudioChapterEditor({ chapter, revisionRef, leaseRef, readOnly, o
         }),
         pendingAudio: pending,
       }
-      const saved = storeMediaDraft(draft)
-      onLocalDraft?.(draft, !!saved)
-      if (saved) ownDraft.current = saved.savedAt
+      const stored = storeMediaDraft(draft)
+      ownDraft.current = stored.draft.savedAt
+      onLocalDraft?.(draft, stored.persisted)
 
       const result = await finalizeAudioChapterUploadAction(chapter.id, expectedRevision, leaseRef.current, pending)
 

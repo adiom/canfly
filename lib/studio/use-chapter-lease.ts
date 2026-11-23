@@ -162,7 +162,7 @@ export function useChapterLease({
         // TTL освободит lease.
       }
     }
-    setState({ status: 'error', message: 'Доступ к главе отозван' })
+    setState({ status: 'error', message: 'Доступ к главе отозван', revoked: true })
   }, [chapterId, notifyLost])
 
   const acquire = useCallback(() => {

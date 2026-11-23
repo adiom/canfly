@@ -361,9 +361,10 @@ export function ChapterEditorPage({
     leaseProofRef.current = lease.proof
     readOnlyRef.current = readOnly
   }, [lease.proof, readOnly])
-  const saveStatus = isAudioEditor || isComic ? mediaSaveStatus : autosave.status
+  const revoked = accessRevoked || (lease.state.status === 'error' && lease.state.revoked === true)
+  const saveStatus = revoked ? 'error' : isAudioEditor || isComic ? mediaSaveStatus : autosave.status
   const titleError = !isAudioEditor && !isComic && !chapterTitle.trim() ? 'Введите заголовок главы' : null
-  const saveMessage = recoveryNotice ?? (saveError?.code === 'conflict'
+  const saveMessage = revoked ? 'Доступ к главе отозван' : recoveryNotice ?? (saveError?.code === 'conflict'
     ? 'Глава изменилась после открытия. Проверьте локальные черновики перед перезагрузкой.'
     : saveError?.code === 'lease-lost' || saveError?.code === 'lease-held'
       ? 'Режим только для чтения: правки сохраняются в локальные черновики.'
@@ -696,7 +697,9 @@ export function ChapterEditorPage({
                 key={`comic:${chapterSnapshot.revision}`}
                 initialPages={parseComicPages(chapterSnapshot.content)}
                 savePages={saveComicPages}
+                getRevision={getRevision}
                 readOnly={readOnly}
+                accessRevoked={revoked}
                 onLocalDraft={handleLocalMedia}
                 onUploadPending={handleMediaUpload}
                 draftOwner={editorUserId}

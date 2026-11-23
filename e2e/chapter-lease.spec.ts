@@ -641,6 +641,101 @@ test.describe('Эксклюзивное редактирование главы'
     await expect(sandbox.owner.page.getByRole('button', { name: 'Привязать загруженный файл' })).toBeVisible()
   })
 
+  test('H3: ответ на старую правку комикса оставляет более новый черновик', async ({ sandbox }) => {
+    const page = sandbox.owner.page
+    await page.goto(sandbox.comicUrl)
+    await waitForComicEditing(page)
+    const firstUrl = '/first.png'
+    const secondUrl = '/second.png'
+    let resumeFirst!: () => void
+    let resumeSecond!: () => void
+    const firstGate = new Promise<void>(resolve => { resumeFirst = resolve })
+    const secondGate = new Promise<void>(resolve => { resumeSecond = resolve })
+    const pattern = `**${sandbox.comicUrl}`
+    await page.route(pattern, async route => {
+      const body = route.request().postData() ?? ''
+      if (body.includes(secondUrl)) await secondGate
+      else if (body.includes(firstUrl)) await firstGate
+      await route.continue()
+    })
+    const waitForWrite = (url: string) => page.waitForRequest(request =>
+      request.method() === 'POST' && request.url().endsWith(sandbox.comicUrl) &&
+      !!request.postData()?.includes(url))
+    const draftKey = `cf-media-draft:comic:${sandbox.owner.id}:${sandbox.comicId}`
+    const readDraft = () => page.evaluate(key => {
+      const raw = localStorage.getItem(key) ?? sessionStorage.getItem(key)
+      return raw ? (JSON.parse(raw) as { content: string }).content : null
+    }, draftKey)
+    try {
+      const firstWrite = waitForWrite(firstUrl)
+      page.once('dialog', dialog => dialog.accept(firstUrl))
+      await page.getByRole('button', { name: '+ URL' }).click()
+      await firstWrite
+      page.once('dialog', dialog => dialog.accept(secondUrl))
+      await page.getByRole('button', { name: '+ URL' }).click()
+      const secondWrite = waitForWrite(secondUrl)
+      resumeFirst()
+      await secondWrite
+      const initialPages = JSON.parse(sandbox.comicContent) as string[]
+      await expect.poll(readDraft).toBe(JSON.stringify([...initialPages, firstUrl, secondUrl]))
+    } finally {
+      resumeFirst()
+      resumeSecond()
+    }
+    await expect.poll(readDraft).toBeNull()
+  })
+
+  test('H5: аудиоправки восстанавливаются после потери lease во время записи', async ({ sandbox }) => {
+    const page = sandbox.owner.page
+    await page.goto(sandbox.audioUrl)
+    await waitForAudioEditing(page)
+    const title = 'Аудиоправка после потери lease'
+    await page.getByLabel('Название').fill(title)
+    const pattern = `**${sandbox.audioUrl}`
+    await page.route(pattern, async route => {
+      if (route.request().postData()?.includes(title)) await expireLease(sandbox.db, sandbox.audioId)
+      await route.continue()
+    })
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click()
+    await expect(page.getByText('Право редактирования потеряно. Ваши правки сохранены локально.')).toBeVisible()
+    await page.unroute(pattern)
+
+    await page.reload()
+    await waitForAudioEditing(page)
+    await expect(page.getByLabel('Название')).toHaveValue(sandbox.audioTitle)
+    await page.getByRole('button', { name: 'Восстановить поля' }).click()
+    await expect(page.getByLabel('Название')).toHaveValue(title)
+  })
+
+  test('H6: внутрисайтовый Back сохраняет свежий медиачерновик при переполнении хранилищ', async ({ sandbox }) => {
+    const page = sandbox.owner.page
+    const editionUrl = sandbox.audioUrl.split('/chapters/')[0]
+    const chapterLink = page.locator(`a[href="${sandbox.audioUrl}"]`)
+    await page.goto(editionUrl)
+    await chapterLink.click()
+    await waitForAudioEditing(page)
+    const title = 'Свежая аудиоправка перед Back'
+    await page.getByLabel('Название').fill('Ранее записанный черновик')
+    await expect(page.getByRole('status')).toContainText('Есть несохранённые правки')
+    await page.evaluate(() => {
+      const write = Storage.prototype.setItem
+      Storage.prototype.setItem = function (key, value) {
+        if (key.startsWith('cf-media-draft:')) throw new DOMException('full', 'QuotaExceededError')
+        return write.call(this, key, value)
+      }
+    })
+    await page.getByLabel('Название').fill(title)
+    await expect(page.getByLabel('Несохранённый медиачерновик')).toHaveValue(new RegExp(title))
+
+    await page.goBack()
+    await expect(page).toHaveURL(new RegExp(`${editionUrl}$`))
+    await chapterLink.click()
+    await waitForAudioEditing(page)
+    await expect(page.getByLabel('Несохранённый медиачерновик')).toHaveValue(new RegExp(title))
+    await page.getByRole('button', { name: 'Восстановить поля' }).click()
+    await expect(page.getByLabel('Название')).toHaveValue(title)
+  })
+
   test('отзыв прав переводит редактор в read-only и не подтверждает сохранение', async ({ sandbox }) => {
     const page = sandbox.owner.page
     await sandbox.db.query(
@@ -662,6 +757,7 @@ test.describe('Эксклюзивное редактирование главы'
 
   test('heartbeat распознаёт отзыв прав без новой попытки сохранения', async ({ sandbox }) => {
     const page = sandbox.owner.page
+    await expect(page.getByRole('status')).toContainText('Сохранено')
     await sandbox.db.query(
       'DELETE FROM release_collaborators WHERE release_id = $1 AND user_id = $2',
       [sandbox.releaseId, sandbox.owner.id],
@@ -670,6 +766,8 @@ test.describe('Эксклюзивное редактирование главы'
     await page.evaluate(() => window.dispatchEvent(new Event('online')))
     await expect(page.getByRole('alert').filter({ hasText: 'Доступ к главе отозван' }))
       .toBeVisible({ timeout: 20_000 })
+    await expect(page.getByRole('status')).toContainText('Доступ к главе отозван')
+    await expect(page.getByRole('status')).not.toContainText('Сохранено')
     await expect(page.locator('[contenteditable="true"]')).toHaveCount(0)
     await waitForLeaseReleased(sandbox.db, sandbox.chapterId)
   })
