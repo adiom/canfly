@@ -15,7 +15,7 @@ export default defineConfig({
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   timeout: 60_000,
   expect: { timeout: 5_000 },
-  globalSetup: './e2e/setup/global-setup.ts',
+  globalSetup: ['./e2e/setup/db-preflight.ts', './e2e/setup/global-setup.ts'],
   globalTeardown: './e2e/setup/global-teardown.ts',
   use: {
     baseURL,

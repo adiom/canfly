@@ -5,20 +5,22 @@ description: Проверки Canfly: безопасные unit-тесты Playw
 
 # Canfly — тестирование без порчи рабочей БД
 
-Сначала прочитай `AGENTS.md` и два конфига: `playwright.unit.config.ts` и `playwright.config.ts`.
+Сначала прочитай `AGENTS.md`, `playwright.unit.config.ts`, `playwright.db.config.ts` и `playwright.config.ts`.
 
-## Два разных режима
+## Три режима запуска
 
 **Unit:** `tests/unit/`, `playwright.unit.config.ts`. Без `globalSetup`, `webServer`, реального AI и БД. Безопасный первый выбор.
 
-```powershell
-npx --no-install playwright test -c playwright.unit.config.ts
-npx --no-install playwright test -c playwright.unit.config.ts tests/unit/character-chat-ui.spec.ts
-npx --no-install tsc --noEmit --incremental false
-npx --no-install eslint .
+```bash
+pnpm test:unit
+pnpm test:unit tests/unit/character-chat-ui.spec.ts
 ```
 
-**E2E:** `e2e/`, `playwright.config.ts`. В конфиге есть `globalSetup`/`globalTeardown`, `webServer`. `e2e/setup/global-setup.ts` создаёт тестового администратора/учётные данные при доступной БД. **Не запускай `pnpm test:e2e`, `pnpm test:smoke` или узкий e2e по одному лишь названию**, пока не подтверждена изолированная БД и эффекты setup/teardown. Даже smoke запускается с общим конфигом.
+**DB integration:** `tests/db/`, `playwright.db.config.ts`, запуск `pnpm test:db`. Проверяет серверные репозитории на PostgreSQL без веб-сервера и браузера.
+
+**Browser E2E:** `e2e/`, `playwright.config.ts`, запуск `pnpm test:e2e` или `pnpm test:e2e e2e/studio.spec.ts`. Установи Chromium командой `pnpm exec playwright install chromium`. Общий конфиг запускает собственный `next dev` на порту 3100 по умолчанию, после preflight создаёт временного администратора и удаляет его при teardown. `pnpm test:smoke` использует тот же setup. Конфиги `playwright.v2.config.ts` и `playwright.v2-feed.config.ts` отключают создание администратора и teardown, при этом также требуют изолированную БД.
+
+Для DB integration и Browser E2E [подготовь одноразовую PostgreSQL 17 и примени миграции](../../../postgres/baseline/README.md). Явно передай `CANFLY_E2E_DATABASE_URL` для `canfly_e2e_*` на `127.0.0.1` с портом. Preflight общего конфига и DB integration проверяет цель и поддержку ревизий и lease. В GitHub Actions Chromium запускает smoke и регрессии сохранения глав и lease. При сбоях Playwright CI публикует отчёты.
 
 ## Регрессии сохранения глав
 
@@ -45,7 +47,7 @@ pnpm next:check
 1. Подними dev только на одноразовой базе (production URL не подставляй):
 
 ```bash
-set -a; . ./.env.local; set +a
+node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --input-type=module -e 'import {requireE2eDatabaseUrl} from "./e2e/setup/environment.ts"; requireE2eDatabaseUrl()' &&
 DATABASE_URL="$CANFLY_E2E_DATABASE_URL" \
 NEXT_PUBLIC_BASE_URL=http://127.0.0.1:3101 \
 AUTH_URL=http://127.0.0.1:3101 \

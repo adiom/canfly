@@ -46,7 +46,7 @@ export default async function verifyDbTestTarget() {
           ) AS chapter_lease
     `, [url.pathname.slice(1), Number(url.port)])
 
-    if (!schema.target) throw new Error('DB tests require the configured disposable PostgreSQL 17 database on loopback')
+    if (!schema.target) throw new Error('Tests require the configured disposable PostgreSQL 17 database on loopback')
     if (!schema.chapter_revision) {
       throw new Error('DB test schema lacks chapter revision support. Bootstrap the baseline and apply versioned migrations to the disposable database.')
     }

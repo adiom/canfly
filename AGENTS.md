@@ -43,13 +43,15 @@ canfly — литературная платформа: релизы, Studio д�
 pnpm dev                                      # локальный Next.js
 pnpm lint                                     # ESLint
 pnpm build                                    # production build и проверка типов
-pnpm test:e2e                                 # все Playwright-тесты
-pnpm test:smoke                               # только public smoke-набор
-pnpm exec playwright test e2e/studio.spec.ts # один файл
+pnpm test:unit                                # unit без PostgreSQL и браузера
+pnpm test:db                                  # интеграционные тесты PostgreSQL
+pnpm test:e2e                                 # все браузерные E2E
+pnpm test:smoke                               # публичные сценарии общего E2E-конфига
+pnpm test:e2e e2e/studio.spec.ts               # один браузерный файл
 pnpm db:structure                             # структура подключённой БД
 ```
 
-Создай `.env.local` по `.env.example`; секреты не коммить. Для браузерных наборов на общем конфиге явно передай `CANFLY_E2E_DATABASE_URL` в окружении запуска. Допускается только одноразовая PostgreSQL `canfly_e2e_*` на `127.0.0.1` с указанным портом. Playwright запускает собственный сервер (по умолчанию порт 3100). Перед передачей изменений запускай узкий тест, затем `pnpm lint` и `pnpm build`.
+Создай `.env.local` по `.env.example`; секреты не коммить. Для DB integration и браузерных наборов явно передай `CANFLY_E2E_DATABASE_URL` в окружении запуска. Используй одноразовую PostgreSQL 17 `canfly_e2e_*` на `127.0.0.1` с явным портом. Сначала [разверни baseline и примени миграции](postgres/baseline/README.md). Общий E2E-конфиг, включая smoke, проходит preflight, создаёт временного администратора и запускает собственный `next dev` на порту 3100 по умолчанию. Перед передачей изменений запускай узкий тест, затем `pnpm lint` и `pnpm build`.
 
 ## Код, данные и доступ
 

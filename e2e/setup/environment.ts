@@ -40,9 +40,12 @@ export function e2eEnvironment(env: Partial<NodeJS.ProcessEnv>) {
     baseURL,
     databaseUrl,
     webServer: {
-      command: `pnpm ${env.CI ? 'start' : 'dev'} --hostname 127.0.0.1 --port ${port}`,
+      // Studio's production proxy expects secure session cookies. These
+      // browser tests use the same HTTP development server locally and in CI.
+      command: `pnpm dev --hostname 127.0.0.1 --port ${port}`,
       env: {
         DATABASE_URL: databaseUrl,
+        NEXT_PUBLIC_BASE_URL: baseURL,
         AUTH_URL: baseURL,
         NEXTAUTH_URL: baseURL,
       },

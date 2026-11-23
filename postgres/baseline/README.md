@@ -13,14 +13,29 @@ createdb -h 127.0.0.1 -p 55432 -U canfly_owner --template=template0 canfly_e2e_l
 export CANFLY_E2E_DATABASE_URL=postgresql://canfly_owner@127.0.0.1:55432/canfly_e2e_local
 pnpm db:bootstrap:test
 pnpm db:verify-schema
-pnpm test:db
+export CANFLY_MIGRATION_DATABASE_URL="$CANFLY_E2E_DATABASE_URL"
+pnpm db:migrate:baseline --confirm=127.0.0.1:55432/canfly_e2e_local
+pnpm db:migrate:up --confirm=127.0.0.1:55432/canfly_e2e_local
+pnpm db:migrate:verify
 ```
+
+Выполняйте команды подготовки по порядку и остановитесь при первой ошибке. Сверяйте каталог с production-манифестом до применения версионированных миграций.
+
+```bash
+pnpm test:unit
+pnpm test:db
+pnpm exec playwright install chromium
+pnpm test:smoke
+pnpm test:e2e e2e/chapter-save.spec.ts e2e/chapter-lease.spec.ts
+```
+
+Unit запускается независимо от PostgreSQL. DB integration проверяет репозитории без браузера. Smoke и остальные тесты общего браузерного конфига проверяют цель и схему PostgreSQL 17, запускают собственный Next.js и создают временного администратора. Передайте URL явно в окружении запуска. Для входа настройте `AUTH_SECRET` в `.env.local` или в окружении. При занятом порте 3100 задайте свободный `PORT`. Если в той же рабочей копии уже запущен `next dev`, используйте отдельную копию для E2E. Для узкого запуска передайте файлы или `-g` в `pnpm test:e2e`.
 
 `trust` в примере предназначен для одноразового кластера на личной машине. Остановка кластера выполняется командой `pg_ctl -D "$pgdir/data" -w stop`. Для второго прогона создайте ещё одну БД из `template0` с новым именем `canfly_e2e_*` и передайте её URL.
 
-Bootstrap выполняет DDL в одной транзакции и завершает работу при первой ошибке. Все три команды требуют явно заданный `CANFLY_E2E_DATABASE_URL` с адресом `127.0.0.1`, портом, именем `canfly_e2e_*` и без параметров URL. Проверка bootstrap требует пустой схемы. Запускайте команды с отдельным локальным кластером и свободным локальным портом.
+Bootstrap выполняет DDL в одной транзакции и требует пустой схемы. Bootstrap, сверка исходного каталога и тесты с БД требуют явно заданный `CANFLY_E2E_DATABASE_URL` с адресом `127.0.0.1`, портом, именем `canfly_e2e_*` и без параметров URL.
 
-CI разворачивает две независимые базы PostgreSQL 17.12. Bootstrap выполняется от владельца базы, а `test:db` использует отдельную локальную роль с `USAGE` на схему, DML на таблицы и `USAGE, SELECT` на последовательности. Для проверки с такими правами локально создайте роль `canfly_app` с `LOGIN`, выдайте эти права под владельцем и передайте URL этой роли в `pnpm test:db`. Интеграционный набор запускает серверные репозитории напрямую и удаляет свои синтетические записи.
+[GitHub Actions](../../.github/workflows/postgres-baseline.yml) разворачивает две независимые базы PostgreSQL 17.12 на loopback раннеров. Bootstrap и миграции выполняются от владельца. DB integration и браузерный набор используют отдельную роль с `USAGE` на схему, DML на таблицы и `USAGE, SELECT` на последовательности. Для проверки с такими правами локально создайте роль `canfly_app` с `LOGIN`, выдайте эти права под владельцем и передайте URL этой роли в команды тестов. На одной из баз CI проверяет production-сборку и запускает smoke и регрессии сохранения глав и lease в Chromium. При падении Playwright отчёты доступны в артефактах запуска.
 
 ## Источник и границы сравнения
 

@@ -484,24 +484,23 @@ test.describe('Эксклюзивное редактирование главы'
   test('занятый слот устаревшего черновика блокирует новые правки до архивации', async ({ sandbox }) => {
     const page = sandbox.owner.page
     const key = `cf-chapter-draft:${sandbox.owner.id}:${sandbox.chapterId}`
-    await page.evaluate(({ key, original }) => {
+    await sandbox.db.query("UPDATE chapters SET title = 'Новая ревизия' WHERE id = $1", [sandbox.chapterId])
+    // The old document may clear its clean draft during pagehide.
+    await page.addInitScript(({ key, original }) => {
       sessionStorage.setItem(key, JSON.stringify({
         version: 1,
         revision: 0,
         base: JSON.stringify({ title: 'Глава', content: original }),
         value: { title: 'Глава', content: '<p>Старый черновик</p>' },
       }))
-    }, { key, original })
-    await sandbox.db.query("UPDATE chapters SET title = 'Новая ревизия' WHERE id = $1", [sandbox.chapterId])
-    await page.addInitScript(() => {
       const write = Storage.prototype.setItem
-      Storage.prototype.setItem = function (key, value) {
-        if (key.startsWith('cf-chapter-draft-archive:') && !sessionStorage.getItem('allow-archive')) {
+      Storage.prototype.setItem = function (storageKey, value) {
+        if (storageKey.startsWith('cf-chapter-draft-archive:') && !sessionStorage.getItem('allow-archive')) {
           throw new DOMException('full', 'QuotaExceededError')
         }
-        return write.call(this, key, value)
+        return write.call(this, storageKey, value)
       }
-    })
+    }, { key, original })
     await page.reload()
     await expect(page.getByLabel('Старый локальный черновик')).toHaveValue('<p>Старый черновик</p>')
     await expect(page.locator('[contenteditable=true]')).toHaveCount(0)
