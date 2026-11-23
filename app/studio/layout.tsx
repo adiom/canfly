@@ -4,6 +4,7 @@ import { requireStudioSession, isStudioAdmin, isAuthorOrAdmin } from '@/lib/serv
 import { SidebarProvider } from '@/components/ui/sidebar'
 import { StudioSidebar } from '@/components/studio/studio-sidebar'
 import { StudioFrame } from '@/components/studio/studio-frame'
+import { getStudioDatabaseInfo } from '@/lib/server/studio-database-info'
 
 export const metadata: Metadata = {
   robots: { index: false, follow: false },
@@ -15,10 +16,11 @@ export default async function StudioLayout({ children }: { children: React.React
 
   const isAdmin = isStudioAdmin(session)
   const showPassport = isAuthorOrAdmin(session)
+  const databaseInfo = isAdmin ? await getStudioDatabaseInfo() : null
 
   return (
     <SidebarProvider>
-      <StudioFrame sidebar={<StudioSidebar user={session.user} isAdmin={isAdmin} isAuthorOrAdmin={showPassport} />}>
+      <StudioFrame sidebar={<StudioSidebar user={session.user} isAdmin={isAdmin} isAuthorOrAdmin={showPassport} databaseInfo={databaseInfo} />}>
         {children}
       </StudioFrame>
     </SidebarProvider>

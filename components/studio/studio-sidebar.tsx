@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { BookOpen, Bot, Gamepad2, Layers, Library, Home, PenTool, Users } from 'lucide-react'
 import type { SessionUser } from '@/lib/server/session'
+import type { StudioDatabaseInfo } from '@/lib/server/studio-database-info'
 import {
   Sidebar,
   SidebarContent,
@@ -30,7 +31,12 @@ const passportNav = [
   { title: 'Игры', href: '/studio/games', icon: Gamepad2 },
 ]
 
-export function StudioSidebar({ user, isAdmin: _isAdmin = false, isAuthorOrAdmin = false }: { user: SessionUser; isAdmin?: boolean; isAuthorOrAdmin?: boolean }) {
+export function StudioSidebar({ user, isAdmin = false, isAuthorOrAdmin = false, databaseInfo = null }: {
+  user: SessionUser
+  isAdmin?: boolean
+  isAuthorOrAdmin?: boolean
+  databaseInfo?: StudioDatabaseInfo | null
+}) {
   const pathname = usePathname()
   const navItems = [...baseNav, ...(isAuthorOrAdmin ? passportNav : [])]
 
@@ -73,6 +79,26 @@ export function StudioSidebar({ user, isAdmin: _isAdmin = false, isAuthorOrAdmin
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+        {isAdmin && databaseInfo && (
+          <SidebarGroup className="mt-auto border-t border-black/5">
+            <SidebarGroupLabel className="text-xs uppercase tracking-wider text-gray-400">База данных</SidebarGroupLabel>
+            <div data-testid="studio-database-info" className="mx-2 rounded-lg border border-violet-100 bg-violet-50/60 p-3 text-xs">
+              <span className={`inline-flex rounded-md px-2 py-0.5 font-semibold ${
+                databaseInfo.environment === 'Production'
+                  ? 'bg-rose-100 text-rose-800'
+                  : databaseInfo.environment === 'Preview'
+                    ? 'bg-amber-100 text-amber-800'
+                    : 'bg-slate-100 text-slate-700'
+              }`}>{databaseInfo.environment}</span>
+              <p className="mt-2 break-all font-mono font-semibold text-gray-800">{databaseInfo.name}</p>
+              {databaseInfo.hostname && (
+                <p className="mt-1 break-all font-mono text-[10px] leading-relaxed text-gray-500" title={databaseInfo.hostname}>
+                  {databaseInfo.hostname}
+                </p>
+              )}
+            </div>
+          </SidebarGroup>
+        )}
       </SidebarContent>
 
       <SidebarFooter className="border-t border-black/5 p-4">
