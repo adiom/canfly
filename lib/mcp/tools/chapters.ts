@@ -12,10 +12,11 @@ import {
   reorderChapters,
 } from '@/lib/server/chapters'
 import { fetchChapterLease, type ChapterLeaseActor } from '@/lib/server/chapter-leases'
+import { mcpActor } from '@/lib/mcp/actor'
 import { fetchEditionById } from '@/lib/server/editions'
 import { countWords } from '@/lib/mcp/word-count'
 import { chapterReadPage, chapterTextMessage, chapterWriteReceipt } from '@/lib/mcp/chapter-response'
-import { json, notFound, toolError } from '@/lib/mcp/tool-result'
+import { json, notFound, toolError, withToolCatch } from '@/lib/mcp/tool-result'
 import { ChapterWriteError, chapterWriteMessages, type ChapterWriteCode } from '@/lib/studio/chapter-write'
 
 const uuid = z.uuid()
@@ -38,16 +39,6 @@ const restoreChapterInput = z.object({
   version_id: uuid.describe('UUID версии для восстановления'),
   expected_revision: expectedRevision.optional(),
 })
-
-/**
- * MCP пишет от имени администратора. Для OAuth-токена известен user_id, для
- * статического MCP_TOKEN — нет; тогда lease хранит actor_kind='mcp' без user_id.
- */
-function mcpActor(ctx?: ServerContext): ChapterLeaseActor {
-  const auth = ctx?.http?.req?.auth
-  const userId = auth?.extra?.userId
-  return { userId: typeof userId === 'string' ? userId : null, actorKind: 'mcp' }
-}
 
 /**
  * Неявный lease: захватывается и освобождается в той же транзакции записи,
@@ -128,7 +119,7 @@ export function registerChaptersTools(server: McpServer) {
       inputSchema: z.object({ edition_id: uuid.describe('UUID издания') }),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async ({ edition_id }) => json(await fetchChaptersByEdition(edition_id)),
+    withToolCatch(async ({ edition_id }) => json(await fetchChaptersByEdition(edition_id))),
   )
 
   server.registerTool(
@@ -144,10 +135,10 @@ export function registerChaptersTools(server: McpServer) {
       }),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async ({ id, offset, limit }) => {
+    withToolCatch(async ({ id, offset, limit }) => {
       const chapter = await fetchChapterById(id)
       return chapter ? json(chapterReadPage(chapter, offset, limit)) : notFound('Глава', id)
-    },
+    }),
   )
 
   // Резервный способ для клиентов, которым не удаётся распаковать
@@ -165,13 +156,13 @@ export function registerChaptersTools(server: McpServer) {
       }),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async ({ id, offset, limit }) => {
+    withToolCatch(async ({ id, offset, limit }) => {
       const chapter = await fetchChapterById(id)
       if (!chapter) return notFound('Глава', id)
       return {
         content: [{ type: 'text', text: chapterTextMessage(chapter, offset, limit) }],
       }
-    },
+    }),
   )
 
   server.registerTool(
@@ -183,7 +174,7 @@ export function registerChaptersTools(server: McpServer) {
       inputSchema: z.object({ id: uuid.describe('UUID главы') }),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async ({ id }) => json({ chapter_id: id, holder: await fetchChapterLease(id) }),
+    withToolCatch(async ({ id }) => json({ chapter_id: id, holder: await fetchChapterLease(id) })),
   )
 
   server.registerTool(
@@ -201,7 +192,7 @@ export function registerChaptersTools(server: McpServer) {
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
-    async (data) => {
+    withToolCatch(async (data) => {
       const edition = await fetchEditionById(data.edition_id)
       if (!edition) return notFound('Издание', data.edition_id)
 
@@ -210,7 +201,7 @@ export function registerChaptersTools(server: McpServer) {
         word_count: countWords(data.content),
       })
       return chapter ? json(chapterWriteReceipt(chapter)) : toolError('Не удалось создать главу')
-    },
+    }),
   )
 
   server.registerTool(
@@ -298,7 +289,7 @@ export function registerChaptersTools(server: McpServer) {
       inputSchema: z.object({ chapter_id: uuid.describe('UUID главы') }),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async ({ chapter_id }) => json(await fetchChapterVersions(chapter_id)),
+    withToolCatch(async ({ chapter_id }) => json(await fetchChapterVersions(chapter_id))),
   )
 
   server.registerTool(
