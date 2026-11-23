@@ -23,13 +23,21 @@ const releaseSchema = z.object({
 function crossOrigin(request: NextRequest) {
   const origin = request.headers.get('origin')
   if (!origin) return false
+
+  // request.url в Next может быть нормализован (localhost вместо 127.0.0.1),
+  // поэтому сверяем Origin с фактическим Host и признаком прокси.
+  const host = request.headers.get('host')
+  const proto = request.headers.get('x-forwarded-proto') ?? new URL(request.url).protocol.replace(':', '')
   const allowed = process.env.NEXT_PUBLIC_BASE_URL
-  if (!allowed) return true
-  try {
-    return new URL(origin).origin !== new URL(allowed).origin
-  } catch {
-    return true
-  }
+  const configured = allowed ? (() => {
+    try {
+      return new URL(allowed).origin
+    } catch {
+      return null
+    }
+  })() : null
+
+  return origin !== `${proto}://${host}` && origin !== configured
 }
 
 export const POST = apiHandler(async (request: NextRequest) => {

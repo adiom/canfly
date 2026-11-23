@@ -20,7 +20,7 @@ export function ChapterLeaseBanner({ state, onRetry }: {
 
   if (state.status === 'acquiring') {
     return (
-      <div className={box} role="status" aria-live="polite">
+      <div className={box} aria-live="polite">
         <div className={`${base} border-cf-text-1/10 bg-cf-bg-2 text-cf-text-3`}>
           <Loader2 className="h-4 w-4 animate-spin" />
           Проверяю право редактирования главы…
@@ -31,7 +31,7 @@ export function ChapterLeaseBanner({ state, onRetry }: {
 
   if (state.status === 'active') {
     return (
-      <div className={box} role="status" aria-live="polite">
+      <div className={box} role="alert">
         <div className={`${base} border-cf-status-open/40 bg-cf-status-open/10 text-cf-text-2`}>
           <WifiOff className="h-4 w-4 text-cf-status-open" />
           Нет связи с сервером. Блокировка продлевается автоматически; правки сохранятся локально.
@@ -74,7 +74,7 @@ export function ChapterLeaseBanner({ state, onRetry }: {
   }
 
   return (
-    <div className={box} role="status" aria-live="polite">
+    <div className={box} role="alert">
       <div className={`${base} border-cf-text-1/10 bg-cf-bg-2 text-cf-text-2`}>
         <Lock className="h-4 w-4 shrink-0 text-cf-text-3" />
         <span className="flex-1">

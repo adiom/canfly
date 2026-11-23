@@ -10,7 +10,11 @@ export default async function verifyDbTestTarget() {
   })
   try {
     await client.connect()
-    const { rows: [schema] } = await client.query<{ target: boolean; chapter_revision: boolean }>(`
+    const { rows: [schema] } = await client.query<{
+      target: boolean
+      chapter_revision: boolean
+      chapter_lease: boolean
+    }>(`
       SELECT
         current_database() = $1 AND inet_server_addr() = inet '127.0.0.1'
           AND inet_server_port() = $2
@@ -28,12 +32,21 @@ export default async function verifyDbTestTarget() {
             WHERE t.tgrelid = to_regclass('public.chapters') AND t.tgname = 'advance_chapter_revision'
               AND t.tgfoid = to_regprocedure('public.advance_chapter_revision()')
               AND t.tgtype = 19 AND t.tgenabled IN ('O', 'A') AND NOT t.tgisinternal
-          ) AS chapter_revision
+          ) AS chapter_revision,
+        to_regclass('public.chapter_edit_leases') IS NOT NULL
+          AND EXISTS (
+            SELECT 1 FROM pg_catalog.pg_constraint c
+            WHERE c.conrelid = to_regclass('public.chapter_edit_leases')
+              AND c.contype = 'p' AND c.conname = 'chapter_edit_leases_pkey'
+          ) AS chapter_lease
     `, [url.pathname.slice(1), Number(url.port)])
 
     if (!schema.target) throw new Error('DB tests require the configured disposable PostgreSQL 17 database on loopback')
     if (!schema.chapter_revision) {
       throw new Error('DB test schema lacks chapter revision support. Bootstrap the baseline and apply versioned migrations to the disposable database.')
+    }
+    if (!schema.chapter_lease) {
+      throw new Error('DB test schema lacks chapter edit leases. Apply versioned migrations to the disposable database.')
     }
   } finally {
     await client.end()

@@ -102,6 +102,11 @@ export const TelegraphEditor = forwardRef<HTMLDivElement, TelegraphEditorProps>(
     })
 
     useEffect(() => {
+      if (!editor || editor.isDestroyed) return
+      editor.setEditable(!disabled)
+    }, [editor, disabled])
+
+    useEffect(() => {
       if (editor && editor.getHTML() !== (initialContent ?? '')) {
         editor.commands.setContent(initialContent ?? '', { emitUpdate: false })
       }

@@ -24,6 +24,8 @@ const SESSION_CHANNEL = 'cf-editor-sessions'
  * браузер копирует sessionStorage при duplicate tab, и без проверки две
  * вкладки считались бы одной сессией.
  */
+let sessionPromise: Promise<string> | null = null
+
 async function resolveSessionId(): Promise<string> {
   const existing = sessionStorage.getItem(SESSION_KEY)
   let id = existing ?? crypto.randomUUID()
@@ -55,6 +57,12 @@ async function resolveSessionId(): Promise<string> {
   return id
 }
 
+/** Один id на вкладку: StrictMode и повторные вызовы не создают новую сессию. */
+function sharedSessionId() {
+  sessionPromise ??= resolveSessionId()
+  return sessionPromise
+}
+
 export interface ChapterLeaseController {
   state: ChapterLeaseState
   proof: ChapterLeaseProof | null
@@ -77,17 +85,13 @@ export function useChapterLease({
 }): ChapterLeaseController {
   const [state, setState] = useState<ChapterLeaseState>({ status: 'acquiring' })
   const leaseRef = useRef<ChapterLeaseView | null>(null)
-  const sessionRef = useRef<string | null>(null)
   const heldRef = useRef(false)
+  const acquireInFlight = useRef<Promise<void> | null>(null)
+  const releaseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const callbacks = useRef({ onAcquired, onLost })
   useEffect(() => {
     callbacks.current = { onAcquired, onLost }
   }, [onAcquired, onLost])
-
-  const sessionId = useCallback(async () => {
-    if (!sessionRef.current) sessionRef.current = await resolveSessionId()
-    return sessionRef.current
-  }, [])
 
   const markLost = useCallback((holder: ChapterLeaseHolderView | null) => {
     leaseRef.current = null
@@ -96,33 +100,43 @@ export function useChapterLease({
     callbacks.current.onLost?.()
   }, [])
 
-  const acquire = useCallback(async () => {
-    try {
-      const id = await sessionId()
-      const acquired = await acquireChapterLeaseAction(chapterId, id)
-      if (acquired.ok) {
-        const wasHeld = heldRef.current
-        leaseRef.current = acquired.lease
-        heldRef.current = true
-        setState({ status: 'active', lease: acquired.lease, degraded: false })
-        // Повторный захват после простоя: страница должна перечитать снимок.
-        if (!wasHeld) callbacks.current.onAcquired?.(acquired.lease)
-        return
-      }
+  const acquire = useCallback(() => {
+    if (acquireInFlight.current) return acquireInFlight.current
 
-      if (heldRef.current) {
-        markLost(acquired.holder)
-        return
+    const run = (async () => {
+      try {
+        const id = await sharedSessionId()
+        const acquired = await acquireChapterLeaseAction(chapterId, id)
+        if (acquired.ok) {
+          const wasHeld = heldRef.current
+          leaseRef.current = acquired.lease
+          heldRef.current = true
+          setState({ status: 'active', lease: acquired.lease, degraded: false })
+          // Повторный захват после простоя: страница должна перечитать снимок.
+          if (!wasHeld) callbacks.current.onAcquired?.(acquired.lease)
+          return
+        }
+
+        if (heldRef.current) {
+          markLost(acquired.holder)
+          return
+        }
+        setState({ status: 'read-only', holder: acquired.holder })
+      } catch {
+        if (heldRef.current) {
+          setState(previous => previous.status === 'active' ? { ...previous, degraded: true } : previous)
+        } else {
+          setState({ status: 'error', message: 'Не удалось проверить право редактирования' })
+        }
       }
-      setState({ status: 'read-only', holder: acquired.holder })
-    } catch {
-      if (heldRef.current) {
-        setState(previous => previous.status === 'active' ? { ...previous, degraded: true } : previous)
-      } else {
-        setState({ status: 'error', message: 'Не удалось проверить право редактирования' })
-      }
-    }
-  }, [chapterId, markLost, sessionId])
+    })()
+
+    acquireInFlight.current = run
+    void run.finally(() => {
+      if (acquireInFlight.current === run) acquireInFlight.current = null
+    })
+    return run
+  }, [chapterId, markLost])
 
   useEffect(() => {
     void acquire()
@@ -165,6 +179,14 @@ export function useChapterLease({
   }, [state.status, acquire])
 
   useEffect(() => {
+    // StrictMode в dev монтирует эффект дважды. Немедленный release в cleanup
+    // освободил бы lease только что открытой вкладки; откладываем и отменяем
+    // при повторном монтировании.
+    if (releaseTimer.current) {
+      clearTimeout(releaseTimer.current)
+      releaseTimer.current = null
+    }
+
     const release = () => {
       const current = leaseRef.current
       if (!current) return
@@ -184,11 +206,22 @@ export function useChapterLease({
         // TTL всё равно освободит главу.
       }
     }
-    const onPageHide = () => release()
+
+    const onPageHide = () => {
+      if (releaseTimer.current) {
+        clearTimeout(releaseTimer.current)
+        releaseTimer.current = null
+      }
+      release()
+    }
+
     window.addEventListener('pagehide', onPageHide)
     return () => {
       window.removeEventListener('pagehide', onPageHide)
-      release()
+      releaseTimer.current = setTimeout(() => {
+        releaseTimer.current = null
+        release()
+      }, 1_000)
     }
   }, [chapterId])
 
