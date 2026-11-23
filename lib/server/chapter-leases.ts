@@ -307,6 +307,22 @@ export async function withChapterLease<T>(
   fn: (lease: { generation: number }) => Promise<T>,
 ): Promise<T> {
   if (grant.mode === 'session') {
+    // Права проверяются в той же транзакции, что lease и ревизия: Studio-action
+    // уже вызвал requireChapterOwnership, но репозиторий не полагается на это.
+    if (grant.actor.userId) {
+      const { rows: [access] } = await client.query<{ is_admin: boolean; role: string | null }>(
+        `SELECT u.is_admin, rc.role
+         FROM chapters c
+         JOIN editions e ON e.id = c.edition_id
+         JOIN users u ON u.id = $2
+         LEFT JOIN release_collaborators rc
+           ON rc.release_id = e.release_id AND rc.user_id = $2
+         WHERE c.id = $1`,
+        [chapterId, grant.actor.userId],
+      )
+      if (!access) throw new ChapterWriteError('not-found')
+      if (!access.is_admin && access.role !== 'owner') throw new ChapterWriteError('lease-required')
+    }
     const row = await lockSessionLease(client, chapterId, grant.actor, grant.proof)
     return fn({ generation: Number(row.generation) })
   }

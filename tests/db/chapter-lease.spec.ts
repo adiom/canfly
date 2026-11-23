@@ -339,6 +339,48 @@ test('deleting an edition or release is blocked by a live chapter lease', async 
   await expect(deleteEdition(editionId)).resolves.toBeUndefined()
 })
 
+test('two different chapters are edited at the same time', async ({ sandbox: { chapter, userId } }) => {
+  const second = await createChapter({
+    edition_id: chapter.edition_id,
+    chapter_index: 2,
+    title: 'Second chapter',
+    content: original,
+  })
+  if (!second) throw new Error('Expected persisted chapter')
+
+  const firstLease = await leaseFor(userId, chapter.id)
+  const secondLease = await leaseFor(userId, second.id)
+
+  await expect(updateChapter(chapter.id, { content: edited }, {
+    expectedRevision: chapter.revision,
+    lease: sessionGrant(userId, firstLease),
+  })).resolves.toMatchObject({ content: edited })
+  await expect(updateChapter(second.id, { content: edited }, {
+    expectedRevision: second.revision,
+    lease: sessionGrant(userId, secondLease),
+  })).resolves.toMatchObject({ content: edited })
+})
+
+test('a session lease cannot write without release access', async ({ sandbox: { chapter } }) => {
+  const suffix = randomUUID().replaceAll('-', '').slice(0, 12)
+  const outsider = await dbQueryOne<{ id: string }>(
+    `INSERT INTO users (login, email, handle, display_name, public_role)
+     VALUES ($1, $2, $1, 'Outsider', 'author') RETURNING id`,
+    [`outsider_${suffix}`, `outsider-${suffix}@canfly.test`],
+  )
+  if (!outsider) throw new Error('Expected outsider user')
+  try {
+    const lease = await leaseFor(outsider.id, chapter.id)
+    await expect(updateChapter(chapter.id, { content: edited }, {
+      expectedRevision: chapter.revision,
+      lease: sessionGrant(outsider.id, lease),
+    })).rejects.toMatchObject({ code: 'lease-required' })
+    expect(await fetchChapterById(chapter.id)).toEqual(chapter)
+  } finally {
+    await dbQuery('DELETE FROM users WHERE id = $1', [outsider.id])
+  }
+})
+
 test('expired leases are ignored by the status read and by deletes', async ({ sandbox: { chapter, userId, editionId } }) => {
   await leaseFor(userId, chapter.id)
   await expireLease(chapter.id)

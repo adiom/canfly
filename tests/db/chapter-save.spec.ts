@@ -52,6 +52,10 @@ const test = base.extend<{ sandbox: Sandbox }>({
         [`chapter_${suffix}`, `chapter-${suffix}@canfly.test`],
       )
       if (!chapter || !user) throw new Error('Expected persisted chapter')
+      await dbQuery(
+        "INSERT INTO release_collaborators (release_id, user_id, role) VALUES ($1, $2, 'owner')",
+        [release.id, user.id],
+      )
       userId = user.id
       await applyFixture({ chapter, userId: user.id })
     } finally {

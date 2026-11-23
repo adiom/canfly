@@ -28,7 +28,7 @@
 - Захват — `INSERT … ON CONFLICT (chapter_id) DO UPDATE … WHERE expires_at <= now() OR (user_id, session_id) совпали`; `generation` растёт на каждом захвате. Активный чужой lease не вытесняется.
 - Продление разрешено только при живом lease и совпадении `token + generation + session_id + user_id + actor_kind`; после истечения нужен новый захват.
 - Освобождение выставляет `expires_at = now()`, сохраняя строку для монотонной generation. Cron может удалять строки старше срока хранения.
-- Запись проверяет lease, затем строку главы, затем `expectedRevision`. Порядок блокировок: advisory-lock состава издания (только create/reorder/удаление) → lease `FOR UPDATE` → chapter `FOR UPDATE` → архив → UPDATE. Reorder и каскадное удаление блокируют главы в порядке `chapters.id` и lease-строки не блокируют, поэтому цикла с писателем нет.
+- Запись проверяет в одной транзакции право пользователя на релиз (`users.is_admin` или `release_collaborators.role='owner'`), lease, затем строку главы и `expectedRevision`. Порядок блокировок: advisory-lock состава издания (только create/reorder/удаление) → lease `FOR UPDATE` → chapter `FOR UPDATE` → архив → UPDATE. Reorder и каскадное удаление блокируют главы в порядке `chapters.id` и lease-строки не блокируют, поэтому цикла с писателем нет.
 - MCP: неявный lease захватывается и освобождается внутри той же транзакции записи. Если глава занята Studio-сессией, возвращается `lease_held`; если lease свободен, запись проверяет `expected_revision`, меняет главу и освобождает lease атомарно.
 
 ## MCP-контракты
