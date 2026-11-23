@@ -88,6 +88,26 @@ function newLeaseToken() {
   return randomBytes(32).toString('hex')
 }
 
+/**
+ * Ключ advisory-lock на главу. Его берут и захват lease, и структурные
+ * операции (reorder/удаление издания), поэтому захват не может проскочить
+ * между проверкой lease и изменением порядка/удалением. Ключи блокируются
+ * в отсортированном порядке, чтобы не было deadlock.
+ */
+function chapterLeaseLockKey(chapterId: string) {
+  return `canfly:chapter-lease:${chapterId}`
+}
+
+export async function lockChapterLeaseScopes(client: Queryable, chapterIds: string[]) {
+  const ids = [...new Set(chapterIds)].sort()
+  for (const id of ids) {
+    await client.query(
+      'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+      [chapterLeaseLockKey(id)],
+    )
+  }
+}
+
 function toLease(row: LeaseRow): ChapterLease {
   return {
     chapterId: row.chapter_id,
@@ -135,6 +155,11 @@ export async function acquireChapterLeaseOnClient(
 ): Promise<{ ok: true; lease: ChapterLease } | { ok: false; holder: ChapterLeaseHolder | null }> {
   const { chapterId, sessionId, actor } = input
   const token = newLeaseToken()
+
+  await client.query(
+    'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+    [chapterLeaseLockKey(chapterId)],
+  )
 
   let rows: LeaseRow[]
   try {

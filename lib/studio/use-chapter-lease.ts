@@ -17,42 +17,63 @@ import {
 
 const SESSION_KEY = 'cf-editor-session-id'
 const SESSION_CHANNEL = 'cf-editor-sessions'
+const SESSION_PROBE_TIMEOUT_MS = 150
 
 /**
  * Идентификатор вкладки. sessionStorage переживает перезагрузку (вкладка
- * возвращает своё право), а BroadcastChannel отлавливает дубликат вкладки:
- * браузер копирует sessionStorage при duplicate tab, и без проверки две
- * вкладки считались бы одной сессией.
+ * возвращает своё право), а постоянно открытый BroadcastChannel отлавливает
+ * дубликат вкладки: браузер копирует sessionStorage при duplicate tab, и без
+ * проверки две вкладки считались бы одной сессией. Канал закрывается только
+ * вместе с документом, поэтому дубликат, созданный позже, тоже получает ack.
  */
+let currentSessionId: string | null = null
 let sessionPromise: Promise<string> | null = null
+let sessionChannel: BroadcastChannel | null = null
+
+function tabChannel(): BroadcastChannel | null {
+  if (typeof BroadcastChannel === 'undefined') return null
+  if (!sessionChannel) {
+    sessionChannel = new BroadcastChannel(SESSION_CHANNEL)
+    sessionChannel.onmessage = (event) => {
+      const data = event.data as { type?: string; id?: string } | null
+      if (data?.type === 'probe' && data.id && data.id === currentSessionId) {
+        sessionChannel?.postMessage({ type: 'ack', id: data.id })
+      }
+    }
+  }
+  return sessionChannel
+}
 
 async function resolveSessionId(): Promise<string> {
-  const existing = sessionStorage.getItem(SESSION_KEY)
-  let id = existing ?? crypto.randomUUID()
-  if (!existing) sessionStorage.setItem(SESSION_KEY, id)
+  const channel = tabChannel()
+  let id = sessionStorage.getItem(SESSION_KEY) ?? crypto.randomUUID()
+  sessionStorage.setItem(SESSION_KEY, id)
+  currentSessionId = id
 
-  if (typeof BroadcastChannel === 'undefined') return id
-  const channel = new BroadcastChannel(SESSION_CHANNEL)
-  try {
-    const duplicate = await new Promise<boolean>((resolve) => {
-      const timer = setTimeout(() => resolve(false), 80)
-      channel.onmessage = (event) => {
-        const data = event.data as { type?: string; id?: string } | null
-        if (!data || data.id !== id) return
-        if (data.type === 'probe') channel.postMessage({ type: 'ack', id })
-        if (data.type === 'ack') {
-          clearTimeout(timer)
-          resolve(true)
-        }
-      }
-      channel.postMessage({ type: 'probe', id })
-    })
-    if (duplicate) {
-      id = crypto.randomUUID()
-      sessionStorage.setItem(SESSION_KEY, id)
+  if (!channel) return id
+
+  const duplicate = await new Promise<boolean>((resolve) => {
+    let settled = false
+    const finish = (value: boolean) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      channel.removeEventListener('message', onMessage)
+      resolve(value)
     }
-  } finally {
-    channel.close()
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data as { type?: string; id?: string } | null
+      if (data?.type === 'ack' && data.id === id) finish(true)
+    }
+    const timer = setTimeout(() => finish(false), SESSION_PROBE_TIMEOUT_MS)
+    channel.addEventListener('message', onMessage)
+    channel.postMessage({ type: 'probe', id })
+  })
+
+  if (duplicate) {
+    id = crypto.randomUUID()
+    sessionStorage.setItem(SESSION_KEY, id)
+    currentSessionId = id
   }
   return id
 }

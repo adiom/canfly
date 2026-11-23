@@ -1,7 +1,11 @@
 import { dbQuery, dbQueryOne, dbUpdatePartial, withTransaction } from '@/lib/db'
 import type { UpdatableColumn } from '@/lib/db'
 import { generateSlug } from '@/lib/slug-utils'
-import { assertNoActiveChapterLeases, lockEditionComposition } from '@/lib/server/chapter-leases'
+import {
+  assertNoActiveChapterLeases,
+  lockChapterLeaseScopes,
+  lockEditionComposition,
+} from '@/lib/server/chapter-leases'
 import type { CharacterChatAvailabilityInput } from '@/lib/ai/character-chat/availability'
 import type { Character } from '@/lib/types'
 import type {
@@ -150,11 +154,20 @@ export async function deleteRelease(id: string) {
       `SELECT c.id FROM chapters c
        JOIN editions e ON e.id = c.edition_id
        WHERE e.release_id = $1
+       ORDER BY c.id ASC`,
+      [id],
+    )
+    const chapterIds = rows.map(row => row.id)
+    await lockChapterLeaseScopes(client, chapterIds)
+    await assertNoActiveChapterLeases(client, chapterIds)
+    await client.query(
+      `SELECT c.id FROM chapters c
+       JOIN editions e ON e.id = c.edition_id
+       WHERE e.release_id = $1
        ORDER BY c.id ASC
        FOR UPDATE OF c`,
       [id],
     )
-    await assertNoActiveChapterLeases(client, rows.map(row => row.id))
     await client.query('DELETE FROM releases WHERE id = $1', [id])
   })
 }

@@ -6,6 +6,7 @@ import type { Chapter, ChapterVersion } from '@/lib/releases-types'
 import { ChapterWriteError } from '@/lib/studio/chapter-write'
 import {
   assertNoActiveChapterLeases,
+  lockChapterLeaseScopes,
   lockEditionComposition,
   withChapterLease,
   type ChapterLeaseGrant,
@@ -288,6 +289,11 @@ export async function reorderChapters(
 
   await withTransaction(async (client) => {
     await lockEditionComposition(client, editionId)
+    // Сначала блокируем scope захвата lease, затем проверяем живые lease и
+    // только потом строки глав: тот же порядок, что у acquire → lease → chapter.
+    await lockChapterLeaseScopes(client, items.map(item => item.id))
+    await assertNoActiveChapterLeases(client, items.map(item => item.id))
+
     const { rows } = await client.query<{ id: string; revision: number }>(
       `SELECT id, revision FROM chapters WHERE edition_id = $1 ORDER BY id ASC FOR UPDATE`,
       [editionId],
@@ -298,8 +304,6 @@ export async function reorderChapters(
     if (items.some(item => revisions.get(item.id) !== item.revision)) {
       throw new ChapterWriteError('conflict')
     }
-
-    await assertNoActiveChapterLeases(client, items.map(item => item.id))
 
     for (let i = 0; i < items.length; i++) {
       await client.query(

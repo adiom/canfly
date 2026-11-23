@@ -28,7 +28,9 @@
 - Захват — `INSERT … ON CONFLICT (chapter_id) DO UPDATE … WHERE expires_at <= now() OR (user_id, session_id) совпали`; `generation` растёт на каждом захвате. Активный чужой lease не вытесняется.
 - Продление разрешено только при живом lease и совпадении `token + generation + session_id + user_id + actor_kind`; после истечения нужен новый захват.
 - Освобождение выставляет `expires_at = now()`, сохраняя строку для монотонной generation. Cron может удалять строки старше срока хранения.
-- Запись проверяет в одной транзакции право пользователя на релиз (`users.is_admin` или `release_collaborators.role='owner'`), lease, затем строку главы и `expectedRevision`. Порядок блокировок: advisory-lock состава издания (только create/reorder/удаление) → lease `FOR UPDATE` → chapter `FOR UPDATE` → архив → UPDATE. Reorder и каскадное удаление блокируют главы в порядке `chapters.id` и lease-строки не блокируют, поэтому цикла с писателем нет.
+- Запись проверяет в одной транзакции право пользователя на релиз (`users.is_admin` или `release_collaborators.role='owner'`), lease, затем строку главы и `expectedRevision`.
+- Порядок блокировок: advisory-lock состава издания (create/reorder/удаление) → advisory-lock scope lease для каждой главы в отсортированном порядке → lease `FOR UPDATE` → chapter `FOR UPDATE` → архив → UPDATE.
+- Захват lease и структурные операции (reorder, `deleteEdition`, `deleteRelease`) берут один и тот же advisory-lock на главу. Это закрывает гонку с уже существующей истёкшей строкой lease: без блокировки `ON CONFLICT DO UPDATE` обновляет только lease-строку и не берёт FK-блокировку главы, поэтому мог проскочить между проверкой и изменением порядка/удалением. Структурные операции блокируют scope глав отсортированно, проверяют живые lease, затем блокируют строки глав; писатели идут lease → chapter, поэтому deadlock не возникает. Reorder и каскадное удаление блокируют главы в порядке `chapters.id`.
 - MCP: неявный lease захватывается и освобождается внутри той же транзакции записи. Если глава занята Studio-сессией, возвращается `lease_held`; если lease свободен, запись проверяет `expected_revision`, меняет главу и освобождает lease атомарно.
 
 ## MCP-контракты
@@ -45,7 +47,7 @@
 
 ## Интерфейс
 
-- `useChapterLease` держит идентификатор вкладки в `sessionStorage` и защищает от duplicate tab через `BroadcastChannel`.
+- `useChapterLease` держит идентификатор вкладки в `sessionStorage`. `BroadcastChannel` открыт всё время жизни документа: вкладка отвечает `ack` на `probe` своего id, поэтому даже поздний duplicate tab (браузер копирует `sessionStorage`) получает новый id и не перехватывает lease первой вкладки.
 - Пока lease не наш, редактор, HTML-режим, аудио, комикс, публикация, удаление и откат версии недоступны; показывается баннер «Глава уже редактируется» с именем владельца и кнопкой повторного захвата.
 - При потере lease текущий черновик уходит в существующий архив, sessionStorage-запись не удаляется, редактор становится read-only. После повторного захвата страница перечитывает снимок; при изменившейся ревизии старый черновик остаётся в архиве.
 - Закрытие вкладки освобождает lease через `sendBeacon` на `POST /api/chapter-leases/release`; при недоступности сети lease истекает по TTL.
@@ -53,8 +55,8 @@
 ## Проверки
 
 - Unit: 219 тестов, включая схемы/поведение без БД.
-- DB (`playwright.db.config.ts` на одноразовой PostgreSQL 17): 28 тестов — захват/продление/освобождение, гонка двух соединений, старые token/generation, запись без lease, admin без lease, restore/publish/delete, reorder, каскадное удаление, MCP `revision_required`/`lease_held`, Studio ↔ MCP.
-- Browser (Chromium): `e2e/chapter-save.spec.ts` (7) и `e2e/chapter-lease.spec.ts` (3) — две вкладки, два автора, владелец и администратор, истечение TTL, потеря lease, повторный захват, MCP-блокировка.
+- DB (`playwright.db.config.ts` на одноразовой PostgreSQL 17): 34 теста — захват/продление/освобождение, гонка двух соединений, старые token/generation, запись без lease, admin без lease, restore/publish/delete, reorder, каскадное удаление, MCP `revision_required`/`lease_held`, Studio ↔ MCP, гонки acquire с истёкшей строкой во время reorder/deleteEdition/deleteRelease и отсутствие deadlock.
+- Browser (Chromium): `e2e/chapter-save.spec.ts` (7) и `e2e/chapter-lease.spec.ts` (4) — две вкладки, два автора, владелец и администратор, истечение TTL, потеря lease, повторный захват, поздний duplicate tab, MCP-блокировка.
 - `tsc --noEmit`, `eslint .`, `pnpm build` — см. результаты в отчёте PR.
 
 ## Остаточные обходы и риски

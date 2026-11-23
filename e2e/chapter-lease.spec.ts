@@ -183,4 +183,31 @@ test.describe('Эксклюзивное редактирование главы'
       .toBeVisible({ timeout: 30_000 })
     await expect(sandbox.owner.page.locator('[contenteditable="true"]')).toHaveCount(0)
   })
+
+  test('поздний дубликат вкладки не перехватывает lease', async ({ sandbox }) => {
+    const original = sandbox.owner.page
+    const sessionId = await original.evaluate(() => sessionStorage.getItem('cf-editor-session-id'))
+    expect(sessionId).toBeTruthy()
+    await new Promise(resolve => setTimeout(resolve, 3_000))
+
+    const duplicate = await original.context().newPage()
+    try {
+      await duplicate.goto(sandbox.chapterUrl, { waitUntil: 'domcontentloaded' })
+      await duplicate.evaluate(
+        id => sessionStorage.setItem('cf-editor-session-id', id as string),
+        sessionId as string,
+      )
+      await duplicate.reload({ waitUntil: 'domcontentloaded' })
+      await waitForReadOnly(duplicate, 'Lease owner')
+
+      await original.locator('[contenteditable=true]').fill('Текст после позднего дублирования')
+      await expect(original.getByRole('status')).toContainText('Сохранено')
+      const { rows: [saved] } = await sandbox.db.query(
+        'SELECT content FROM chapters WHERE id = $1', [sandbox.chapterId],
+      )
+      expect(saved.content).toBe('<p>Текст после позднего дублирования</p>')
+    } finally {
+      await duplicate.close()
+    }
+  })
 })

@@ -1,6 +1,10 @@
 import { dbQuery, dbQueryOne, dbUpdatePartial, withTransaction } from '@/lib/db'
 import type { UpdatableColumn } from '@/lib/db'
-import { assertNoActiveChapterLeases, lockEditionComposition } from '@/lib/server/chapter-leases'
+import {
+  assertNoActiveChapterLeases,
+  lockChapterLeaseScopes,
+  lockEditionComposition,
+} from '@/lib/server/chapter-leases'
 import type {
   Edition,
   EditionCreateInput,
@@ -266,10 +270,16 @@ export async function deleteEdition(id: string) {
   await withTransaction(async (client) => {
     await lockEditionComposition(client, id)
     const { rows } = await client.query<{ id: string }>(
+      'SELECT id FROM chapters WHERE edition_id = $1 ORDER BY id ASC',
+      [id],
+    )
+    const chapterIds = rows.map(row => row.id)
+    await lockChapterLeaseScopes(client, chapterIds)
+    await assertNoActiveChapterLeases(client, chapterIds)
+    await client.query(
       'SELECT id FROM chapters WHERE edition_id = $1 ORDER BY id ASC FOR UPDATE',
       [id],
     )
-    await assertNoActiveChapterLeases(client, rows.map(row => row.id))
     await client.query('DELETE FROM editions WHERE id = $1', [id])
   })
 }

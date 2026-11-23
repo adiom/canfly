@@ -387,3 +387,112 @@ test('expired leases are ignored by the status read and by deletes', async ({ sa
   expect(await fetchChapterLease(chapter.id)).toBeNull()
   await expect(deleteEdition(editionId)).resolves.toBeUndefined()
 })
+
+async function directClient() {
+  const url = process.env.DATABASE_URL
+  if (!url) throw new Error('DATABASE_URL is required')
+  const client = createDedicatedDatabaseClient({ connectionString: url })
+  await client.connect()
+  return client
+}
+
+function settled<T>(promise: Promise<T>) {
+  return promise.then(
+    value => ({ status: 'fulfilled' as const, value }),
+    reason => ({ status: 'rejected' as const, reason }),
+  )
+}
+
+async function stillPending(promise: Promise<unknown>) {
+  return Promise.race([
+    settled(promise),
+    new Promise<'pending'>(resolve => setTimeout(() => resolve('pending'), 300)),
+  ])
+}
+
+test('reorder waits for an in-flight acquisition over an expired lease row', async ({ sandbox: { chapter, userId, editionId } }) => {
+  await leaseFor(userId, chapter.id)
+  await expireLease(chapter.id)
+  const client = await directClient()
+  try {
+    await client.query('BEGIN')
+    const acquired = await acquireChapterLeaseOnClient(client, {
+      chapterId: chapter.id,
+      sessionId: 'late-acquire-session',
+      actor: { userId, actorKind: 'studio' },
+    })
+    expect(acquired.ok).toBe(true)
+
+    const reorder = reorderChapters(editionId, [{ id: chapter.id, revision: chapter.revision }])
+    expect(await stillPending(reorder)).toBe('pending')
+
+    await client.query('COMMIT')
+    await expect(reorder).rejects.toMatchObject({ code: 'lease-held' })
+  } finally {
+    await client.end()
+  }
+})
+
+test('deleteEdition waits for an in-flight acquisition over an expired lease row', async ({ sandbox: { chapter, userId, editionId } }) => {
+  await leaseFor(userId, chapter.id)
+  await expireLease(chapter.id)
+  const client = await directClient()
+  try {
+    await client.query('BEGIN')
+    const acquired = await acquireChapterLeaseOnClient(client, {
+      chapterId: chapter.id,
+      sessionId: 'late-delete-edition-session',
+      actor: { userId, actorKind: 'studio' },
+    })
+    expect(acquired.ok).toBe(true)
+
+    const deletion = deleteEdition(editionId)
+    expect(await stillPending(deletion)).toBe('pending')
+
+    await client.query('COMMIT')
+    await expect(deletion).rejects.toMatchObject({ code: 'lease-held' })
+    expect(await fetchChapterById(chapter.id)).not.toBeNull()
+  } finally {
+    await client.end()
+  }
+})
+
+test('deleteRelease waits for an in-flight acquisition over an expired lease row', async ({ sandbox: { chapter, userId, releaseId } }) => {
+  await leaseFor(userId, chapter.id)
+  await expireLease(chapter.id)
+  const client = await directClient()
+  try {
+    await client.query('BEGIN')
+    const acquired = await acquireChapterLeaseOnClient(client, {
+      chapterId: chapter.id,
+      sessionId: 'late-delete-release-session',
+      actor: { userId, actorKind: 'studio' },
+    })
+    expect(acquired.ok).toBe(true)
+
+    const deletion = deleteRelease(releaseId)
+    expect(await stillPending(deletion)).toBe('pending')
+
+    await client.query('COMMIT')
+    await expect(deletion).rejects.toMatchObject({ code: 'lease-held' })
+    expect(await fetchChapterById(chapter.id)).not.toBeNull()
+  } finally {
+    await client.end()
+  }
+})
+
+test('reorder and a writer with a live lease do not deadlock', async ({ sandbox: { chapter, userId, editionId } }) => {
+  const lease = await leaseFor(userId, chapter.id)
+  const [write, reorder] = await Promise.all([
+    settled(updateChapter(chapter.id, { content: edited }, {
+      expectedRevision: chapter.revision,
+      lease: sessionGrant(userId, lease),
+    })),
+    settled(reorderChapters(editionId, [{ id: chapter.id, revision: chapter.revision }])),
+  ])
+  expect(write.status).toBe('fulfilled')
+  expect(reorder.status).toBe('rejected')
+  if (reorder.status === 'rejected') {
+    expect(['lease-held', 'conflict']).toContain(reorder.reason.code)
+  }
+})
