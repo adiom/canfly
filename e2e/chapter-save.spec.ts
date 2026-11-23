@@ -8,6 +8,7 @@ import { callChapterMcp } from './setup/chapter-mcp'
 
 const original = '<p>Исходный текст</p>'
 const restored = '<p>Восстановленный текст</p>'
+
 const test = base.extend<{ chapter: { url: string; db: Client; id: string } }>({
   chapter: async ({ page }, runChapterTest) => {
     const admin = loadTestCredentials()
@@ -42,6 +43,7 @@ const test = base.extend<{ chapter: { url: string; db: Client; id: string } }>({
       }, { timeout: 20_000 }).toBe(admin.email)
       const url = `/studio/editions/${edition.id}/chapters/${row.id}`
       await page.goto(url, { waitUntil: 'domcontentloaded' })
+      await waitForEditing(page)
       await expect(page.getByPlaceholder('Заголовок главы')).toHaveValue('Глава')
       await runChapterTest({ url, db, id: row.id })
     } finally {
@@ -51,23 +53,37 @@ const test = base.extend<{ chapter: { url: string; db: Client; id: string } }>({
   },
 })
 
+async function waitForEditing(page: import('@playwright/test').Page) {
+  await expect(page.locator('[contenteditable="true"]')).toBeVisible({ timeout: 20_000 })
+}
+
+async function leaseReleased(db: Client, chapterId: string) {
+  await expect.poll(async () => {
+    const { rows: [row] } = await db.query<{ live: boolean }>(
+      'SELECT EXISTS (SELECT 1 FROM chapter_edit_leases WHERE chapter_id = $1 AND expires_at > now()) AS live',
+      [chapterId],
+    )
+    return row.live
+  }, { timeout: 20_000 }).toBe(false)
+}
+
 test.use({ channel: 'chromium' })
 
 test.describe('Защита сохранения главы', () => {
-  test('поздний заголовок не перезаписывает текст второй вкладки', async ({ chapter, page, context }) => {
+  test('вторая вкладка получает только чтение и не перезаписывает текст', async ({ chapter, page, context }) => {
     const second = await context.newPage()
     await second.goto(chapter.url, { waitUntil: 'domcontentloaded' })
-    await second.locator('[contenteditable=true]').fill('Новый текст из второй вкладки')
-    await expect(second.getByRole('status')).toContainText('Сохранено')
+    await expect(second.getByRole('alert').filter({ hasText: 'Глава уже редактируется' }))
+      .toBeVisible({ timeout: 20_000 })
+    await expect(second.locator('[contenteditable="true"]')).toHaveCount(0)
 
-    await page.getByPlaceholder('Заголовок главы').fill('Устаревший заголовок')
-    await expect(page.getByRole('status')).toContainText('Глава изменилась')
-    await expect(page.getByRole('status')).not.toContainText('Сохранено')
+    await page.locator('[contenteditable=true]').fill('Новый текст из первой вкладки')
+    await expect(page.getByRole('status')).toContainText('Сохранено')
     const { rows: [saved] } = await chapter.db.query('SELECT title, content FROM chapters WHERE id = $1', [chapter.id])
-    expect(saved).toEqual({ title: 'Глава', content: '<p>Новый текст из второй вкладки</p>' })
+    expect(saved).toEqual({ title: 'Глава', content: '<p>Новый текст из первой вкладки</p>' })
   })
 
-  test('отклоняет пустой заголовок и запись после удаления', async ({ chapter, page }) => {
+  test('отклоняет пустой заголовок и сохраняет черновик после удаления главы', async ({ chapter, page }) => {
     const title = page.getByPlaceholder('Заголовок главы')
     const status = page.getByRole('status')
     await title.fill('   ')
@@ -75,7 +91,7 @@ test.describe('Защита сохранения главы', () => {
     await expect(status).not.toContainText('Сохранено')
     await chapter.db.query('DELETE FROM chapters WHERE id = $1', [chapter.id])
     await title.fill('Позднее изменение')
-    await expect(status).toContainText('Глава удалена')
+    await expect(status).toContainText(/Глава удалена|только для чтения/)
     await expect(status).not.toContainText('Сохранено')
   })
 
@@ -92,6 +108,7 @@ test.describe('Защита сохранения главы', () => {
     await expect(page.getByRole('status')).not.toContainText('Сохраняю')
     page.once('dialog', dialog => dialog.accept())
     await page.reload()
+    await waitForEditing(page)
     await expect(title).toHaveValue('')
     await expect(page.locator('[contenteditable=true]')).toHaveText('Текст при пустом заголовке')
   })
@@ -103,11 +120,13 @@ test.describe('Защита сохранения главы', () => {
     await expect(page.getByRole('status')).toContainText('Глава изменилась')
     page.once('dialog', dialog => dialog.accept())
     await page.reload()
+    await waitForEditing(page)
     const editor = page.locator('[contenteditable=true]')
     await expect(editor).toHaveText('Свежий текст')
     await editor.fill('Новая правка')
     await expect(page.getByRole('status')).toContainText('Сохранено')
     await page.reload()
+    await waitForEditing(page)
     await expect(editor).toHaveText('Новая правка')
     await page.getByRole('button', { name: 'Локальные черновики' }).click()
     await expect(page.getByLabel('HTML черновика')).toHaveValue('<p>Текст из старой вкладки</p>')
@@ -124,38 +143,32 @@ test.describe('Защита сохранения главы', () => {
     await expect(page.getByText('Архивных черновиков нет.')).toBeVisible()
   })
 
-  test('записи Studio и MCP с одной ревизией имеют одного победителя', async ({ chapter, page }) => {
-    const studioText = 'Правка из Studio'
-    const mcpText = '<p>Правка из MCP</p>'
-    await chapter.db.query('BEGIN')
-    let mcpWrite: ReturnType<typeof callChapterMcp>
-    try {
-      const { rows: [row] } = await chapter.db.query<{ revision: number }>(
-        'SELECT revision FROM chapters WHERE id = $1 FOR UPDATE', [chapter.id],
-      )
-      const studioRequest = page.waitForRequest(request =>
-        request.method() === 'POST' && new URL(request.url()).pathname === chapter.url,
-      )
-      await page.locator('[contenteditable=true]').fill(studioText)
-      await studioRequest
-      mcpWrite = callChapterMcp('canfly_update_chapter_v2', {
-        id: chapter.id, expected_revision: row.revision, content: mcpText,
-      })
-    } finally {
-      await chapter.db.query('COMMIT')
-    }
+  test('MCP не может писать, пока Studio держит lease, и пишет после освобождения', async ({ chapter, page }) => {
+    const { rows: [row] } = await chapter.db.query<{ revision: number }>(
+      'SELECT revision FROM chapters WHERE id = $1', [chapter.id],
+    )
+    const { rows: [held] } = await chapter.db.query(
+      'SELECT user_id, actor_kind, session_id, expires_at > now() AS live FROM chapter_edit_leases WHERE chapter_id = $1',
+      [chapter.id],
+    )
+    expect(held?.live).toBe(true)
 
-    const mcp = await mcpWrite
-    if (mcp.isError) expect(mcp.structuredContent).toMatchObject({ code: 'conflict' })
-    await expect(page.getByRole('status')).toContainText(mcp.isError ? 'Сохранено' : 'Глава изменилась')
-    const { rows: [row] } = await chapter.db.query(
-      'SELECT content, revision FROM chapters WHERE id = $1', [chapter.id],
-    )
-    expect(row).toEqual({ content: mcp.isError ? `<p>${studioText}</p>` : mcpText, revision: 1 })
-    const { rows: history } = await chapter.db.query(
-      'SELECT content FROM chapter_versions WHERE chapter_id = $1', [chapter.id],
-    )
-    expect(history).toEqual([{ content: original }])
+    const blocked = await callChapterMcp('canfly_update_chapter_v2', {
+      id: chapter.id, expected_revision: row.revision, content: '<p>Правка из MCP</p>',
+    })
+    expect(blocked).toMatchObject({ isError: true, structuredContent: { ok: false, code: 'lease_held' } })
+    const { rows: [unchanged] } = await chapter.db.query('SELECT content FROM chapters WHERE id = $1', [chapter.id])
+    expect(unchanged.content).toBe(original)
+
+    await page.goto('/studio')
+    await leaseReleased(chapter.db, chapter.id)
+
+    const written = await callChapterMcp('canfly_update_chapter_v2', {
+      id: chapter.id, expected_revision: row.revision, content: '<p>Правка из MCP</p>',
+    })
+    expect(written.isError).not.toBe(true)
+    const { rows: [saved] } = await chapter.db.query('SELECT content FROM chapters WHERE id = $1', [chapter.id])
+    expect(saved.content).toBe('<p>Правка из MCP</p>')
   })
 
   test('переносит черновик PR1 без привязки к автору в архив без автозаписи', async ({ chapter, page }) => {
@@ -167,6 +180,7 @@ test.describe('Защита сохранения главы', () => {
       }))
     }, { id: chapter.id, content: original })
     await page.reload()
+    await waitForEditing(page)
     await expect(page.locator('[contenteditable=true]')).toHaveText('Исходный текст')
     await page.getByRole('button', { name: 'Локальные черновики' }).click()
     await expect(page.getByLabel('HTML черновика')).toHaveValue('<p>Старый локальный черновик</p>')
