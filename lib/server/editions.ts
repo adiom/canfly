@@ -1,5 +1,6 @@
-import { dbQuery, dbQueryOne, dbUpdatePartial } from '@/lib/db'
+import { dbQuery, dbQueryOne, dbUpdatePartial, withTransaction } from '@/lib/db'
 import type { UpdatableColumn } from '@/lib/db'
+import { assertNoActiveChapterLeases, lockEditionComposition } from '@/lib/server/chapter-leases'
 import type {
   Edition,
   EditionCreateInput,
@@ -257,6 +258,18 @@ export async function updateEditionStatus(id: string, status: string) {
   )
 }
 
+/**
+ * Удаление издания каскадно удаляет главы. Живой lease запрещает удаление:
+ * иначе активная вкладка потеряла бы текст в обход блокировки.
+ */
 export async function deleteEdition(id: string) {
-  await dbQuery('DELETE FROM editions WHERE id = $1', [id])
+  await withTransaction(async (client) => {
+    await lockEditionComposition(client, id)
+    const { rows } = await client.query<{ id: string }>(
+      'SELECT id FROM chapters WHERE edition_id = $1 ORDER BY id ASC FOR UPDATE',
+      [id],
+    )
+    await assertNoActiveChapterLeases(client, rows.map(row => row.id))
+    await client.query('DELETE FROM editions WHERE id = $1', [id])
+  })
 }

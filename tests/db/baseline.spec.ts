@@ -19,6 +19,11 @@ import { fetchReadingProgress, upsertReadingProgress } from '@/lib/server/readin
 import { createRelease } from '@/lib/server/releases'
 import { canOpenEdition, getPrimaryEdition } from '@/lib/utils/editions'
 import { createSeries, fetchSeriesWithReleases, fetchSeriesWithReleasesById } from '@/lib/server/series'
+import type { ChapterLeaseGrant } from '@/lib/server/chapter-leases'
+
+function mcpLease(): ChapterLeaseGrant {
+  return { mode: 'implicit', actor: { userId: null, actorKind: 'mcp' }, sessionId: `mcp-${randomUUID()}` }
+}
 
 
 test('persists chapters and versions, reads published chapters and upserts reading progress', async () => {
@@ -40,12 +45,18 @@ test('persists chapters and versions, reads published chapters and upserts readi
 
     await test.step('stores a version and filters drafts from the public reader', async () => {
       const updatedContent = '<p>Updated synthetic chapter</p>'
-      await updateChapter(chapter.id, { content: updatedContent })
+      await updateChapter(chapter.id, { content: updatedContent }, {
+        expectedRevision: chapter.revision,
+        lease: mcpLease(),
+      })
       expect(await fetchChapterVersions(chapter.id)).toMatchObject([
         { chapter_id: chapter.id, content, version_number: 1 },
       ])
       expect(await fetchPublishedChaptersByEdition(edition.id)).toEqual([])
-      await publishChapter(chapter.id)
+      await publishChapter(chapter.id, {
+        expectedRevision: chapter.revision + 1,
+        lease: mcpLease(),
+      })
       expect(await fetchPublishedChaptersByEdition(edition.id)).toMatchObject([
         { id: chapter.id, content: updatedContent },
       ])

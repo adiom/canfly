@@ -146,6 +146,11 @@ export const lyricsSchema = z.object({
 
 export const chapterRevisionSchema = z.number().int().min(0).max(2147483647)
 export const chapterIdSchema = z.string().uuid()
+export const chapterLeaseProofSchema = z.object({
+  sessionId: z.string().min(8).max(128),
+  token: z.string().regex(/^[0-9a-f]{64}$/),
+  generation: z.number().int().min(1),
+})
 export const comicChapterPagesSchema = z.array(z.string())
 
 export const chapterUpdateSchema = z.object({

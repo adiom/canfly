@@ -36,8 +36,8 @@ interface LeaseFixture {
   editionId: string
 }
 
-const test = base.extend<LeaseFixture>({
-  chapter: async ({}, applyFixture) => {
+const test = base.extend<{ sandbox: LeaseFixture }>({
+  sandbox: async ({}, applyFixture) => {
     const slug = `lease-${randomUUID()}`
     const suffix = randomUUID().replaceAll('-', '').slice(0, 12)
     const release = await createRelease({ title: 'Lease release', slug, status: 'draft' })
@@ -90,10 +90,15 @@ async function leaseFor(userId: string, chapterId: string) {
 }
 
 async function expireLease(chapterId: string) {
-  await dbQuery('UPDATE chapter_edit_leases SET expires_at = now() - INTERVAL \'1 second\' WHERE chapter_id = $1', [chapterId])
+  await dbQuery(
+    `UPDATE chapter_edit_leases
+     SET acquired_at = now() - INTERVAL '2 minutes', expires_at = now() - INTERVAL '1 minute'
+     WHERE chapter_id = $1`,
+    [chapterId],
+  )
 }
 
-test('acquires, reports, renews and releases a lease', async ({ chapter, userId }) => {
+test('acquires, reports, renews and releases a lease', async ({ sandbox: { chapter, userId } }) => {
   const lease = await leaseFor(userId, chapter.id)
   expect(lease).toMatchObject({ chapterId: chapter.id, userId, actorKind: 'studio', generation: 1 })
   expect(Date.parse(lease.expiresAt)).toBeGreaterThan(Date.now())
@@ -118,7 +123,7 @@ test('acquires, reports, renews and releases a lease', async ({ chapter, userId 
   expect(await fetchChapterLease(chapter.id)).toBeNull()
 })
 
-test('keeps the same chapter locked for a second session and frees it after TTL', async ({ chapter, userId }) => {
+test('keeps the same chapter locked for a second session and frees it after TTL', async ({ sandbox: { chapter, userId } }) => {
   const first = await leaseFor(userId, chapter.id)
   const second = await acquireChapterLease({
     chapterId: chapter.id,
@@ -146,7 +151,7 @@ test('keeps the same chapter locked for a second session and frees it after TTL'
   expect(renewed.ok).toBe(false)
 })
 
-test('rejects stale tokens and generations after a new holder appears', async ({ chapter, userId }) => {
+test('rejects stale tokens and generations after a new holder appears', async ({ sandbox: { chapter, userId } }) => {
   const first = await leaseFor(userId, chapter.id)
   await expireLease(chapter.id)
   const second = await leaseFor(userId, chapter.id)
@@ -162,7 +167,7 @@ test('rejects stale tokens and generations after a new holder appears', async ({
   })).resolves.toMatchObject({ content: edited })
 })
 
-test('rejects writes without a live lease and keeps history untouched', async ({ chapter, userId }) => {
+test('rejects writes without a live lease and keeps history untouched', async ({ sandbox: { chapter, userId } }) => {
   const lease = await leaseFor(userId, chapter.id)
 
   await expect(updateChapter(chapter.id, { content: edited }, {
@@ -188,7 +193,7 @@ test('rejects writes without a live lease and keeps history untouched', async ({
   })).rejects.toMatchObject({ code: 'lease-lost' })
 })
 
-test('implicit MCP lease writes only a free chapter and releases in the same transaction', async ({ chapter, userId }) => {
+test('implicit MCP lease writes only a free chapter and releases in the same transaction', async ({ sandbox: { chapter, userId } }) => {
   const saved = await updateChapter(chapter.id, { content: edited }, {
     expectedRevision: chapter.revision,
     lease: implicitGrant(userId),
@@ -198,7 +203,7 @@ test('implicit MCP lease writes only a free chapter and releases in the same tra
   expect(await fetchChapterVersions(chapter.id)).toMatchObject([{ content: original }])
 })
 
-test('implicit MCP lease cannot evict an active Studio session', async ({ chapter, userId }) => {
+test('implicit MCP lease cannot evict an active Studio session', async ({ sandbox: { chapter, userId } }) => {
   const lease = await leaseFor(userId, chapter.id)
 
   await expect(updateChapter(chapter.id, { content: edited }, {
@@ -215,7 +220,7 @@ test('implicit MCP lease cannot evict an active Studio session', async ({ chapte
   })).rejects.toMatchObject({ code: 'lease-held' })
 })
 
-test('restore, publish and delete require the active lease and revision', async ({ chapter, userId }) => {
+test('restore, publish and delete require the active lease and revision', async ({ sandbox: { chapter, userId } }) => {
   const lease = await leaseFor(userId, chapter.id)
   const first = await updateChapter(chapter.id, { content: edited }, {
     expectedRevision: chapter.revision,
@@ -250,7 +255,7 @@ test('restore, publish and delete require the active lease and revision', async 
   })).rejects.toMatchObject({ code: 'lease-held' })
 })
 
-test('the lease still requires the expected revision', async ({ chapter, userId }) => {
+test('the lease still requires the expected revision', async ({ sandbox: { chapter, userId } }) => {
   const lease = await leaseFor(userId, chapter.id)
   await updateChapter(chapter.id, { content: edited }, {
     expectedRevision: chapter.revision,
@@ -263,7 +268,7 @@ test('the lease still requires the expected revision', async ({ chapter, userId 
   expect(await fetchChapterVersions(chapter.id)).toHaveLength(1)
 })
 
-test('two PostgreSQL connections acquire exactly one lease', async ({ chapter, userId }) => {
+test('two PostgreSQL connections acquire exactly one lease', async ({ sandbox: { chapter, userId } }) => {
   const url = process.env.DATABASE_URL
   if (!url) throw new Error('DATABASE_URL is required')
   const first = createDedicatedDatabaseClient({ connectionString: url })
@@ -274,7 +279,7 @@ test('two PostgreSQL connections acquire exactly one lease', async ({ chapter, u
     await first.query('BEGIN')
     const won = await acquireChapterLeaseOnClient(first, {
       chapterId: chapter.id,
-      sessionId: 'race-a',
+      sessionId: 'race-a-session',
       actor: { userId, actorKind: 'studio' },
     })
     expect(won.ok).toBe(true)
@@ -282,7 +287,7 @@ test('two PostgreSQL connections acquire exactly one lease', async ({ chapter, u
     await second.query('BEGIN')
     const pending = acquireChapterLeaseOnClient(second, {
       chapterId: chapter.id,
-      sessionId: 'race-b',
+      sessionId: 'race-b-session',
       actor: { userId, actorKind: 'studio' },
     })
     await first.query('COMMIT')
@@ -294,7 +299,7 @@ test('two PostgreSQL connections acquire exactly one lease', async ({ chapter, u
   }
 })
 
-test('withChapterLease releases an implicit lease even when the write fails', async ({ chapter, userId }) => {
+test('withChapterLease releases an implicit lease even when the write fails', async ({ sandbox: { chapter, userId } }) => {
   await expect(withTransaction(client => withChapterLease(
     client,
     chapter.id,
@@ -304,7 +309,7 @@ test('withChapterLease releases an implicit lease even when the write fails', as
   expect(await fetchChapterLease(chapter.id)).toBeNull()
 })
 
-test('reorder refuses chapters with a live lease and verifies revisions', async ({ chapter, userId, editionId }) => {
+test('reorder refuses chapters with a live lease and verifies revisions', async ({ sandbox: { chapter, userId, editionId } }) => {
   const lease = await leaseFor(userId, chapter.id)
   await expect(reorderChapters(editionId, [{ id: chapter.id, revision: chapter.revision }]))
     .rejects.toMatchObject({ code: 'lease-held' })
@@ -320,7 +325,7 @@ test('reorder refuses chapters with a live lease and verifies revisions', async 
   await expect(reorderChapters(editionId, [{ id: chapter.id, revision: chapter.revision }])).resolves.toBeUndefined()
 })
 
-test('deleting an edition or release is blocked by a live chapter lease', async ({ chapter, userId, editionId, releaseId }) => {
+test('deleting an edition or release is blocked by a live chapter lease', async ({ sandbox: { chapter, userId, editionId, releaseId } }) => {
   const lease = await leaseFor(userId, chapter.id)
   await expect(deleteEdition(editionId)).rejects.toMatchObject({ code: 'lease-held' })
   await expect(deleteRelease(releaseId)).rejects.toMatchObject({ code: 'lease-held' })
@@ -334,7 +339,7 @@ test('deleting an edition or release is blocked by a live chapter lease', async 
   await expect(deleteEdition(editionId)).resolves.toBeUndefined()
 })
 
-test('expired leases are ignored by the status read and by deletes', async ({ chapter, userId, editionId }) => {
+test('expired leases are ignored by the status read and by deletes', async ({ sandbox: { chapter, userId, editionId } }) => {
   await leaseFor(userId, chapter.id)
   await expireLease(chapter.id)
   expect(await fetchChapterLease(chapter.id)).toBeNull()

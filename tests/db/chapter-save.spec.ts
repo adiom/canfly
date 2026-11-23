@@ -1,9 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import { expect, test as base } from '@playwright/test'
-import { dbQuery, withTransaction } from '@/lib/db'
+import { dbQuery, dbQueryOne, withTransaction } from '@/lib/db'
 import type { Chapter } from '@/lib/releases-types'
 import { chapterUpdateSchema } from '@/lib/schemas/studio'
 import { callChapterMcp } from '@/e2e/setup/chapter-mcp'
+import {
+  acquireChapterLease,
+  releaseChapterLease,
+  type ChapterLeaseGrant,
+} from '@/lib/server/chapter-leases'
 import {
   createChapter,
   fetchChapterById,
@@ -18,10 +23,17 @@ const original = '<p>Original chapter</p>'
 const edited = '<p>Second chapter draft</p>'
 const audioUrl = 'https://example.test/chapter.mp3'
 
-const test = base.extend<{ chapter: Chapter }>({
-  chapter: async ({}, applyFixture) => {
+interface Sandbox {
+  chapter: Chapter
+  userId: string
+}
+
+const test = base.extend<{ sandbox: Sandbox }>({
+  sandbox: async ({}, applyFixture) => {
     const slug = `fixture-${randomUUID()}`
+    const suffix = randomUUID().replaceAll('-', '').slice(0, 12)
     const release = await createRelease({ title: 'Synthetic release', slug, status: 'draft' })
+    let userId: string | null = null
     try {
       const edition = await createEdition({ release_id: release.id, slug, status: 'draft' })
       const chapter = await createChapter({
@@ -34,58 +46,93 @@ const test = base.extend<{ chapter: Chapter }>({
         audio_url: audioUrl,
         duration_seconds: 42,
       })
-      if (!chapter) throw new Error('Expected persisted chapter')
-      await applyFixture(chapter)
+      const user = await dbQueryOne<{ id: string }>(
+        `INSERT INTO users (login, email, handle, display_name, public_role)
+         VALUES ($1, $2, $1, 'Chapter Tester', 'author') RETURNING id`,
+        [`chapter_${suffix}`, `chapter-${suffix}@canfly.test`],
+      )
+      if (!chapter || !user) throw new Error('Expected persisted chapter')
+      userId = user.id
+      await applyFixture({ chapter, userId: user.id })
     } finally {
       await dbQuery('DELETE FROM releases WHERE id = $1', [release.id])
+      if (userId) await dbQuery('DELETE FROM users WHERE id = $1', [userId])
     }
   },
 })
 
+/** MCP-путь: lease захватывается и освобождается внутри одной транзакции. */
+function implicit(userId: string): ChapterLeaseGrant {
+  return { mode: 'implicit', actor: { userId, actorKind: 'mcp' }, sessionId: `mcp-${randomUUID()}` }
+}
 
-test('sanitizes before comparison and saves only supplied fields, including empty content', async ({ chapter }) => {
+function session(userId: string, lease: { sessionId: string; token: string; generation: number }): ChapterLeaseGrant {
+  return {
+    mode: 'session',
+    actor: { userId, actorKind: 'studio' },
+    proof: { sessionId: lease.sessionId, token: lease.token, generation: lease.generation },
+  }
+}
+
+test('sanitizes before comparison and saves only supplied fields, including empty content', async ({ sandbox: { chapter, userId } }) => {
+  const lease = implicit(userId)
   const { id } = chapter
-  await updateChapter(id, { title: 'Renamed', content: undefined })
-  expect(await updateChapter(id, { content: '<p style="color:red">Original chapter</p>' }))
-    .toMatchObject({ content: original, word_count: 2 })
+  let revision = chapter.revision
+  const save = async (data: Record<string, unknown>) => {
+    const saved = await updateChapter(id, data, { expectedRevision: revision, lease })
+    revision = saved.revision
+    return saved
+  }
+
+  expect(await save({ title: 'Renamed' })).toMatchObject({ title: 'Renamed', revision: 1 })
+  expect(await save({ content: '<p style="color:red">Original chapter</p>' }))
+    .toMatchObject({ content: original, word_count: 2, revision: 1 })
   expect(await fetchChapterVersions(id)).toEqual([])
 
   const { title, ...patch } = chapterUpdateSchema.parse({ content: '' })
-  expect(await updateChapter(id, { ...patch, title: title ?? undefined })).toMatchObject({
+  expect(await save({ ...patch, title: title ?? undefined })).toMatchObject({
     content: '', word_count: 0, title: 'Renamed', status: 'published', audio_url: audioUrl, duration_seconds: 42,
   })
   expect(await fetchChapterVersions(id)).toMatchObject([{ version_number: 1, content: original }])
-  expect(await updateChapter(id, { audio_url: null })).toMatchObject({
+  expect(await save({ audio_url: null })).toMatchObject({
     audio_url: null, duration_seconds: 42, content: '', word_count: 0,
   })
   expect(await fetchChapterVersions(id)).toHaveLength(1)
 })
 
-test('rolls back the snapshot when updating the chapter fails', async ({ chapter }) => {
+test('rolls back the snapshot when updating the chapter fails', async ({ sandbox: { chapter, userId } }) => {
+  const lease = implicit(userId)
   const { id } = chapter
-  await expect(updateChapter(id, { title: null, content: edited })).rejects.toMatchObject({
-    code: '23502', column: 'title',
-  })
+  await expect(updateChapter(id, { title: null, content: edited }, {
+    expectedRevision: chapter.revision,
+    lease,
+  })).rejects.toMatchObject({ code: '23502', column: 'title' })
   expect(await fetchChapterById(id)).toEqual(chapter)
   expect(await fetchChapterVersions(id)).toEqual([])
-  await updateChapter(id, { content: edited })
+  await updateChapter(id, { content: edited }, { expectedRevision: chapter.revision, lease })
   expect(await fetchChapterVersions(id)).toMatchObject([{ version_number: 1, content: original }])
 })
 
-test('rolls back the chapter write when inserting a snapshot fails', async ({ chapter }) => {
+test('rolls back the chapter write when inserting a snapshot fails', async ({ sandbox: { chapter, userId } }) => {
+  const lease = implicit(userId)
   const { id } = chapter
   await dbQuery(
     'INSERT INTO chapter_versions (chapter_id, content, version_number) VALUES ($1, $2, $3)',
     [id, original, 2147483647],
   )
   const history = await fetchChapterVersions(id)
-  await expect(updateChapter(id, { content: edited, title: 'Renamed' })).rejects.toMatchObject({ code: '22003' })
+  await expect(updateChapter(id, { content: edited, title: 'Renamed' }, {
+    expectedRevision: chapter.revision,
+    lease,
+  })).rejects.toMatchObject({ code: '22003' })
   expect(await fetchChapterById(id)).toEqual(chapter)
   expect(await fetchChapterVersions(id)).toEqual(history)
 })
 
-test('serializes competing saves and restores using the same chapter lock', async ({ chapter }) => {
+test('serializes competing saves and restores under the chapter lock', async ({ sandbox: { chapter, userId } }) => {
+  const lease = implicit(userId)
   const { id } = chapter
+
   async function race<T, U>(first: () => Promise<T>, second: () => Promise<U>) {
     let results: Promise<[PromiseSettledResult<T>, PromiseSettledResult<U>]> | undefined
     try {
@@ -102,41 +149,36 @@ test('serializes competing saves and restores using the same chapter lock', asyn
       })
     } finally {
       const settled = await results
-      for (const result of settled ?? []) {
-        if (result.status === 'rejected') throw result.reason
-      }
+      const fulfilled = (settled ?? []).filter(result => result.status === 'fulfilled')
+      const rejected = (settled ?? []).filter(result => result.status === 'rejected')
+      expect(fulfilled).toHaveLength(1)
+      expect(rejected).toHaveLength(1)
+      expect(rejected[0]).toMatchObject({ reason: { code: 'conflict' } })
     }
   }
 
   const latest = '<p>Third draft</p>'
   await race(
-    () => updateChapter(id, { content: edited, title: 'Renamed' }),
-    () => updateChapter(id, { content: latest, audio_url: null }),
+    () => updateChapter(id, { content: edited, title: 'Renamed' }, { expectedRevision: chapter.revision, lease }),
+    () => updateChapter(id, { content: latest, audio_url: null }, { expectedRevision: chapter.revision, lease }),
   )
-  const afterSaves = await fetchChapterById(id)
-  expect(afterSaves).toMatchObject({ title: 'Renamed', audio_url: null, status: 'published' })
+  const afterSave = await fetchChapterById(id)
+  expect(afterSave).toMatchObject({ revision: chapter.revision + 1, status: 'published' })
   const history = await fetchChapterVersions(id)
-  expect(history).toMatchObject([
-    { version_number: 2, content: afterSaves?.content === edited ? latest : edited },
-    { version_number: 1, content: original },
-  ])
+  expect(history).toMatchObject([{ version_number: 1, content: original }])
 
   const incoming = '<p>Another draft</p>'
-  const target = history[1]
   await race(
-    () => updateChapter(id, { content: incoming }),
-    () => restoreChapterVersion(id, target.id),
+    () => updateChapter(id, { content: incoming }, { expectedRevision: afterSave!.revision, lease }),
+    () => restoreChapterVersion(id, history[0].id, { expectedRevision: afterSave!.revision, lease }),
   )
   const afterRestore = await fetchChapterById(id)
-  expect([original, incoming]).toContain(afterRestore?.content)
-  expect(await fetchChapterVersions(id)).toMatchObject([
-    { version_number: 4, content: afterRestore?.content === original ? incoming : original },
-    { version_number: 3, content: afterSaves?.content },
-    ...history,
-  ])
+  expect(afterRestore).toMatchObject({ revision: chapter.revision + 2 })
+  expect(await fetchChapterVersions(id)).toHaveLength(2)
 })
 
-test('preserves comic pages and can restore the empty first revision once', async ({ chapter }) => {
+test('preserves comic pages and can restore the empty first revision once', async ({ sandbox: { chapter, userId } }) => {
+  const lease = implicit(userId)
   const comic = await createChapter({
     edition_id: chapter.edition_id,
     chapter_index: 2,
@@ -146,84 +188,92 @@ test('preserves comic pages and can restore the empty first revision once', asyn
 
   const pages = JSON.stringify(['https://example.test/1.png', 'https://example.test/2.png'])
   const patch = { content: pages, word_count: 0 }
-  expect(await updateChapter(comic.id, patch, { archiveEmptyContent: true })).toMatchObject(patch)
-  await updateChapter(comic.id, patch, { archiveEmptyContent: true })
+  const saved = await updateChapter(comic.id, patch, {
+    archiveEmptyContent: true, expectedRevision: comic.revision, lease,
+  })
+  expect(saved).toMatchObject(patch)
+  await updateChapter(comic.id, patch, {
+    archiveEmptyContent: true, expectedRevision: saved.revision, lease,
+  })
   const versions = await fetchChapterVersions(comic.id)
   expect(versions).toMatchObject([{ content: '', version_number: 1 }])
-  expect(await restoreChapterVersion(chapter.id, versions[0].id)).toBeNull()
+  expect(await restoreChapterVersion(chapter.id, versions[0].id, {
+    expectedRevision: chapter.revision, lease,
+  })).toBeNull()
   expect(await fetchChapterVersions(chapter.id)).toEqual([])
-  expect(await restoreChapterVersion(comic.id, versions[0].id)).toMatchObject({ content: '', word_count: 0 })
-  await restoreChapterVersion(comic.id, versions[0].id)
+  const empty = await restoreChapterVersion(comic.id, versions[0].id, {
+    expectedRevision: saved.revision, lease,
+  })
+  expect(empty).toMatchObject({ content: '', word_count: 0 })
+  await restoreChapterVersion(comic.id, versions[0].id, {
+    expectedRevision: empty!.revision, lease,
+  })
   expect(await fetchChapterVersions(comic.id)).toMatchObject([
     { version_number: 2, content: pages },
     { version_number: 1, content: '' },
   ])
 })
 
-test('only one guarded writer wins and the rejected write creates no history', async ({ chapter }) => {
-  const { id, revision } = chapter
-  expect(revision).toBe(0)
-  const results = await Promise.allSettled([
-    updateChapter(id, { content: edited }, { expectedRevision: revision }),
-    updateChapter(id, { content: '<p>Third draft</p>' }, { expectedRevision: revision }),
-  ])
-  expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1)
-  expect(results.find(result => result.status === 'rejected')).toMatchObject({
-    reason: { code: 'conflict' },
-  })
-  expect(await fetchChapterById(id)).toMatchObject({ revision: revision + 1 })
-  expect(await fetchChapterVersions(id)).toMatchObject([{ version_number: 1, content: original }])
+test('a guarded write fails if the chapter disappeared', async ({ sandbox: { chapter, userId } }) => {
+  await dbQuery('DELETE FROM chapters WHERE id = $1', [chapter.id])
+  await expect(updateChapter(chapter.id, { title: 'Lost' }, {
+    expectedRevision: chapter.revision,
+    lease: implicit(userId),
+  })).rejects.toMatchObject({ code: 'not-found' })
 })
 
-test('unguarded writes advance the revision and a guarded restore invalidates other drafts', async ({ chapter }) => {
+test('a guarded restore invalidates drafts based on older revisions', async ({ sandbox: { chapter, userId } }) => {
+  const lease = implicit(userId)
   const { id, revision } = chapter
-  const saved = await updateChapter(id, { content: edited })
+  const saved = await updateChapter(id, { content: edited }, { expectedRevision: revision, lease })
   expect(saved).toMatchObject({ revision: revision + 1 })
   const [previous] = await fetchChapterVersions(id)
-  await expect(restoreChapterVersion(id, previous.id, revision)).rejects.toMatchObject({ code: 'conflict' })
-  const restored = await restoreChapterVersion(id, previous.id, revision + 1)
-  expect(restored).toMatchObject({ revision: revision + 2, content: original })
-  await expect(updateChapter(id, { title: 'Stale' }, { expectedRevision: revision + 1 }))
+  await expect(restoreChapterVersion(id, previous.id, { expectedRevision: revision, lease }))
     .rejects.toMatchObject({ code: 'conflict' })
-  expect(await updateChapter(id, { title: 'Renamed' }, { expectedRevision: revision + 2 }))
+  const restored = await restoreChapterVersion(id, previous.id, { expectedRevision: revision + 1, lease })
+  expect(restored).toMatchObject({ revision: revision + 2, content: original })
+  await expect(updateChapter(id, { title: 'Stale' }, { expectedRevision: revision + 1, lease }))
+    .rejects.toMatchObject({ code: 'conflict' })
+  expect(await updateChapter(id, { title: 'Renamed' }, { expectedRevision: revision + 2, lease }))
     .toMatchObject({ title: 'Renamed', content: original, revision: revision + 3 })
   expect(await fetchChapterVersions(id)).toHaveLength(2)
 })
 
-test('a guarded write fails if the chapter disappeared', async ({ chapter }) => {
-  await dbQuery('DELETE FROM chapters WHERE id = $1', [chapter.id])
-  await expect(updateChapter(chapter.id, { title: 'Lost' }, { expectedRevision: chapter.revision }))
-    .rejects.toMatchObject({ code: 'not-found' })
-})
+test.describe('MCP chapter writes', () => {
+  test('legacy tools reject blind writes and accept revisioned ones', async ({ sandbox: { chapter } }) => {
+    const { id, revision } = chapter
 
-test('MCP accepts legacy writes and optionally rejects stale edits', async ({ chapter }) => {
-  const { id, revision } = chapter
-  const legacy = await callChapterMcp('canfly_update_chapter', { id, content: edited })
-  expect(legacy.isError).not.toBe(true)
-  expect(JSON.parse(legacy.content[0].text)).toMatchObject({ revision: revision + 1 })
+    const blind = await callChapterMcp('canfly_update_chapter', { id, content: edited })
+    expect(blind.isError).toBe(true)
+    expect(blind.structuredContent).toMatchObject({ code: 'revision_required' })
+    expect(await fetchChapterById(id)).toEqual(chapter)
 
-  const stale = await callChapterMcp('canfly_update_chapter', { id, expected_revision: revision, content: original })
-  expect(stale.isError).toBe(true)
-  expect(stale.content[0].text).toContain('Глава изменилась')
-  const [previous] = await fetchChapterVersions(id)
-  const staleRestore = await callChapterMcp('canfly_restore_chapter_version', {
-    chapter_id: id, version_id: previous.id, expected_revision: revision,
+    const legacy = await callChapterMcp('canfly_update_chapter', { id, expected_revision: revision, content: edited })
+    expect(legacy.isError).not.toBe(true)
+    expect(JSON.parse(legacy.content[0].text)).toMatchObject({ revision: revision + 1 })
+
+    const stale = await callChapterMcp('canfly_update_chapter', {
+      id, expected_revision: revision, content: original,
+    })
+    expect(stale.isError).toBe(true)
+    expect(stale.structuredContent).toMatchObject({ code: 'conflict' })
+    const [previous] = await fetchChapterVersions(id)
+
+    const blindRestore = await callChapterMcp('canfly_restore_chapter_version', {
+      chapter_id: id, version_id: previous.id,
+    })
+    expect(blindRestore.isError).toBe(true)
+    expect(blindRestore.structuredContent).toMatchObject({ code: 'revision_required' })
+
+    const legacyRestore = await callChapterMcp('canfly_restore_chapter_version', {
+      chapter_id: id, version_id: previous.id, expected_revision: revision + 1,
+    })
+    expect(legacyRestore.isError).not.toBe(true)
+    expect(JSON.parse(legacyRestore.content[0].text)).toMatchObject({ revision: revision + 2 })
+    expect(await fetchChapterById(id)).toMatchObject({ content: original })
   })
-  expect(staleRestore.isError).toBe(true)
-  expect(staleRestore.content[0].text).toContain('Глава изменилась')
-  const current = await callChapterMcp('canfly_get_chapter', { id })
-  expect(JSON.parse(current.content[0].text)).toMatchObject({ revision: revision + 1, content: edited })
 
-  const legacyRestore = await callChapterMcp('canfly_restore_chapter_version', {
-    chapter_id: id, version_id: previous.id,
-  })
-  expect(legacyRestore.isError).not.toBe(true)
-  expect(JSON.parse(legacyRestore.content[0].text)).toMatchObject({ revision: revision + 2 })
-  expect(await fetchChapterById(id)).toMatchObject({ content: original })
-})
-
-test.describe('MCP chapter writes v2', () => {
-  test('applies a current patch and returns a structured conflict for a stale patch', async ({ chapter }) => {
+  test('v2 applies a current patch and returns a structured conflict for a stale patch', async ({ sandbox: { chapter } }) => {
     const { id, revision } = chapter
     const saved = await callChapterMcp('canfly_update_chapter_v2', {
       id, expected_revision: revision, content: edited,
@@ -244,9 +294,12 @@ test.describe('MCP chapter writes v2', () => {
     expect(await fetchChapterVersions(id)).toEqual(history)
   })
 
-  test('rejects both operations without a revision', async ({ chapter }) => {
+  test('v2 rejects operations without a revision', async ({ sandbox: { chapter, userId } }) => {
     const { id, revision } = chapter
-    const current = await updateChapter(id, { content: edited }, { expectedRevision: revision })
+    const current = await updateChapter(id, { content: edited }, {
+      expectedRevision: revision,
+      lease: implicit(userId),
+    })
     const history = await fetchChapterVersions(id)
     const update = await callChapterMcp('canfly_update_chapter_v2', { id, content: original })
     const restore = await callChapterMcp('canfly_restore_chapter_version_v2', {
@@ -260,11 +313,12 @@ test.describe('MCP chapter writes v2', () => {
     expect(await fetchChapterVersions(id)).toEqual(history)
   })
 
-  test('rejects a stale restore and archives the latest text on deliberate restore', async ({ chapter }) => {
+  test('v2 rejects a stale restore and archives the latest text on deliberate restore', async ({ sandbox: { chapter, userId } }) => {
+    const lease = implicit(userId)
     const { id, revision } = chapter
-    await updateChapter(id, { content: edited }, { expectedRevision: revision })
+    await updateChapter(id, { content: edited }, { expectedRevision: revision, lease })
     const latestText = '<p>Later chapter draft</p>'
-    const latest = await updateChapter(id, { content: latestText }, { expectedRevision: revision + 1 })
+    const latest = await updateChapter(id, { content: latestText }, { expectedRevision: revision + 1, lease })
     const history = await fetchChapterVersions(id)
     const args = { chapter_id: id, version_id: history[1].id }
 
@@ -285,5 +339,43 @@ test.describe('MCP chapter writes v2', () => {
       { version_number: 3, content: latestText },
       ...history,
     ])
+  })
+
+  test('Studio lease blocks MCP and a stale Studio write after MCP releases', async ({ sandbox: { chapter, userId } }) => {
+    const { id, revision } = chapter
+    const acquired = await acquireChapterLease({
+      chapterId: id,
+      sessionId: `session-${randomUUID()}`,
+      actor: { userId, actorKind: 'studio' },
+    })
+    if (!acquired.ok) throw new Error('Expected free chapter')
+
+    const blocked = await callChapterMcp('canfly_update_chapter_v2', {
+      id, expected_revision: revision, content: edited,
+    })
+    expect(blocked).toMatchObject({ isError: true, structuredContent: { ok: false, code: 'lease_held' } })
+    expect(await fetchChapterById(id)).toEqual(chapter)
+
+    await releaseChapterLease({
+      chapterId: id,
+      sessionId: acquired.lease.sessionId,
+      actor: { userId, actorKind: 'studio' },
+      proof: {
+        sessionId: acquired.lease.sessionId,
+        token: acquired.lease.token,
+        generation: acquired.lease.generation,
+      },
+    })
+
+    const mcp = await callChapterMcp('canfly_update_chapter_v2', {
+      id, expected_revision: revision, content: edited,
+    })
+    expect(mcp.isError).not.toBe(true)
+
+    await expect(updateChapter(id, { content: original }, {
+      expectedRevision: revision,
+      lease: session(userId, acquired.lease),
+    })).rejects.toMatchObject({ code: 'lease-lost' })
+    expect(await fetchChapterById(id)).toMatchObject({ content: edited, revision: revision + 1 })
   })
 })
