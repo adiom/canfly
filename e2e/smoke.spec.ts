@@ -69,7 +69,9 @@ test.describe('smoke: character profile tabs', () => {
     await page.goto('/characters', { waitUntil: 'domcontentloaded' })
 
     const firstLink = page.locator('a[href^="/characters/"]').first()
-    const href = await firstLink.getAttribute('href')
+    const emptyState = page.getByText('Здесь пока тихо — герои ещё не заселили эту вселенную.')
+    await expect(firstLink.or(emptyState).first()).toBeVisible()
+    const href = (await firstLink.count()) > 0 ? await firstLink.getAttribute('href') : null
     test.skip(!href || href === '/characters', 'no characters in DB')
 
     const basePath = href!.split('?')[0]
