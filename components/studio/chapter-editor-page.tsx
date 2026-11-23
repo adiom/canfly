@@ -7,14 +7,14 @@ import type { ChapterWriteFailure } from '@/lib/studio/chapter-write'
 import { archiveChapterDraft, type ChapterDraft } from '@/lib/studio/chapter-drafts'
 import { saveChapterAutosave } from '@/lib/studio/chapter-autosave'
 import { planLeaseReacquire } from '@/lib/studio/chapter-reacquire'
-import { saveMediaDraft, type PendingAudioUpload } from '@/lib/studio/media-drafts'
+import { saveMediaDraft, type MediaDraftInput } from '@/lib/studio/media-drafts'
 import { ChapterDraftBlocked } from '@/components/studio/chapter-draft-blocked'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import type { Editor } from '@tiptap/react'
 import type { Chapter, ChapterEditorialNote, EditionFormat } from '@/lib/releases-types'
 import {
-  getChapter, publishChapterAction, deleteChapterAction, updateChapterAction,
+  getChapterForRecovery, publishChapterAction, deleteChapterAction, updateChapterAction,
   restoreChapterVersionAction, updateComicChapterPagesAction,
 } from '@/lib/actions/studio'
 import { TelegraphEditor } from '@/components/studio/telegraph-editor'
@@ -125,8 +125,23 @@ export function ChapterEditorPage({
   const revisionRef = useRef(chapter.revision)
   const leaseProofRef = useRef<ChapterLeaseProof | null>(null)
   const readOnlyRef = useRef(true)
-  const comicPagesRef = useRef<string[]>(parseComicPages(chapter.content))
-  const audioDraftRef = useRef<(ChapterDraft & { pendingAudio?: PendingAudioUpload }) | null>(null)
+  const mediaDraftRef = useRef<MediaDraftInput | null>(null)
+  const mediaUploadRef = useRef(false)
+  const [unsavedMedia, setUnsavedMedia] = useState<MediaDraftInput | null>(null)
+  const handleLocalMedia = useCallback((draft: MediaDraftInput | null, saved = true) => {
+    mediaDraftRef.current = draft
+    setUnsavedMedia(saved ? null : draft)
+  }, [])
+  const handleMediaUpload = useCallback((pending: boolean) => {
+    mediaUploadRef.current = pending
+  }, [])
+  const hasExtraDraft = useCallback(() => !!mediaDraftRef.current || mediaUploadRef.current, [])
+  const persistExtraDraft = useCallback(() => {
+    const draft = mediaDraftRef.current
+    const saved = !draft || saveMediaDraft(draft)
+    setUnsavedMedia(saved ? null : draft)
+    return saved && !mediaUploadRef.current
+  }, [])
   const isReadOnly = useCallback(() => readOnlyRef.current, [])
   const getRevision = useCallback(() => revisionRef.current, [])
   const saveComicPages = useCallback(async (pages: string[]) => {
@@ -148,8 +163,9 @@ export function ChapterEditorPage({
   const [blockedRecovery, setBlockedRecovery] = useState<{
     fresh: Chapter
     draft: ChapterDraft
-    revision: number
   } | null>(null)
+  const [accessRevoked, setAccessRevoked] = useState(false)
+  const accessRevokedRef = useRef(false)
   const [, setContentVersion] = useState(0)
   const archivePrefix = `cf-chapter-draft-archive:${editorUserId}:${chapter.id}:`
   const archiveDraft = useCallback((draft: ChapterDraft, revision: number) =>
@@ -161,12 +177,6 @@ export function ChapterEditorPage({
     const editor = tiptapRef.current
     if (editor && !editor.isDestroyed) editor.commands.setContent(draft.content, { emitUpdate: false })
   }, [])
-  const handleComicPagesChange = useCallback((pages: string[]) => {
-    comicPagesRef.current = pages
-  }, [])
-  const handleAudioDraftChange = useCallback((draft: ChapterDraft & { pendingAudio?: PendingAudioUpload }) => {
-    audioDraftRef.current = draft
-  }, [])
   const autosave = useAutosave({
     storageKey: `cf-chapter-draft:${editorUserId}:${chapter.id}`,
     legacyStorageKey: `cf-chapter-draft:${chapter.id}`,
@@ -174,6 +184,8 @@ export function ChapterEditorPage({
     getRevision,
     archiveDraft,
     isReadOnly,
+    hasExtraDraft,
+    persistExtraDraft,
     save: async (draft, patch) => {
       const outcome = await saveChapterAutosave(draft, patch, {
         revision: revisionRef.current,
@@ -192,6 +204,10 @@ export function ChapterEditorPage({
       }
       if (outcome.revision !== undefined) revisionRef.current = outcome.revision
       if (outcome.failure) {
+        if (outcome.failure.code === 'forbidden') {
+          accessRevokedRef.current = true
+          setAccessRevoked(true)
+        }
         setSaveError(error => error && (error.code === 'conflict' || error.code === 'not-found')
           ? error
           : outcome.failure!)
@@ -204,62 +220,9 @@ export function ChapterEditorPage({
     onRestore: applyDraft,
   })
 
-  function archiveLocalMedia(): boolean {
-    let ok = true
-    if (isComic) {
-      const pages = comicPagesRef.current
-      if (JSON.stringify(pages) !== JSON.stringify(parseComicPages(chapterSnapshot.content))) {
-        ok = saveMediaDraft({
-          kind: 'comic',
-          chapterId: chapter.id,
-          userId: editorUserId,
-          baseRevision: revisionRef.current,
-          title: chapterTitle || 'Комикс',
-          content: JSON.stringify(pages),
-        }) && ok
-      }
-    }
-    if (isAudioEditor && audioDraftRef.current) {
-      const draft = audioDraftRef.current
-      const serverDraft = JSON.stringify({
-        duration_seconds: chapterSnapshot.duration_seconds,
-        audio_metadata: chapterSnapshot.audio_metadata,
-      })
-      if (draft.title !== chapterSnapshot.title || draft.content !== serverDraft || draft.pendingAudio) {
-        ok = saveMediaDraft({
-          kind: 'audio',
-          chapterId: chapter.id,
-          userId: editorUserId,
-          baseRevision: revisionRef.current,
-          title: draft.title,
-          content: draft.content,
-          pendingAudio: draft.pendingAudio,
-        }) && ok
-      }
-    }
-    return ok
-  }
-
-  function hasLocalMediaChanges(): boolean {
-    if (isComic && JSON.stringify(comicPagesRef.current) !== JSON.stringify(parseComicPages(chapterSnapshot.content))) {
-      return true
-    }
-    if (isAudioEditor && audioDraftRef.current) {
-      const draft = audioDraftRef.current
-      const serverDraft = JSON.stringify({
-        duration_seconds: chapterSnapshot.duration_seconds,
-        audio_metadata: chapterSnapshot.audio_metadata,
-      })
-      return draft.title !== chapterSnapshot.title || draft.content !== serverDraft || !!draft.pendingAudio
-    }
-    return false
-  }
-
   function archiveLocalDraft(): boolean {
-    let ok = true
-    const current = autosave.getValue()
-    if (autosave.isDirty()) ok = archiveDraft(current, revisionRef.current) && ok
-    return archiveLocalMedia() && ok
+    const textSaved = !autosave.isDirty() || archiveDraft(autosave.getValue(), revisionRef.current)
+    return persistExtraDraft() && textSaved
   }
 
   function applyServerSnapshot(fresh: Chapter) {
@@ -303,14 +266,16 @@ export function ChapterEditorPage({
   const lease = useChapterLease({
     chapterId: chapter.id,
     onLost: () => {
-      const current = autosave.getValue()
-      if (autosave.isDirty() && !archiveDraft(current, revisionRef.current)) {
+      if (!autosave.isDirty() && !hasExtraDraft()) return
+      const archived = archiveLocalDraft()
+      if (archived) {
+        toast.warning('Право редактирования потеряно. Правки сохранены в локальных черновиках.')
+      } else {
         toast.error('Не удалось сохранить черновик в архив. Скопируйте текст из редактора.')
       }
-      archiveLocalMedia()
-      toast.warning('Право редактирования потеряно. Текст сохранён в локальных черновиках.')
     },
     onAcquired: async (acquired) => {
+      if (accessRevokedRef.current || mediaUploadRef.current) return false
       leaseProofRef.current = {
         sessionId: acquired.sessionId,
         token: acquired.token,
@@ -319,10 +284,16 @@ export function ChapterEditorPage({
       // onAcquired вызывается при повторном захвате; до завершения
       // восстановления редактор остаётся read-only.
       try {
-        const { chapter: fresh } = await getChapter(chapter.id)
-        if (!fresh) return
-        const dirty = autosave.isDirty() || hasLocalMediaChanges()
-        const archived = archiveLocalDraft()
+        const fresh = await getChapterForRecovery(chapter.id)
+        if (!fresh) {
+          archiveLocalDraft()
+          accessRevokedRef.current = true
+          setAccessRevoked(true)
+          return false
+        }
+        if (accessRevokedRef.current || mediaUploadRef.current) return false
+        const dirty = autosave.isDirty() || hasExtraDraft()
+        const archived = fresh.revision === revisionRef.current || archiveLocalDraft()
         const action = planLeaseReacquire({
           dirty,
           currentRevision: revisionRef.current,
@@ -333,15 +304,16 @@ export function ChapterEditorPage({
           readOnlyRef.current = true
           setBlockedRecovery({
             fresh,
-            draft: autosave.getValue(),
-            revision: revisionRef.current,
+            draft: mediaDraftRef.current
+              ? { title: mediaDraftRef.current.title, content: JSON.stringify(mediaDraftRef.current, null, 2) }
+              : autosave.getValue(),
           })
           setSaveError({
             ok: false,
             code: 'error',
             message: 'Черновик не сохранён в браузере. Скопируйте текст перед загрузкой серверной версии.',
           })
-          return
+          return true
         }
         if (action === 'retry') {
           setSaveError(null)
@@ -354,11 +326,11 @@ export function ChapterEditorPage({
               // Ошибка остаётся видимой, черновик уже в архиве/sessionStorage.
             }
           }
-          return
+          return !accessRevokedRef.current
         }
         if (action === 'none') {
           setSaveError(null)
-          return
+          return true
         }
 
         applyServerSnapshot(fresh)
@@ -366,17 +338,24 @@ export function ChapterEditorPage({
           'Глава изменилась, пока вы были в режиме чтения. Загружена серверная версия; ваш текст сохранён в «Локальные черновики».',
         )
         toast.warning('Глава изменилась. Откройте «Локальные черновики», чтобы восстановить свой текст.')
+        return true
       } catch {
         setSaveError({
           ok: false,
           code: 'error',
           message: 'Не удалось перечитать главу после возврата права редактирования.',
         })
+        return false
       }
     },
   })
 
-  const readOnly = lease.state.status !== 'active' || blockedRecovery !== null
+  const readOnly = lease.state.status !== 'active' || blockedRecovery !== null || autosave.blockedDraft !== null || accessRevoked
+
+  const abandonLease = lease.abandon
+  useEffect(() => {
+    if (accessRevoked) abandonLease()
+  }, [accessRevoked, abandonLease])
 
   useEffect(() => {
     leaseProofRef.current = lease.proof
@@ -414,6 +393,14 @@ export function ChapterEditorPage({
     return true
   }
 
+  function applyWriteFailure(failure: ChapterWriteFailure) {
+    if (failure.code === 'forbidden') {
+      accessRevokedRef.current = true
+      setAccessRevoked(true)
+    }
+    setSaveError(failure)
+  }
+
   async function handleRestoreVersion(versionId: string) {
     if (restorePending.current) return
     restorePending.current = true
@@ -433,7 +420,7 @@ export function ChapterEditorPage({
       }
       const result = await restoreChapterVersionAction(chapter.id, versionId, revisionRef.current, proof)
       if (!result.ok) {
-        setSaveError(result)
+        applyWriteFailure(result)
         throw new Error(result.message)
       }
       revisionRef.current = result.value.revision
@@ -444,7 +431,9 @@ export function ChapterEditorPage({
       setSaveError(null)
       setRecoveryNotice(null)
     } finally {
-      if (tiptapRef.current && !tiptapRef.current.isDestroyed) tiptapRef.current.setEditable(true, false)
+      if (tiptapRef.current && !tiptapRef.current.isDestroyed) {
+        tiptapRef.current.setEditable(!readOnlyRef.current && !accessRevokedRef.current, false)
+      }
       restorePending.current = false
       setRestoring(false)
     }
@@ -547,7 +536,7 @@ export function ChapterEditorPage({
       if (!proof) throw new Error('Публикация недоступна: глава открыта в другой сессии.')
       const result = await publishChapterAction(chapter.id, revisionRef.current, proof)
       if (!result.ok) {
-        setSaveError(result)
+        applyWriteFailure(result)
         toast.error(result.message)
         return
       }
@@ -568,7 +557,7 @@ export function ChapterEditorPage({
       if (!proof) throw new Error('Удаление недоступно: глава открыта в другой сессии.')
       const result = await deleteChapterAction(chapter.id, revisionRef.current, proof)
       if (!result.ok) {
-        setSaveError(result)
+        applyWriteFailure(result)
         toast.error(result.message)
       }
     } catch (error) {
@@ -663,6 +652,19 @@ export function ChapterEditorPage({
       </header>
 
       <ChapterLeaseBanner state={lease.state} onRetry={() => void lease.reacquire()} />
+      {autosave.blockedDraft && (
+        <div role="alert" className="mx-auto max-w-4xl space-y-2 p-4">
+          <p>Не удалось перенести старый черновик в архив. Скопируйте его или освободите место и повторите.</p>
+          <textarea aria-label="Старый локальный черновик" readOnly value={autosave.blockedDraft.content} className="w-full font-mono" />
+          <Button size="sm" onClick={autosave.retryArchive}>Повторить архивацию</Button>
+        </div>
+      )}
+      {unsavedMedia && !blockedRecovery && (
+        <div role="alert" className="mx-auto max-w-4xl space-y-2 p-4">
+          <p>Медиачерновик не записан. Скопируйте его перед уходом.</p>
+          <textarea aria-label="Несохранённый медиачерновик" readOnly value={JSON.stringify(unsavedMedia, null, 2)} className="w-full font-mono" />
+        </div>
+      )}
       {blockedRecovery && (
         <ChapterDraftBlocked
           draft={blockedRecovery.draft}
@@ -682,7 +684,8 @@ export function ChapterEditorPage({
               leaseRef={leaseProofRef}
               readOnly={readOnly}
               onSaveStatus={setSaveStatus}
-              onLocalDraft={handleAudioDraftChange}
+              onLocalDraft={handleLocalMedia}
+              onUploadPending={handleMediaUpload}
               draftOwner={editorUserId}
             />
           </div>
@@ -694,7 +697,8 @@ export function ChapterEditorPage({
                 initialPages={parseComicPages(chapterSnapshot.content)}
                 savePages={saveComicPages}
                 readOnly={readOnly}
-                onPagesChange={handleComicPagesChange}
+                onLocalDraft={handleLocalMedia}
+                onUploadPending={handleMediaUpload}
                 draftOwner={editorUserId}
                 chapterId={chapter.id}
                 chapterRevision={chapterSnapshot.revision}

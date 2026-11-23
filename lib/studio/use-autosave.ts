@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { AutosaveQueue, autosavePatch, type AutosaveResult } from '@/lib/studio/autosave-queue'
@@ -14,6 +14,8 @@ export function useAutosave<T extends object>({
   archiveDraft,
   legacyStorageKey,
   isReadOnly,
+  hasExtraDraft,
+  persistExtraDraft,
 }: {
   storageKey: string
   initial: T
@@ -23,12 +25,17 @@ export function useAutosave<T extends object>({
   archiveDraft?: (value: T, revision: number) => boolean
   legacyStorageKey?: string
   isReadOnly?: () => boolean
+  hasExtraDraft?: () => boolean
+  persistExtraDraft?: () => boolean
 }) {
   const router = useRouter()
   const [queue] = useState(() => new AutosaveQueue(initial, save))
   const [restore] = useState(() => onRestore)
   const [base] = useState(() => JSON.stringify(initial))
   const [shape] = useState(() => initial)
+  const [blockedDraft, setBlockedDraft] = useState<T | null>(null)
+  const retryArchiveRef = useRef<() => void>(() => {})
+  const retryArchive = useCallback(() => retryArchiveRef.current(), [])
   const status = useSyncExternalStore(queue.subscribe, queue.getStatus, () => 'saved' as const)
 
   useEffect(() => {
@@ -39,6 +46,7 @@ export function useAutosave<T extends object>({
           if (archiveDraft?.(draft.value, draft.revision)) {
             sessionStorage.removeItem(key)
             unarchivedDrafts.delete(key)
+            if (key === storageKey) setBlockedDraft(null)
           }
         }
         if (unarchivedDrafts.has(storageKey)) return
@@ -85,9 +93,15 @@ export function useAutosave<T extends object>({
         }
       } catch { /* Ignore invalid local drafts. */ }
     }
+    retryArchiveRef.current = persist
     const unsubscribe = queue.subscribe(persist)
+    // Не разрешаем редактирование, если новый черновик занял бы место старого.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- читаем состояние хранилища после гидратации
+    setBlockedDraft(unarchivedDrafts.get(storageKey)?.value ?? null)
     const beforeUnload = (event: BeforeUnloadEvent) => {
-      if (!queue.isDirty()) return
+      const dirty = queue.isDirty()
+      const mediaAtRisk = hasExtraDraft?.() && !persistExtraDraft?.()
+      if (!dirty && !mediaAtRisk) return
       persist()
       event.preventDefault()
       event.returnValue = ''
@@ -95,38 +109,71 @@ export function useAutosave<T extends object>({
     const visibilityChange = () => {
       if (document.visibilityState !== 'hidden') return
       persist()
+      persistExtraDraft?.()
       if (!isReadOnly?.()) void queue.flush().catch(() => {})
     }
+    const online = () => {
+      if (!isReadOnly?.() && queue.isDirty()) void queue.flush().catch(() => {})
+    }
     const navigate = (event: MouseEvent) => {
-      if (!queue.isDirty() || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+      if ((!queue.isDirty() && !hasExtraDraft?.()) || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
       const anchor = event.target instanceof Element ? event.target.closest('a[href]') : null
       if (!(anchor instanceof HTMLAnchorElement) || anchor.target === '_blank' || anchor.hasAttribute('download')) return
       const url = new URL(anchor.href)
       if (url.origin !== location.origin || (url.pathname === location.pathname && url.search === location.search)) return
       event.preventDefault()
       event.stopPropagation()
-      // В режиме чтения сохранять некуда: черновик уже лёг в архив/sessionStorage.
-      if (isReadOnly?.()) return
+      const target = `${url.pathname}${url.search}${url.hash}`
+      const leaveWithDraft = () => {
+        const archived = !queue.isDirty() || archiveDraft?.(queue.getValue(), getRevision?.() ?? 0)
+        const mediaSaved = !hasExtraDraft?.() || persistExtraDraft?.()
+        if (!archived || !mediaSaved) {
+          const leave = window.confirm(
+            'Не удалось сохранить черновик в браузере. Покинуть страницу без сохранения?',
+          )
+          if (!leave) return false
+        }
+        router.push(target)
+        return true
+      }
+
+      // В режиме чтения сохранять на сервер некуда: сначала пробуем архив,
+      // затем либо переходим, либо предупреждаем о потере.
+      if (isReadOnly?.()) {
+        persist()
+        leaveWithDraft()
+        return
+      }
       void queue.flush().then(() => {
-        router.push(`${url.pathname}${url.search}${url.hash}`)
-      }).catch(() => { toast.error('Не удалось сохранить правки. Повторите попытку перед переходом.') })
+        leaveWithDraft()
+      }).catch(() => {
+        persist()
+        if (!leaveWithDraft()) {
+          toast.error('Не удалось сохранить правки. Повторите попытку перед переходом.')
+        }
+      })
     }
     window.addEventListener('beforeunload', beforeUnload)
+    window.addEventListener('online', online)
     document.addEventListener('visibilitychange', visibilityChange)
     document.addEventListener('click', navigate, true)
     return () => {
       persist()
+      persistExtraDraft?.()
+      retryArchiveRef.current = () => {}
       unsubscribe()
       window.removeEventListener('beforeunload', beforeUnload)
+      window.removeEventListener('online', online)
       document.removeEventListener('visibilitychange', visibilityChange)
       document.removeEventListener('click', navigate, true)
       // Also flush on browser Back. The queue survives component teardown.
       if (!isReadOnly?.()) void queue.flush().catch(() => {})
     }
-  }, [queue, storageKey, base, shape, restore, router, getRevision, archiveDraft, legacyStorageKey, isReadOnly])
+  }, [queue, storageKey, base, shape, restore, router, getRevision, archiveDraft, legacyStorageKey, isReadOnly, hasExtraDraft, persistExtraDraft])
 
   return {
     update: queue.update, flush: queue.flush, reset: queue.reset, status,
     getValue: queue.getValue, isDirty: queue.isDirty,
+    blockedDraft, retryArchive,
   }
 }

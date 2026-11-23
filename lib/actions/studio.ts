@@ -9,6 +9,7 @@ import {
   requireReleaseOwnership,
   requireEditionOwnership,
   requireChapterOwnership,
+  getChapterWriteAccess,
 } from '@/lib/server/studio-auth'
 import * as releasesDb from '@/lib/server/releases'
 import * as editionsDb from '@/lib/server/editions'
@@ -357,6 +358,14 @@ export async function getChapter(id: string) {
   return { chapter: await chaptersDb.fetchChapterById(id), editorUserId: session.user.id }
 }
 
+/** Не уводит вкладку с черновиком при отзыве прав во время восстановления. */
+export async function getChapterForRecovery(id: string) {
+  if (!chapterIdSchema.safeParse(id).success) return null
+  const access = await getChapterWriteAccess(id)
+  if (access.status !== 'ok') return null
+  return chaptersDb.fetchChapterById(id)
+}
+
 /**
  * Соседние главы по порядку для навигации в редакторе. Гвард — по изданию:
  * сама глава уже проверена `getChapter`.
@@ -383,7 +392,7 @@ export async function createChapterAction(formData: FormData) {
     content: null,
     status: 'draft',
     word_count: 0,
-  })
+  }, { append: true })
 
   revalidatePath(`/studio/editions/${editionId}`)
   if (chapter) redirect(`/studio/editions/${editionId}/chapters/${chapter.id}`)
@@ -416,10 +425,12 @@ async function runChapterWrite<T>(
     }
     const parsedLease = chapterLeaseProofSchema.safeParse(lease)
     if (!parsedLease.success) throw new ChapterWriteError('lease-required')
-    const { session } = await requireChapterOwnership(id, { missingIsWriteError: true })
+    const access = await getChapterWriteAccess(id)
+    if (access.status === 'not-found') throw new ChapterWriteError('not-found')
+    if (access.status !== 'ok') throw new ChapterWriteError('forbidden')
     const grant: ChapterLeaseGrant = {
       mode: 'session',
-      actor: { userId: session.user.id, actorKind: 'studio' },
+      actor: { userId: access.session.user.id, actorKind: 'studio' },
       proof: parsedLease.data,
     }
     return { ok: true, value: await write(grant) }
@@ -439,7 +450,6 @@ export async function updateChapterAction(id: string, expectedRevision: number, 
   audio_content_type?: string | null
   audio_file_size_bytes?: number | null
   audio_uploaded_at?: string | null
-  chapter_index?: number
 }) {
   const parsed = chapterUpdateSchema.safeParse(data)
   if (!parsed.success) return {

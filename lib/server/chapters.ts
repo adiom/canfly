@@ -2,6 +2,7 @@ import type { PoolClient } from 'pg'
 import { dbQuery, dbQueryOne, dbUpdatePartial, withTransaction } from '@/lib/db'
 import type { UpdatableColumn } from '@/lib/db'
 import { sanitizeChapterHtml } from '@/lib/sanitize'
+import { normalizeComicPagesJson, parseComicPagesJson } from '@/lib/comic-content'
 import type { Chapter, ChapterVersion } from '@/lib/releases-types'
 import { ChapterWriteError } from '@/lib/studio/chapter-write'
 import {
@@ -19,19 +20,24 @@ import {
  * и санитайзер в них — это и лишний вес бандла, и защита не там, где нужно.
  * Чистим на чтении, чтобы покрыть и уже сохранённые главы.
  */
-function withSafeContent<T extends { content?: string | null }>(row: T): T {
-  if (!row.content) return row
-  return { ...row, content: sanitizeChapterHtml(row.content) }
+function safeStoredContent(value: string): string {
+  return normalizeComicPagesJson(value) ?? sanitizeChapterHtml(value)
 }
 
-/** Пишем в БД уже очищенный HTML: Studio и MCP идут через один слой. */
+function withSafeContent<T extends { content?: string | null }>(row: T): T {
+  if (!row.content) return row
+  return { ...row, content: safeStoredContent(row.content) }
+}
+
+/** Пишем в БД уже очищенный HTML; JSON страниц комикса не трогаем как HTML. */
 function safeContent(value: unknown): string | null {
   if (value === null || value === undefined) return null
-  return sanitizeChapterHtml(typeof value === 'string' ? value : String(value))
+  return safeStoredContent(typeof value === 'string' ? value : String(value))
 }
 
 function countChapterWords(html: string | null | undefined): number {
   if (!html) return 0
+  if (parseComicPagesJson(html)) return 0
   return html
     .replace(/<[^>]*>/g, ' ')
     .split(/\s+/)
@@ -154,14 +160,20 @@ async function lockEditionAndRelease(client: PoolClient, editionId: string) {
   return edition.release_id
 }
 
-export async function createChapter(data: Record<string, unknown>) {
+export async function createChapter(
+  data: Record<string, unknown>,
+  { append = false }: { append?: boolean } = {},
+) {
   return withTransaction(async (client) => {
     const editionId = String(data.edition_id)
     await lockEditionAndRelease(client, editionId)
 
-    // Индекс вычисляется уже под advisory-lock: два одновременных создания
-    // не могут получить одинаковый chapter_index.
-    let chapterIndex = typeof data.chapter_index === 'number' ? data.chapter_index : null
+    // Studio и MCP всегда добавляют главу в конец (append), а индекс
+    // вычисляется под advisory-lock. Явный индекс оставлен для служебных
+    // вызовов и фикстур.
+    let chapterIndex = !append && typeof data.chapter_index === 'number'
+      ? data.chapter_index
+      : null
     if (chapterIndex === null) {
       const { rows: [next] } = await client.query<{ index: number }>(
         `SELECT (COALESCE(MAX(chapter_index), 0) + 1)::integer AS index
@@ -221,7 +233,6 @@ const chapterUpdatable: Record<string, UpdatableColumn> = {
   audio_content_type: { column: 'audio_content_type' },
   audio_file_size_bytes: { column: 'audio_file_size_bytes' },
   audio_uploaded_at: { column: 'audio_uploaded_at' },
-  chapter_index: { column: 'chapter_index' },
   status: { column: 'status', cast: '::chapter_status' },
   word_count: { column: 'word_count' },
 }
@@ -256,7 +267,7 @@ async function updateLockedChapter(
   content: string | null,
   archiveEmptyContent = false,
 ) {
-  const previous = sanitizeChapterHtml(currentContent)
+  const previous = safeStoredContent(currentContent ?? '')
   if ((previous || archiveEmptyContent) && previous !== (content ?? '')) {
     await client.query(
       `INSERT INTO chapter_versions (chapter_id, content, version_number)
@@ -389,13 +400,15 @@ export async function incrementChapterViews(id: string) {
 // --- Chapter Versions ---
 
 export async function fetchChapterVersions(chapterId: string) {
-  return dbQuery<ChapterVersion>(
+  const rows = await dbQuery<ChapterVersion>(
     `SELECT id, chapter_id, content, version_number, created_at
      FROM chapter_versions
      WHERE chapter_id = $1
      ORDER BY version_number DESC`,
     [chapterId],
   )
+  // Older versions can also be rendered as HTML in Studio's history preview.
+  return rows.map(row => ({ ...row, content: safeStoredContent(row.content) }))
 }
 
 export async function fetchChapterVersion(versionId: string) {
@@ -428,7 +441,7 @@ export async function restoreChapterVersion(
       const version = rows[0]
       if (!version) return null
 
-      return updateLockedChapter(client, chapterId, current.content, {}, sanitizeChapterHtml(version.content))
+      return updateLockedChapter(client, chapterId, current.content, {}, safeStoredContent(version.content))
     })
   })
 }

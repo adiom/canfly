@@ -11,15 +11,17 @@ import type { ChapterWriteResult } from '@/lib/studio/chapter-write'
 import {
   loadMediaDraft,
   removeMediaDraft,
-  saveMediaDraft,
+  storeMediaDraft,
   type MediaDraft,
+  type MediaDraftInput,
 } from '@/lib/studio/media-drafts'
 
 interface ComicPagesEditorProps {
   initialPages: string[]
   savePages: (pages: string[]) => Promise<ChapterWriteResult<Chapter>>
   readOnly?: boolean
-  onPagesChange?: (pages: string[]) => void
+  onLocalDraft?: (draft: MediaDraftInput | null, saved?: boolean) => void
+  onUploadPending?: (pending: boolean) => void
   draftOwner: string
   chapterId: string
   chapterRevision: number
@@ -29,7 +31,8 @@ export function ComicPagesEditor({
   initialPages,
   savePages,
   readOnly = false,
-  onPagesChange,
+  onLocalDraft,
+  onUploadPending,
   draftOwner,
   chapterId,
   chapterRevision,
@@ -38,6 +41,8 @@ export function ComicPagesEditor({
   const [uploading, setUploading] = useState(false)
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [revision, setRevision] = useState(chapterRevision)
+  const ownDraft = useRef<number | undefined>(undefined)
   const [queue] = useState(() => new AutosaveQueue({ pages: initialPages }, async ({ pages }) => {
     const result = await savePages(pages)
     if (!result.ok) {
@@ -45,15 +50,15 @@ export function ComicPagesEditor({
       setSaveError(result.message)
       throw new Error(result.message)
     }
-    removeMediaDraft('comic', draftOwner, chapterId)
+    setRevision(result.value.revision)
     setSaveError(null)
   }))
   const status = useSyncExternalStore(queue.subscribe, queue.getStatus, () => 'saved' as const)
   const isPending = status === 'pending' || status === 'saving'
   const wasReadOnly = useRef(readOnly)
-  const initialJson = JSON.stringify(initialPages)
   const [recovery, setRecovery] = useState<MediaDraft | null>(null)
   const [draftLoaded, setDraftLoaded] = useState(false)
+  const editingDisabled = readOnly || !draftLoaded || !!recovery || uploading
 
   useEffect(() => {
     // Читаем хранилище после гидратации, чтобы SSR и клиент совпадали.
@@ -63,25 +68,35 @@ export function ComicPagesEditor({
   }, [chapterId, draftOwner])
 
   useEffect(() => {
-    onPagesChange?.(pages)
-  }, [onPagesChange, pages])
-
-  useEffect(() => {
-    if (!draftLoaded || recovery) return
-    if (JSON.stringify(pages) === initialJson) {
-      removeMediaDraft('comic', draftOwner, chapterId)
+    if (!draftLoaded || recovery) {
+      onLocalDraft?.(null)
       return
     }
-    const saved = saveMediaDraft({
+    const content = JSON.stringify(pages)
+    if (!queue.isDirty() && content === JSON.stringify(queue.getSavedValue().pages)) {
+      onLocalDraft?.(null)
+      if (ownDraft.current !== undefined) {
+        removeMediaDraft('comic', draftOwner, chapterId, ownDraft.current)
+        ownDraft.current = undefined
+      }
+      return
+    }
+    const draft: MediaDraftInput = {
       kind: 'comic',
       chapterId,
       userId: draftOwner,
-      baseRevision: chapterRevision,
+      baseRevision: revision,
       title: 'Комикс',
-      content: JSON.stringify(pages),
-    })
-    if (!saved) toast.error('Не удалось сохранить локальный черновик: хранилище переполнено')
-  }, [chapterId, chapterRevision, draftLoaded, draftOwner, initialJson, pages, recovery])
+      content,
+    }
+    const saved = storeMediaDraft(draft)
+    onLocalDraft?.(draft, !!saved)
+    if (saved) {
+      ownDraft.current = saved.savedAt
+    } else {
+      toast.error('Не удалось сохранить локальный черновик: хранилище переполнено')
+    }
+  }, [chapterId, draftLoaded, draftOwner, onLocalDraft, pages, queue, recovery, revision, status])
 
   useEffect(() => {
     // Возврат lease при неизменной ревизии: повторяем грязную очередь.
@@ -98,6 +113,7 @@ export function ComicPagesEditor({
       }
       setPages(parsed)
       queue.update({ pages: parsed })
+      ownDraft.current = recovery.savedAt
       setRecovery(null)
       setSaveError(null)
       toast.success('Локальный черновик комикса восстановлен')
@@ -107,23 +123,23 @@ export function ComicPagesEditor({
   }
 
   function discardDraft() {
-    removeMediaDraft('comic', draftOwner, chapterId)
+    if (recovery) removeMediaDraft('comic', draftOwner, chapterId, recovery.savedAt)
     setRecovery(null)
   }
 
   function persist(newPages: string[]) {
-    if (readOnly) return
     queue.update({ pages: newPages })
     void queue.flush().catch(() => {})
   }
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    if (readOnly) return
+    if (editingDisabled) return
     const files = e.target.files
     if (!files || files.length === 0) return
 
     setUploading(true)
-    const uploadedUrls: string[] = []
+    onUploadPending?.(true)
+    let uploaded = 0
 
     try {
       for (const file of Array.from(files)) {
@@ -141,23 +157,24 @@ export function ComicPagesEditor({
         }
 
         const data = await res.json()
-        uploadedUrls.push(data.url)
+        const newPages = [...queue.getValue().pages, data.url]
+        setPages(newPages)
+        persist(newPages)
+        uploaded++
       }
 
-      const newPages = [...pages, ...uploadedUrls]
-      setPages(newPages)
-      persist(newPages)
-      toast.success(`Загружено ${uploadedUrls.length} страниц`)
+      toast.success(`Загружено ${uploaded} страниц`)
     } catch {
       toast.error('Ошибка загрузки')
     } finally {
       setUploading(false)
+      onUploadPending?.(false)
       e.target.value = ''
     }
   }
 
   function handleAddByUrl() {
-    if (readOnly) return
+    if (editingDisabled) return
     const url = window.prompt('URL изображения:')
     if (url) {
       const newPages = [...pages, url]
@@ -167,7 +184,7 @@ export function ComicPagesEditor({
   }
 
   function handleDelete(index: number) {
-    if (readOnly) return
+    if (editingDisabled) return
     const newPages = pages.filter((_, i) => i !== index)
     setPages(newPages)
     persist(newPages)
@@ -175,13 +192,13 @@ export function ComicPagesEditor({
   }
 
   function handleDragStart(index: number) {
-    if (readOnly) return
+    if (editingDisabled) return
     setDraggedIndex(index)
   }
 
   function handleDragOver(e: React.DragEvent, index: number) {
     e.preventDefault()
-    if (readOnly || draggedIndex === null || draggedIndex === index) return
+    if (editingDisabled || draggedIndex === null || draggedIndex === index) return
 
     const newPages = [...pages]
     const draggedItem = newPages[draggedIndex]
@@ -193,7 +210,7 @@ export function ComicPagesEditor({
   }
 
   function handleDragEnd() {
-    if (!readOnly && draggedIndex !== null) {
+    if (!editingDisabled && draggedIndex !== null) {
       persist(pages)
     }
     setDraggedIndex(null)
@@ -231,7 +248,12 @@ export function ComicPagesEditor({
           </span>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={handleAddByUrl} disabled={readOnly}>
+          {status === 'error' && !recovery && (
+            <Button variant="outline" size="sm" disabled={editingDisabled} onClick={() => void queue.flush().catch(() => {})}>
+              Повторить сохранение
+            </Button>
+          )}
+          <Button variant="outline" size="sm" onClick={handleAddByUrl} disabled={editingDisabled}>
             + URL
           </Button>
           <label>
@@ -240,13 +262,13 @@ export function ComicPagesEditor({
               accept="image/*"
               multiple
               onChange={handleUpload}
-              disabled={uploading || readOnly}
+              disabled={editingDisabled}
               className="hidden"
             />
             <Button
               variant="outline"
               size="sm"
-              disabled={uploading || readOnly}
+              disabled={editingDisabled}
               onClick={e => {
                 e.preventDefault()
                 const input = e.currentTarget.previousElementSibling as HTMLInputElement | null
@@ -269,7 +291,7 @@ export function ComicPagesEditor({
           {pages.map((url, index) => (
             <div
               key={`${url}-${index}`}
-              draggable={!readOnly}
+              draggable={!editingDisabled}
               onDragStart={() => handleDragStart(index)}
               onDragOver={e => handleDragOver(e, index)}
               onDragEnd={handleDragEnd}
@@ -283,6 +305,7 @@ export function ComicPagesEditor({
                   alt={`Страница ${index + 1}`}
                   fill
                   sizes="200px"
+                  unoptimized
                   className="object-cover"
                 />
               </div>
@@ -291,7 +314,7 @@ export function ComicPagesEditor({
                 <Button
                   variant="destructive"
                   size="icon-sm"
-                  disabled={readOnly}
+                  disabled={editingDisabled}
                   onClick={() => handleDelete(index)}
                   aria-label={`Удалить страницу ${index + 1}`}
                 >

@@ -164,7 +164,6 @@ export const chapterUpdateSchema = z.object({
   audio_content_type: optionalString.optional(),
   audio_file_size_bytes: z.number().int().nonnegative().nullable().optional(),
   audio_uploaded_at: optionalString.optional(),
-  chapter_index: z.number().int().min(1).optional(),
 })
 
 // --- Series ---

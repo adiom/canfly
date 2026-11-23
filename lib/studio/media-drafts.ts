@@ -61,31 +61,27 @@ function parseDraft(raw: string | null, kind: MediaDraftKind, userId: string, ch
 
 /**
  * Пытается сохранить черновик в localStorage, затем в sessionStorage.
- * `false` означает, что оба хранилища недоступны/переполнены: вызывающий код
+ * `null` означает, что оба хранилища недоступны/переполнены: вызывающий код
  * обязан сохранить текст в памяти и предложить копирование.
  */
-export function saveMediaDraft(input: MediaDraftInput): boolean {
-  const draft: MediaDraft = { ...input, version: 1, savedAt: Date.now() }
+export function storeMediaDraft(input: MediaDraftInput): MediaDraft | null {
+  const previous = loadMediaDraft(input.kind, input.userId, input.chapterId)
+  if (previous && previous.baseRevision === input.baseRevision && previous.title === input.title &&
+      previous.content === input.content && JSON.stringify(previous.pendingAudio) === JSON.stringify(input.pendingAudio)) {
+    return previous
+  }
+  const draft: MediaDraft = {
+    ...input,
+    version: 1,
+    savedAt: Math.max(Date.now(), (previous?.savedAt ?? 0) + 1),
+  }
   const key = mediaDraftKey(input.kind, input.userId, input.chapterId)
   for (const name of storageNames) {
     try {
       const target = storage(name)
       if (!target) continue
       target.setItem(key, JSON.stringify(draft))
-      return true
-    } catch {
-      // Пробуем следующее хранилище.
-    }
-  }
-  return false
-}
-
-export function loadMediaDraft(kind: MediaDraftKind, userId: string, chapterId: string): MediaDraft | null {
-  const key = mediaDraftKey(kind, userId, chapterId)
-  for (const name of storageNames) {
-    try {
-      const draft = parseDraft(storage(name)?.getItem(key) ?? null, kind, userId, chapterId)
-      if (draft) return draft
+      return draft
     } catch {
       // Пробуем следующее хранилище.
     }
@@ -93,11 +89,36 @@ export function loadMediaDraft(kind: MediaDraftKind, userId: string, chapterId: 
   return null
 }
 
-export function removeMediaDraft(kind: MediaDraftKind, userId: string, chapterId: string) {
+export function saveMediaDraft(input: MediaDraftInput): boolean {
+  return storeMediaDraft(input) !== null
+}
+
+export function loadMediaDraft(kind: MediaDraftKind, userId: string, chapterId: string): MediaDraft | null {
+  const key = mediaDraftKey(kind, userId, chapterId)
+  let latest: MediaDraft | null = null
+  for (const name of storageNames) {
+    try {
+      const draft = parseDraft(storage(name)?.getItem(key) ?? null, kind, userId, chapterId)
+      if (draft && (!latest || draft.savedAt > latest.savedAt)) latest = draft
+    } catch {
+      // Пробуем следующее хранилище.
+    }
+  }
+  return latest
+}
+
+/** При подтверждении записи удаляем только этот снимок и более старые копии. */
+export function removeMediaDraft(kind: MediaDraftKind, userId: string, chapterId: string, through?: number) {
   const key = mediaDraftKey(kind, userId, chapterId)
   for (const name of storageNames) {
     try {
-      storage(name)?.removeItem(key)
+      const target = storage(name)
+      if (!target) continue
+      if (through !== undefined) {
+        const draft = parseDraft(target.getItem(key), kind, userId, chapterId)
+        if (!draft || draft.savedAt > through) continue
+      }
+      target.removeItem(key)
     } catch {
       // Недоступное хранилище не мешает очистить второе.
     }

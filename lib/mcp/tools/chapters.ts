@@ -29,7 +29,6 @@ const updateChapterInput = z.object({
   expected_revision: expectedRevision.optional(),
   title: z.string().refine(title => title.trim().length > 0).optional().describe('Название главы'),
   content: z.string().optional().describe('Новый HTML-контент'),
-  chapter_index: z.number().int().min(1).optional().describe('Новый порядковый номер'),
   status: chapterStatus.optional().describe('Статус'),
   audio_url: z.string().nullable().optional().describe('URL аудио-файла (null — отвязать)'),
 })
@@ -182,12 +181,13 @@ export function registerChaptersTools(server: McpServer) {
     {
       title: 'Создать главу',
       description:
-        'Создать новую черновую главу в издании. chapter_index — порядковый номер (1-based). content — HTML, перед записью очищается.',
+        'Создать новую черновую главу в конце издания. Позиция назначается сервером, chapter_index принимается только для совместимости и игнорируется. content — HTML, перед записью очищается.',
       inputSchema: z.object({
         edition_id: uuid.describe('UUID издания'),
         title: z.string().min(1).describe('Название главы'),
         content: z.string().optional().describe('HTML-контент главы'),
-        chapter_index: z.number().int().min(1).describe('Порядковый номер (1-based)'),
+        chapter_index: z.number().int().min(1).optional()
+          .describe('Устарело: игнорируется, глава добавляется в конец'),
         status: chapterStatus.optional().describe('Статус (по умолчанию draft)'),
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
@@ -199,7 +199,7 @@ export function registerChaptersTools(server: McpServer) {
       const chapter = await createChapter({
         ...data,
         word_count: countWords(data.content),
-      })
+      }, { append: true })
       return chapter ? json(chapterWriteReceipt(chapter)) : toolError('Не удалось создать главу')
     }),
   )

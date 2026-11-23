@@ -49,6 +49,12 @@ test('C2: ошибка сети при продлении lease не счита�
 
   await expect(settleLeaseRenewal(async () => ({
     ok: false,
+    code: 'forbidden',
+    message: 'rights revoked',
+  }))).resolves.toEqual({ status: 'revoked' })
+
+  await expect(settleLeaseRenewal(async () => ({
+    ok: false,
     code: 'lease-lost',
     message: 'lost',
   }))).resolves.toEqual({ status: 'lost' })

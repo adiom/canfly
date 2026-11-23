@@ -138,6 +138,36 @@ export async function requireChapterOwnership(
   return requireReleaseOwnership(link.release_id)
 }
 
+export type ChapterWriteAccess =
+  | { status: 'ok'; session: StudioSession }
+  | { status: 'anonymous' }
+  | { status: 'denied' }
+  | { status: 'not-found' }
+
+/**
+ * Не-бросающая проверка права записи для server actions: отзыв прав должен
+ * вернуть структурную ошибку, а не redirect/404, иначе клиент не отличит его
+ * от сетевого сбоя.
+ */
+export async function getChapterWriteAccess(chapterId: string): Promise<ChapterWriteAccess> {
+  const session = await requireStudioSession()
+  if (!session) return { status: 'anonymous' }
+
+  const link = await dbQueryOne<{ role: string | null }>(
+    `SELECT rc.role
+     FROM chapters c
+     JOIN editions e ON e.id = c.edition_id
+     LEFT JOIN release_collaborators rc
+       ON rc.release_id = e.release_id AND rc.user_id = $2
+     WHERE c.id = $1
+     LIMIT 1`,
+    [chapterId, session.user.id],
+  )
+  if (!link) return { status: 'not-found' }
+  if (session.isAdmin || link.role === 'owner') return { status: 'ok', session }
+  return { status: 'denied' }
+}
+
 export async function requireStudioAdminSession(): Promise<StudioSession | null> {
   const session = await requireStudioSession()
   if (!session) return null

@@ -56,8 +56,11 @@ function tabChannel(): BroadcastChannel | null {
 
 async function resolveSessionId(): Promise<string> {
   const channel = tabChannel()
-  let id = sessionStorage.getItem(SESSION_KEY) ?? crypto.randomUUID()
-  sessionStorage.setItem(SESSION_KEY, id)
+  let id = crypto.randomUUID()
+  try {
+    id = sessionStorage.getItem(SESSION_KEY) ?? id
+    sessionStorage.setItem(SESSION_KEY, id)
+  } catch { /* documentId защищает lease и без sessionStorage. */ }
   currentSessionId = id
 
   if (!channel) return id
@@ -82,7 +85,7 @@ async function resolveSessionId(): Promise<string> {
 
   if (duplicate) {
     id = crypto.randomUUID()
-    sessionStorage.setItem(SESSION_KEY, id)
+    try { sessionStorage.setItem(SESSION_KEY, id) } catch { /* Оставляем id в памяти. */ }
     currentSessionId = id
   }
   return id
@@ -90,7 +93,10 @@ async function resolveSessionId(): Promise<string> {
 
 /** Один id на вкладку: StrictMode и повторные вызовы не создают новую сессию. */
 function sharedSessionId() {
-  sessionPromise ??= resolveSessionId()
+  sessionPromise ??= resolveSessionId().catch(error => {
+    sessionPromise = null
+    throw error
+  })
   return sessionPromise
 }
 
@@ -98,6 +104,7 @@ export interface ChapterLeaseController {
   state: ChapterLeaseState
   proof: ChapterLeaseProof | null
   reacquire: () => Promise<void>
+  abandon: () => void
 }
 
 /**
@@ -111,7 +118,7 @@ export function useChapterLease({
   onLost,
 }: {
   chapterId: string
-  onAcquired?: (lease: ChapterLeaseView) => void
+  onAcquired?: (lease: ChapterLeaseView) => Promise<boolean>
   onLost?: () => void
 }): ChapterLeaseController {
   const [state, setState] = useState<ChapterLeaseState>({ status: 'acquiring' })
@@ -119,6 +126,7 @@ export function useChapterLease({
   const heldRef = useRef(false)
   const reconcileRef = useRef(false)
   const lostNotifiedRef = useRef(false)
+  const abandonedRef = useRef(false)
   const acquireInFlight = useRef<Promise<void> | null>(null)
   const releaseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const callbacks = useRef({ onAcquired, onLost })
@@ -132,13 +140,53 @@ export function useChapterLease({
     callbacks.current.onLost?.()
   }, [])
 
+  /** Подтверждённый отзыв прав: сразу освобождаем lease и больше не пишем. */
+  const abandon = useCallback(() => {
+    notifyLost()
+    abandonedRef.current = true
+    const current = leaseRef.current
+    leaseRef.current = null
+    heldRef.current = false
+    reconcileRef.current = false
+    if (current) {
+      try {
+        navigator.sendBeacon(
+          '/api/chapter-leases/release',
+          new Blob([JSON.stringify({
+            chapterId,
+            sessionId: current.sessionId,
+            proof: toLeaseProof(current),
+          })], { type: 'application/json' }),
+        )
+      } catch {
+        // TTL освободит lease.
+      }
+    }
+    setState({ status: 'error', message: 'Доступ к главе отозван' })
+  }, [chapterId, notifyLost])
+
   const acquire = useCallback(() => {
+    if (abandonedRef.current) return Promise.resolve()
     if (acquireInFlight.current) return acquireInFlight.current
 
     const run = (async () => {
       try {
         const id = await sharedSessionId()
         const acquired = await acquireChapterLeaseAction(chapterId, id, DOCUMENT_ID)
+        if (abandonedRef.current) {
+          if (acquired.ok) {
+            try {
+              navigator.sendBeacon('/api/chapter-leases/release', new Blob([JSON.stringify({
+                chapterId,
+                sessionId: acquired.lease.sessionId,
+                proof: toLeaseProof(acquired.lease),
+              })], { type: 'application/json' }))
+            } catch {
+              // TTL releases it if the beacon fails.
+            }
+          }
+          return
+        }
         if (acquired.ok) {
           const reconcile = reconcileRef.current
           reconcileRef.current = false
@@ -150,21 +198,31 @@ export function useChapterLease({
             // и либо повторяет очередь, либо архивирует черновик.
             setState({ status: 'recovering', holder: null })
             try {
-              await callbacks.current.onAcquired?.(acquired.lease)
+              if (await callbacks.current.onAcquired?.(acquired.lease) === false) {
+                if (!abandonedRef.current) reconcileRef.current = true
+                return
+              }
             } catch {
-              // Ошибку показала страница; lease уже наш.
+              reconcileRef.current = true
+              return
             }
           }
+          if (abandonedRef.current) return
           setState({ status: 'active', lease: acquired.lease, degraded: false })
           return
         }
 
+        if (acquired.code === 'forbidden') {
+          abandon()
+          return
+        }
         if (heldRef.current) notifyLost()
         leaseRef.current = null
         heldRef.current = false
         reconcileRef.current = true
         setState({ status: 'read-only', holder: acquired.holder })
       } catch {
+        if (abandonedRef.current) return
         reconcileRef.current = true
         setState(previous => {
           if (previous.status === 'active' || previous.status === 'recovering' ||
@@ -181,7 +239,7 @@ export function useChapterLease({
       if (acquireInFlight.current === run) acquireInFlight.current = null
     })
     return run
-  }, [chapterId, notifyLost])
+  }, [abandon, chapterId, notifyLost])
 
   /**
    * Возврат из фона: сначала продлеваем текущий lease. Если он истёк или его
@@ -189,7 +247,11 @@ export function useChapterLease({
    * read-only. На время попытки редактор уже read-only.
    */
   const recover = useCallback(async () => {
-    if (document.visibilityState !== 'visible') return
+    if (abandonedRef.current || acquireInFlight.current || document.visibilityState !== 'visible') return
+    if (reconcileRef.current) {
+      await acquire()
+      return
+    }
     const proof = toLeaseProof(leaseRef.current)
     if (!proof) {
       await acquire()
@@ -199,6 +261,11 @@ export function useChapterLease({
     const outcome = await settleLeaseRenewal(
       () => renewChapterLeaseAction(chapterId, proof.sessionId, proof),
     )
+    if (abandonedRef.current || acquireInFlight.current || leaseRef.current?.generation !== proof.generation) return
+    if (outcome.status === 'revoked') {
+      abandon()
+      return
+    }
     if (outcome.status === 'ok') {
       leaseRef.current = outcome.lease
       setState({ status: 'active', lease: outcome.lease, degraded: false })
@@ -214,7 +281,7 @@ export function useChapterLease({
       ? { status: 'recovering', holder: null }
       : previous)
     await acquire()
-  }, [acquire, chapterId])
+  }, [acquire, abandon, chapterId])
 
   useEffect(() => {
     void acquire()
@@ -300,5 +367,6 @@ export function useChapterLease({
     state,
     proof: state.status === 'active' ? toLeaseProof(state.lease) : null,
     reacquire: acquire,
+    abandon,
   }
 }

@@ -23,8 +23,9 @@ import type { ChapterLeaseProof } from '@/lib/studio/chapter-lease'
 import {
   loadMediaDraft,
   removeMediaDraft,
-  saveMediaDraft,
+  storeMediaDraft,
   type MediaDraft,
+  type MediaDraftInput,
   type PendingAudioUpload,
 } from '@/lib/studio/media-drafts'
 
@@ -34,7 +35,8 @@ interface AudioChapterEditorProps {
   leaseRef: RefObject<ChapterLeaseProof | null>
   readOnly: boolean
   onSaveStatus: (status: 'idle' | 'pending' | 'saving' | 'saved' | 'error') => void
-  onLocalDraft?: (draft: { title: string; content: string; pendingAudio?: PendingAudioUpload }) => void
+  onLocalDraft?: (draft: MediaDraftInput | null, saved?: boolean) => void
+  onUploadPending?: (pending: boolean) => void
   draftOwner: string
 }
 
@@ -51,22 +53,36 @@ function numberMeta(metadata: Record<string, unknown>, key: string) {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
+function audioBaseline(chapter: Chapter) {
+  const metadata = chapter.audio_metadata ?? {}
+  return {
+    title: chapter.title,
+    content: JSON.stringify({
+      duration_seconds: chapter.duration_seconds,
+      audio_metadata: {
+        ...metadata,
+        artist: stringMeta(metadata, 'artist').trim() || undefined,
+        album: stringMeta(metadata, 'album').trim() || undefined,
+        year: numberMeta(metadata, 'year') ?? undefined,
+        trackNo: numberMeta(metadata, 'trackNo') ?? undefined,
+        codec: stringMeta(metadata, 'codec') || undefined,
+        bitrate: numberMeta(metadata, 'bitrate') ?? undefined,
+        sampleRate: numberMeta(metadata, 'sampleRate') ?? undefined,
+        lyrics: extractLyrics(metadata) ?? undefined,
+      },
+    }),
+  }
+}
+
 type LyricsMode = 'edit' | 'sync' | 'preview'
 
-export function AudioChapterEditor({ chapter, revisionRef, leaseRef, readOnly, onSaveStatus, onLocalDraft, draftOwner }: AudioChapterEditorProps) {
+export function AudioChapterEditor({ chapter, revisionRef, leaseRef, readOnly, onSaveStatus, onLocalDraft, onUploadPending, draftOwner }: AudioChapterEditorProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const previewAudioRef = useRef<HTMLAudioElement>(null)
   const syncLineRef = useRef<HTMLDivElement>(null)
   const initialMetadata = useMemo(() => chapter.audio_metadata ?? {}, [chapter.audio_metadata])
   const [metadataBase, setMetadataBase] = useState<Record<string, unknown>>(chapter.audio_metadata ?? {})
-  const baselineRef = useRef({
-    title: chapter.title,
-    content: JSON.stringify({
-      duration_seconds: chapter.duration_seconds,
-      audio_metadata: chapter.audio_metadata ?? {},
-      pending_audio: null,
-    }),
-  })
+  const [baseline, setBaseline] = useState(() => audioBaseline(chapter))
   const [title, setTitle] = useState(chapter.title)
   const [audioUrl, setAudioUrl] = useState(chapter.audio_url ?? '')
   const [durationSeconds, setDurationSeconds] = useState<number | null>(chapter.duration_seconds)
@@ -93,6 +109,8 @@ export function AudioChapterEditor({ chapter, revisionRef, leaseRef, readOnly, o
   const [pendingAudio, setPendingAudio] = useState<PendingAudioUpload | null>(null)
   const [recovery, setRecovery] = useState<MediaDraft | null>(null)
   const [draftLoaded, setDraftLoaded] = useState(false)
+  const [attaching, setAttaching] = useState(false)
+  const ownDraft = useRef<number | undefined>(undefined)
 
   useEffect(() => {
     // Читаем хранилище после гидратации, чтобы SSR и клиент совпадали.
@@ -101,7 +119,8 @@ export function AudioChapterEditor({ chapter, revisionRef, leaseRef, readOnly, o
     setDraftLoaded(true)
   }, [chapter.id, draftOwner])
 
-  const canSave = title.trim().length > 0 && !uploading && !isPending && !readOnly
+  const fieldsLocked = !draftLoaded || !!recovery || uploading || attaching || isPending || readOnly
+  const canSave = title.trim().length > 0 && !fieldsLocked
 
   const buildMetadata = useCallback(() => ({
     ...metadataBase,
@@ -115,78 +134,80 @@ export function AudioChapterEditor({ chapter, revisionRef, leaseRef, readOnly, o
     lyrics: lyrics ?? undefined,
   }), [album, artist, bitrate, codec, lyrics, metadataBase, sampleRate, trackNo, year])
 
-  const localDraftJson = JSON.stringify({
+  const localMetadata = {
     duration_seconds: durationSeconds,
     audio_metadata: buildMetadata(),
-    pending_audio: pendingAudio ?? null,
-  })
+  }
+  const localMetadataJson = JSON.stringify(localMetadata)
+  const metadataDirty = title !== baseline.title || localMetadataJson !== baseline.content
+  const localDraftJson = JSON.stringify({ ...localMetadata, pending_audio: pendingAudio })
 
   useEffect(() => {
-    onLocalDraft?.({
-      title,
-      content: localDraftJson,
-      pendingAudio: pendingAudio ?? undefined,
-    })
-  }, [localDraftJson, onLocalDraft, pendingAudio, title])
-
-  useEffect(() => {
-    if (!draftLoaded || recovery) return
-    if (title === baselineRef.current.title && localDraftJson === baselineRef.current.content && !pendingAudio) {
-      removeMediaDraft('audio', draftOwner, chapter.id)
+    if (!draftLoaded || recovery) {
+      onLocalDraft?.(null)
       return
     }
-    const saved = saveMediaDraft({
+    if (!metadataDirty && !pendingAudio) {
+      onLocalDraft?.(null)
+      if (ownDraft.current !== undefined) {
+        removeMediaDraft('audio', draftOwner, chapter.id, ownDraft.current)
+        ownDraft.current = undefined
+      }
+      return
+    }
+    const draft: MediaDraftInput = {
       kind: 'audio',
       chapterId: chapter.id,
       userId: draftOwner,
-      baseRevision: chapter.revision,
+      baseRevision: revisionRef.current,
       title,
       content: localDraftJson,
       pendingAudio: pendingAudio ?? undefined,
-    })
+    }
+    const saved = storeMediaDraft(draft)
+    onLocalDraft?.(draft, !!saved)
     if (!saved) {
       onSaveStatus('error')
       toast.error('Не удалось сохранить локальный черновик аудио: хранилище переполнено')
       return
     }
-    if (!uploading && !isPending) onSaveStatus('pending')
+    ownDraft.current = saved.savedAt
+    onSaveStatus('pending')
   }, [
     chapter.id,
-    chapter.revision,
     draftLoaded,
     draftOwner,
-    isPending,
     localDraftJson,
+    metadataDirty,
+    onLocalDraft,
     onSaveStatus,
     pendingAudio,
     recovery,
+    revisionRef,
     title,
-    uploading,
   ])
 
-  const applyUpdatedChapter = useCallback((updated: Chapter, nextCoverUrl?: string | null) => {
+  const applyUpdatedChapter = useCallback((updated: Chapter, nextCoverUrl?: string | null, preserveMetadata = false) => {
     revisionRef.current = updated.revision
     const metadata = updated.audio_metadata ?? {}
-    setMetadataBase(metadata)
-    setTitle(updated.title)
     setAudioUrl(updated.audio_url ?? '')
     setDurationSeconds(updated.duration_seconds)
-    setArtist(stringMeta(metadata, 'artist'))
-    setAlbum(stringMeta(metadata, 'album'))
-    setYear(numberMeta(metadata, 'year')?.toString() ?? '')
-    setTrackNo(numberMeta(metadata, 'trackNo')?.toString() ?? '')
+    if (!preserveMetadata) {
+      setMetadataBase(metadata)
+      setTitle(updated.title)
+      setArtist(stringMeta(metadata, 'artist'))
+      setAlbum(stringMeta(metadata, 'album'))
+      setYear(numberMeta(metadata, 'year')?.toString() ?? '')
+      setTrackNo(numberMeta(metadata, 'trackNo')?.toString() ?? '')
+      const nextLyrics = extractLyrics(metadata)
+      setLyrics(nextLyrics)
+      setLyricsText(nextLyrics ? serializeLrc(nextLyrics) : '')
+    }
     setCodec(stringMeta(metadata, 'codec'))
     setBitrate(numberMeta(metadata, 'bitrate'))
     setSampleRate(numberMeta(metadata, 'sampleRate'))
     if (nextCoverUrl !== undefined) setCoverUrl(nextCoverUrl)
-    baselineRef.current = {
-      title: updated.title,
-      content: JSON.stringify({
-        duration_seconds: updated.duration_seconds,
-        audio_metadata: metadata,
-        pending_audio: null,
-      }),
-    }
+    setBaseline(audioBaseline(updated))
   }, [revisionRef])
 
   function restoreAudioDraft() {
@@ -211,7 +232,8 @@ export function AudioChapterEditor({ chapter, revisionRef, leaseRef, readOnly, o
       const restoredLyrics = extractLyrics(metadata)
       setLyrics(restoredLyrics)
       setLyricsText(restoredLyrics ? serializeLrc(restoredLyrics) : '')
-      setPendingAudio(parsed.pending_audio ?? null)
+      setPendingAudio(parsed.pending_audio ?? recovery.pendingAudio ?? null)
+      ownDraft.current = recovery.savedAt
       setRecovery(null)
       onSaveStatus('pending')
       toast.success('Локальный черновик аудио восстановлен')
@@ -221,7 +243,7 @@ export function AudioChapterEditor({ chapter, revisionRef, leaseRef, readOnly, o
   }
 
   function discardAudioDraft() {
-    removeMediaDraft('audio', draftOwner, chapter.id)
+    if (recovery) removeMediaDraft('audio', draftOwner, chapter.id, recovery.savedAt)
     setRecovery(null)
   }
 
@@ -284,7 +306,7 @@ export function AudioChapterEditor({ chapter, revisionRef, leaseRef, readOnly, o
   }
 
   const uploadAudio = useCallback(async (file: File) => {
-    if (readOnly || !leaseRef.current) {
+    if (fieldsLocked || metadataDirty || pendingAudio || !leaseRef.current) {
       toast.error('Редактирование недоступно: глава открыта в другой сессии')
       return
     }
@@ -298,6 +320,7 @@ export function AudioChapterEditor({ chapter, revisionRef, leaseRef, readOnly, o
     }
 
     setUploading(true)
+    onUploadPending?.(true)
     const expectedRevision = revisionRef.current
     setProgress(0)
     onSaveStatus('saving')
@@ -333,6 +356,22 @@ export function AudioChapterEditor({ chapter, revisionRef, leaseRef, readOnly, o
         size: file.size,
       }
       setPendingAudio(pending)
+      const draft: MediaDraftInput = {
+        kind: 'audio',
+        chapterId: chapter.id,
+        userId: draftOwner,
+        baseRevision: expectedRevision,
+        title,
+        content: JSON.stringify({
+          duration_seconds: durationSeconds,
+          audio_metadata: buildMetadata(),
+          pending_audio: pending,
+        }),
+        pendingAudio: pending,
+      }
+      const saved = storeMediaDraft(draft)
+      onLocalDraft?.(draft, !!saved)
+      if (saved) ownDraft.current = saved.savedAt
 
       const result = await finalizeAudioChapterUploadAction(chapter.id, expectedRevision, leaseRef.current, pending)
 
@@ -340,7 +379,6 @@ export function AudioChapterEditor({ chapter, revisionRef, leaseRef, readOnly, o
 
       applyUpdatedChapter(result.value.chapter, result.value.coverUrl)
       setPendingAudio(null)
-      removeMediaDraft('audio', draftOwner, chapter.id)
       onSaveStatus('saved')
       toast.success('Аудиотрек загружен')
     } catch (error) {
@@ -348,14 +386,16 @@ export function AudioChapterEditor({ chapter, revisionRef, leaseRef, readOnly, o
       toast.error(error instanceof Error ? error.message : 'Ошибка загрузки аудио')
     } finally {
       setUploading(false)
+      onUploadPending?.(false)
     }
-  }, [applyUpdatedChapter, chapter.id, draftOwner, leaseRef, onSaveStatus, readOnly, revisionRef])
+  }, [applyUpdatedChapter, buildMetadata, chapter.id, draftOwner, durationSeconds, fieldsLocked, leaseRef, metadataDirty, onLocalDraft, onSaveStatus, onUploadPending, pendingAudio, revisionRef, title])
 
   async function attachPendingAudio() {
-    if (!pendingAudio || readOnly || !leaseRef.current) {
+    if (!pendingAudio || fieldsLocked || !leaseRef.current) {
       toast.error('Привязка недоступна: глава открыта в другой сессии')
       return
     }
+    setAttaching(true)
     onSaveStatus('saving')
     try {
       const result = await finalizeAudioChapterUploadAction(
@@ -365,14 +405,15 @@ export function AudioChapterEditor({ chapter, revisionRef, leaseRef, readOnly, o
         pendingAudio,
       )
       if (!result.ok) throw new Error(result.message)
-      applyUpdatedChapter(result.value.chapter, result.value.coverUrl)
+      applyUpdatedChapter(result.value.chapter, result.value.coverUrl, metadataDirty)
       setPendingAudio(null)
-      removeMediaDraft('audio', draftOwner, chapter.id)
       onSaveStatus('saved')
       toast.success('Аудиофайл привязан к главе')
     } catch (error) {
       onSaveStatus('error')
       toast.error(error instanceof Error ? error.message : 'Не удалось привязать аудиофайл')
+    } finally {
+      setAttaching(false)
     }
   }
 
@@ -393,7 +434,6 @@ export function AudioChapterEditor({ chapter, revisionRef, leaseRef, readOnly, o
         })
         if (!result.ok) throw new Error(result.message)
         applyUpdatedChapter(result.value)
-        removeMediaDraft('audio', draftOwner, chapter.id)
         onSaveStatus('saved')
         toast.success('Трек сохранён')
       } catch (error) {
@@ -404,6 +444,7 @@ export function AudioChapterEditor({ chapter, revisionRef, leaseRef, readOnly, o
   }
 
   function removeAudio() {
+    if (fieldsLocked || metadataDirty || pendingAudio) return
     startTransition(async () => {
       onSaveStatus('saving')
       try {
@@ -412,7 +453,6 @@ export function AudioChapterEditor({ chapter, revisionRef, leaseRef, readOnly, o
         if (!result.ok) throw new Error(result.message)
         applyUpdatedChapter(result.value)
         setCoverUrl(null)
-        removeMediaDraft('audio', draftOwner, chapter.id)
         onSaveStatus('saved')
         toast.success('Аудиофайл удалён')
       } catch (error) {
@@ -469,24 +509,25 @@ export function AudioChapterEditor({ chapter, revisionRef, leaseRef, readOnly, o
             size="sm"
             variant="outline"
             className="mt-2"
-            disabled={readOnly}
+            disabled={fieldsLocked}
             onClick={() => void attachPendingAudio()}
           >
             Привязать загруженный файл
           </Button>
         </div>
       )}
+      <fieldset disabled={fieldsLocked} className="min-w-0 space-y-5">
       {/* Upload zone */}
       <div
         onDragOver={event => {
           event.preventDefault()
-          if (!uploading && !readOnly) setDragOver(true)
+          if (!fieldsLocked && !metadataDirty && !pendingAudio) setDragOver(true)
         }}
         onDragLeave={() => setDragOver(false)}
         onDrop={event => {
           event.preventDefault()
           setDragOver(false)
-          if (!readOnly) handleFile(event.dataTransfer.files?.[0] ?? null)
+          if (!fieldsLocked && !metadataDirty && !pendingAudio) handleFile(event.dataTransfer.files?.[0] ?? null)
         }}
         className={cn(
           'rounded-2xl border-2 border-dashed bg-white/60 p-6 text-center shadow-sm shadow-black/5 transition-colors',
@@ -497,7 +538,7 @@ export function AudioChapterEditor({ chapter, revisionRef, leaseRef, readOnly, o
           ref={inputRef}
           type="file"
           accept={ACCEPTED_AUDIO}
-          disabled={readOnly}
+          disabled={fieldsLocked || metadataDirty || !!pendingAudio}
           className="hidden"
           onChange={event => {
             handleFile(event.target.files?.[0] ?? null)
@@ -512,7 +553,7 @@ export function AudioChapterEditor({ chapter, revisionRef, leaseRef, readOnly, o
         <Button
           type="button"
           onClick={() => inputRef.current?.click()}
-          disabled={uploading || isPending || readOnly}
+          disabled={fieldsLocked || metadataDirty || !!pendingAudio}
           className="mt-4 rounded-xl bg-violet-600 text-white hover:bg-violet-700"
         >
           {uploading ? 'Загружаю...' : 'Выбрать файл'}
@@ -525,6 +566,7 @@ export function AudioChapterEditor({ chapter, revisionRef, leaseRef, readOnly, o
             <p className="mt-1 text-xs text-gray-500">{progress}%</p>
           </div>
         )}
+        {metadataDirty && <p className="mt-2 text-xs text-gray-500">Сохраните поля трека перед заменой аудиофайла.</p>}
       </div>
 
       {/* Track metadata */}
@@ -596,7 +638,7 @@ export function AudioChapterEditor({ chapter, revisionRef, leaseRef, readOnly, o
 
         <div className="mt-5 flex flex-wrap justify-end gap-3">
           {audioUrl && (
-            <Button type="button" variant="outline" onClick={removeAudio} disabled={uploading || isPending || readOnly} className="rounded-xl border-red-200 text-red-600 hover:bg-red-50">
+            <Button type="button" variant="outline" onClick={removeAudio} disabled={fieldsLocked || metadataDirty || !!pendingAudio} className="rounded-xl border-red-200 text-red-600 hover:bg-red-50">
               <Trash2 className="mr-2 h-4 w-4" />
               Удалить аудио
             </Button>
@@ -826,6 +868,7 @@ export function AudioChapterEditor({ chapter, revisionRef, leaseRef, readOnly, o
         )}
       </div>
 
+      </fieldset>
       {!audioUrl && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
           <Music2 className="mr-2 inline h-4 w-4" />

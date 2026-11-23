@@ -218,6 +218,72 @@ test('preserves comic pages and can restore the empty first revision once', asyn
   ])
 })
 
+test('comic JSON keeps query ampersands through save, read and restore', async ({ sandbox: { chapter, userId } }) => {
+  const lease = implicit(userId)
+  const pages = [
+    'https://cdn.example/page.jpg?width=800&height=1200',
+    '/local?x=1&y=2',
+  ]
+  const comic = await createChapter({
+    edition_id: chapter.edition_id,
+    chapter_index: 2,
+    title: 'JSON comic',
+    content: JSON.stringify(pages),
+  })
+  if (!comic) throw new Error('Expected persisted comic')
+  expect(comic.content).toBe(JSON.stringify(pages))
+  expect(comic.content).not.toContain('&amp;')
+  expect((await fetchChapterById(comic.id))?.content).toBe(JSON.stringify(pages))
+
+  const next = ['/new?filter=a&sort=b']
+  const saved = await updateChapter(comic.id, {
+    content: JSON.stringify(next),
+    word_count: 0,
+  }, { expectedRevision: comic.revision, lease })
+  expect(saved).toMatchObject({ content: JSON.stringify(next), word_count: 0 })
+  expect(saved.content).not.toContain('&amp;')
+
+  const versions = await fetchChapterVersions(comic.id)
+  expect(versions[0]?.content).toBe(JSON.stringify(pages))
+  const restored = await restoreChapterVersion(comic.id, versions[0].id, {
+    expectedRevision: saved.revision,
+    lease,
+  })
+  expect(restored).toMatchObject({ content: JSON.stringify(pages), word_count: 0 })
+})
+
+test('append ignores requested chapter_index and keeps order', async ({ sandbox: { chapter } }) => {
+  const appended = await createChapter({
+    edition_id: chapter.edition_id,
+    chapter_index: 99,
+    title: 'Appended chapter',
+    content: null,
+  }, { append: true })
+  expect(appended?.chapter_index).toBe(chapter.chapter_index + 1)
+
+  const second = await createChapter({
+    edition_id: chapter.edition_id,
+    chapter_index: 500,
+    title: 'Second appended chapter',
+    content: null,
+  }, { append: true })
+  expect(second?.chapter_index).toBe(chapter.chapter_index + 2)
+})
+
+test('chapter_index cannot be changed through updateChapter', async ({ sandbox: { chapter, userId } }) => {
+  const saved = await updateChapter(chapter.id, {
+    title: 'Renamed without reorder',
+    chapter_index: 42,
+  }, {
+    expectedRevision: chapter.revision,
+    lease: implicit(userId),
+  })
+  expect(saved).toMatchObject({
+    title: 'Renamed without reorder',
+    chapter_index: chapter.chapter_index,
+  })
+})
+
 test('a guarded write fails if the chapter disappeared', async ({ sandbox: { chapter, userId } }) => {
   await dbQuery('DELETE FROM chapters WHERE id = $1', [chapter.id])
   await expect(updateChapter(chapter.id, { title: 'Lost' }, {
@@ -244,6 +310,19 @@ test('a guarded restore invalidates drafts based on older revisions', async ({ s
 })
 
 test.describe('MCP chapter writes', () => {
+  test('create appends the chapter and ignores the requested index', async ({ sandbox: { chapter } }) => {
+    const created = await callChapterMcp('canfly_create_chapter', {
+      edition_id: chapter.edition_id,
+      title: 'MCP append',
+      chapter_index: 999,
+      content: '<p>MCP</p>',
+    })
+    expect(created.isError).not.toBe(true)
+    expect(JSON.parse(created.content[0].text)).toMatchObject({
+      chapter_index: chapter.chapter_index + 1,
+    })
+  })
+
   test('legacy tools reject blind writes and accept revisioned ones', async ({ sandbox: { chapter } }) => {
     const { id, revision } = chapter
 

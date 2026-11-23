@@ -1,6 +1,6 @@
 'use server'
 
-import { requireChapterOwnership } from '@/lib/server/studio-auth'
+import { getChapterWriteAccess, requireChapterOwnership } from '@/lib/server/studio-auth'
 import {
   acquireChapterLease,
   fetchChapterLease,
@@ -13,11 +13,11 @@ import { chapterIdSchema, chapterLeaseProofSchema } from '@/lib/schemas/studio'
 
 export type ChapterLeaseActionResult =
   | { ok: true; lease: ChapterLease }
-  | { ok: false; code: 'validation' | 'lease-lost' | 'error'; message: string }
+  | { ok: false; code: 'validation' | 'lease-lost' | 'forbidden' | 'error'; message: string }
 
 export type ChapterLeaseAcquireResult =
   | { ok: true; lease: ChapterLease }
-  | { ok: false; code: 'validation' | 'lease-held' | 'not-found'; holder: ChapterLeaseHolder | null }
+  | { ok: false; code: 'validation' | 'lease-held' | 'forbidden'; holder: ChapterLeaseHolder | null }
 
 /** Захват права редактирования: один активный lease на главу. */
 export async function acquireChapterLeaseAction(
@@ -31,20 +31,19 @@ export async function acquireChapterLeaseAction(
     return { ok: false, code: 'validation', holder: null }
   }
 
-  const { session } = await requireChapterOwnership(chapterId)
-  try {
-    const acquired = await acquireChapterLease({
-      chapterId,
-      sessionId,
-      documentId,
-      actor: { userId: session.user.id, actorKind: 'studio' },
-    })
-    return acquired.ok
-      ? { ok: true, lease: acquired.lease }
-      : { ok: false, code: 'lease-held', holder: acquired.holder }
-  } catch {
-    return { ok: false, code: 'not-found', holder: null }
+  const access = await getChapterWriteAccess(chapterId)
+  if (access.status !== 'ok') {
+    return { ok: false, code: 'forbidden', holder: null }
   }
+  const acquired = await acquireChapterLease({
+    chapterId,
+    sessionId,
+    documentId,
+    actor: { userId: access.session.user.id, actorKind: 'studio' },
+  })
+  return acquired.ok
+    ? { ok: true, lease: acquired.lease }
+    : { ok: false, code: 'lease-held', holder: acquired.holder }
 }
 
 /** Heartbeat активной вкладки. */
@@ -58,12 +57,15 @@ export async function renewChapterLeaseAction(
     return { ok: false, code: 'validation', message: 'Некорректный lease' }
   }
 
-  const { session } = await requireChapterOwnership(chapterId)
+  const access = await getChapterWriteAccess(chapterId)
+  if (access.status !== 'ok') {
+    return { ok: false, code: 'forbidden', message: 'Доступ к главе отозван' }
+  }
   try {
     const renewed = await renewChapterLease({
       chapterId,
       sessionId,
-      actor: { userId: session.user.id, actorKind: 'studio' },
+      actor: { userId: access.session.user.id, actorKind: 'studio' },
       proof: parsedProof.data,
     })
     return renewed.ok

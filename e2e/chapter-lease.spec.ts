@@ -11,6 +11,8 @@ interface Sandbox {
   db: Client
   chapterId: string
   chapterUrl: string
+  editionId: string
+  releaseId: string
   comicId: string
   comicUrl: string
   comicContent: string
@@ -93,12 +95,14 @@ async function setVisibility(page: Page, state: 'hidden' | 'visible') {
 }
 
 async function waitForComicEditing(page: Page) {
-  await expect(page.getByRole('button', { name: 'Загрузить' })).toBeEnabled({ timeout: 20_000 })
+  await expect(page.getByRole('button', { name: /^(Загрузить|Восстановить страницы)$/ }).first())
+    .toBeEnabled({ timeout: 20_000 })
   await expect(page.getByAltText('Страница 1')).toBeVisible()
 }
 
 async function waitForAudioEditing(page: Page) {
-  await expect(page.getByRole('button', { name: 'Сохранить' })).toBeEnabled({ timeout: 20_000 })
+  await expect(page.getByRole('button', { name: /^(Сохранить|Восстановить поля)$/ }).first())
+    .toBeEnabled({ timeout: 20_000 })
 }
 
 const test = base.extend<{ sandbox: Sandbox }>({
@@ -159,6 +163,8 @@ const test = base.extend<{ sandbox: Sandbox }>({
         db,
         chapterId: chapter.id,
         chapterUrl,
+        editionId: edition.id,
+        releaseId: release.id,
         comicId: comicChapter.id,
         comicUrl: `/studio/editions/${comicEdition.id}/chapters/${comicChapter.id}`,
         comicContent,
@@ -408,7 +414,7 @@ test.describe('Эксклюзивное редактирование главы'
     await second.goto('/studio', { waitUntil: 'domcontentloaded' })
     await expect(page.getByAltText('Страница 1')).toHaveAttribute('src', /logo\.png/, { timeout: 30_000 })
     await expect(page.getByAltText('Страница 2')).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Удалить страницу 1' })).toBeEnabled()
+    await expect(page.getByRole('button', { name: 'Восстановить страницы' })).toBeEnabled()
   })
 
   test('H2: аудио после новой ревизии показывает серверный заголовок и не отправляет старый', async ({ sandbox }) => {
@@ -425,7 +431,7 @@ test.describe('Эксклюзивное редактирование главы'
     await setVisibility(page, 'visible')
 
     await expect(page.getByLabel('Название')).toHaveValue('Серверное название', { timeout: 30_000 })
-    await expect(page.getByRole('button', { name: 'Сохранить' })).toBeEnabled()
+    await expect(page.getByRole('button', { name: 'Восстановить поля' })).toBeEnabled()
 
     const { rows: [saved] } = await sandbox.db.query(
       'SELECT title FROM chapters WHERE id = $1', [sandbox.audioId],
@@ -475,6 +481,38 @@ test.describe('Эксклюзивное редактирование главы'
     await expect(page.getByLabel('HTML черновика')).toHaveValue('<p>Текст при переполнении</p>')
   })
 
+  test('занятый слот устаревшего черновика блокирует новые правки до архивации', async ({ sandbox }) => {
+    const page = sandbox.owner.page
+    const key = `cf-chapter-draft:${sandbox.owner.id}:${sandbox.chapterId}`
+    await page.evaluate(({ key, original }) => {
+      sessionStorage.setItem(key, JSON.stringify({
+        version: 1,
+        revision: 0,
+        base: JSON.stringify({ title: 'Глава', content: original }),
+        value: { title: 'Глава', content: '<p>Старый черновик</p>' },
+      }))
+    }, { key, original })
+    await sandbox.db.query("UPDATE chapters SET title = 'Новая ревизия' WHERE id = $1", [sandbox.chapterId])
+    await page.addInitScript(() => {
+      const write = Storage.prototype.setItem
+      Storage.prototype.setItem = function (key, value) {
+        if (key.startsWith('cf-chapter-draft-archive:') && !sessionStorage.getItem('allow-archive')) {
+          throw new DOMException('full', 'QuotaExceededError')
+        }
+        return write.call(this, key, value)
+      }
+    })
+    await page.reload()
+    await expect(page.getByLabel('Старый локальный черновик')).toHaveValue('<p>Старый черновик</p>')
+    await expect(page.locator('[contenteditable=true]')).toHaveCount(0)
+
+    await page.evaluate(() => sessionStorage.setItem('allow-archive', '1'))
+    await page.getByRole('button', { name: 'Повторить архивацию' }).click()
+    await waitForEditable(page)
+    await page.getByRole('button', { name: 'Локальные черновики' }).click()
+    await expect(page.getByLabel('HTML черновика')).toHaveValue('<p>Старый черновик</p>')
+  })
+
   test('H2: аудио сохраняет локальный черновик между перезагрузками', async ({ sandbox }) => {
     const page = sandbox.owner.page
     await page.goto(sandbox.audioUrl, { waitUntil: 'domcontentloaded' })
@@ -496,6 +534,29 @@ test.describe('Эксклюзивное редактирование главы'
       'SELECT title FROM chapters WHERE id = $1', [sandbox.audioId],
     )
     expect(saved.title).toBe('Локальное название')
+  })
+
+  test('аудиополя заблокированы до подтверждения сохранения', async ({ sandbox }) => {
+    const page = sandbox.owner.page
+    await page.goto(sandbox.audioUrl, { waitUntil: 'domcontentloaded' })
+    await waitForAudioEditing(page)
+    const title = page.getByLabel('Название')
+    await title.fill('Новый заголовок')
+
+    let resume!: () => void
+    const paused = new Promise<void>(resolve => { resume = resolve })
+    await page.route(`**${sandbox.audioUrl}`, async route => {
+      if (route.request().method() === 'POST') await paused
+      await route.continue()
+    })
+    try {
+      await page.getByRole('button', { name: 'Сохранить' }).click()
+      await expect(title).toBeDisabled()
+    } finally {
+      resume()
+    }
+    await expect(title).toBeEnabled()
+    await expect(title).toHaveValue('Новый заголовок')
   })
 
   test('H2: комикс сохраняет черновик при offline и восстанавливает после reload', async ({ sandbox }) => {
@@ -578,5 +639,132 @@ test.describe('Эксклюзивное редактирование главы'
     await sandbox.owner.page.getByRole('button', { name: 'Восстановить поля' }).click()
     await expect(sandbox.owner.page.getByText('Аудиофайл загружен, но не привязан к главе')).toBeVisible()
     await expect(sandbox.owner.page.getByRole('button', { name: 'Привязать загруженный файл' })).toBeVisible()
+  })
+
+  test('отзыв прав переводит редактор в read-only и не подтверждает сохранение', async ({ sandbox }) => {
+    const page = sandbox.owner.page
+    await sandbox.db.query(
+      'DELETE FROM release_collaborators WHERE release_id = $1 AND user_id = $2',
+      [sandbox.releaseId, sandbox.owner.id],
+    )
+
+    await page.locator('[contenteditable=true]').fill('Текст после отзыва прав')
+    await expect(page.getByRole('status')).toContainText('Доступ к главе отозван', { timeout: 20_000 })
+    await expect(page.locator('[contenteditable="true"]')).toHaveCount(0)
+    await expect(page.getByRole('status')).not.toContainText('Сохранено')
+
+    const { rows: [saved] } = await sandbox.db.query(
+      'SELECT content FROM chapters WHERE id = $1', [sandbox.chapterId],
+    )
+    expect(saved.content).toBe(original)
+    await waitForLeaseReleased(sandbox.db, sandbox.chapterId)
+  })
+
+  test('heartbeat распознаёт отзыв прав без новой попытки сохранения', async ({ sandbox }) => {
+    const page = sandbox.owner.page
+    await sandbox.db.query(
+      'DELETE FROM release_collaborators WHERE release_id = $1 AND user_id = $2',
+      [sandbox.releaseId, sandbox.owner.id],
+    )
+
+    await page.evaluate(() => window.dispatchEvent(new Event('online')))
+    await expect(page.getByRole('alert').filter({ hasText: 'Доступ к главе отозван' }))
+      .toBeVisible({ timeout: 20_000 })
+    await expect(page.locator('[contenteditable="true"]')).toHaveCount(0)
+    await waitForLeaseReleased(sandbox.db, sandbox.chapterId)
+  })
+
+  test('после отзыва прав повторный захват не уводит с незаписанным текстом', async ({ sandbox }) => {
+    const page = sandbox.owner.page
+    await page.evaluate(() => {
+      const write = Storage.prototype.setItem
+      Storage.prototype.setItem = function (key, value) {
+        if (key.startsWith('cf-chapter-draft')) throw new DOMException('full', 'QuotaExceededError')
+        return write.call(this, key, value)
+      }
+    })
+    await expireLease(sandbox.db, sandbox.chapterId)
+    await page.locator('[contenteditable=true]').fill('Правка только в памяти')
+    await expect(page.getByRole('status')).toContainText('только для чтения')
+    const second = await sandbox.newPageFor(sandbox.collaborator.email)
+    await second.goto(sandbox.chapterUrl)
+    await waitForEditable(second)
+    await setVisibility(page, 'visible')
+    await waitForReadOnly(page, 'Lease second')
+    await sandbox.db.query(
+      'DELETE FROM release_collaborators WHERE release_id = $1 AND user_id = $2',
+      [sandbox.releaseId, sandbox.owner.id],
+    )
+
+    await page.getByRole('button', { name: 'Попробовать снова' }).click()
+    await expect(page.getByRole('alert').filter({ hasText: 'Доступ к главе отозван' })).toBeVisible()
+    await expect(page).toHaveURL(new RegExp(`${sandbox.chapterUrl}$`))
+    await expect(page.locator('.ProseMirror')).toHaveText('Правка только в памяти')
+    await expect(page.locator('[contenteditable=true]')).toHaveCount(0)
+  })
+
+  test('offline не показывает «Сохранено» и повторяет запись после reconnect', async ({ sandbox }) => {
+    const page = sandbox.owner.page
+    await page.context().setOffline(true)
+    await page.locator('[contenteditable=true]').fill('Офлайн-правка')
+    await expect(page.getByRole('status')).toContainText(/Ошибка|Не удалось/, { timeout: 20_000 })
+    await expect(page.getByRole('status')).not.toContainText('Сохранено')
+
+    await page.context().setOffline(false)
+    await page.evaluate(() => window.dispatchEvent(new Event('online')))
+    await expect(page.getByRole('status')).toContainText('Сохранено', { timeout: 20_000 })
+    const { rows: [saved] } = await sandbox.db.query(
+      'SELECT content FROM chapters WHERE id = $1', [sandbox.chapterId],
+    )
+    expect(saved.content).toBe('<p>Офлайн-правка</p>')
+  })
+
+  test('read-only навигация архивирует черновик и не теряет текст', async ({ sandbox }) => {
+    const page = sandbox.owner.page
+    await expireLease(sandbox.db, sandbox.chapterId)
+    await page.locator('[contenteditable=true]').fill('Черновик для навигации')
+    await expect(page.getByRole('status')).toContainText(/Режим только для чтения|только для чтения/)
+
+    const second = await sandbox.newPageFor(sandbox.collaborator.email)
+    await second.goto(sandbox.chapterUrl, { waitUntil: 'domcontentloaded' })
+    await waitForEditable(second)
+    await setVisibility(page, 'visible')
+    await expect(page.getByRole('alert').filter({ hasText: 'Глава уже редактируется' }))
+      .toBeVisible({ timeout: 30_000 })
+    await expect(page.locator('[contenteditable="true"]')).toHaveCount(0)
+
+    await page.locator(`header a[href="/studio/editions/${sandbox.editionId}"]`).click()
+    await expect(page).toHaveURL(new RegExp(`/studio/editions/${sandbox.editionId}$`), { timeout: 20_000 })
+
+    await page.goto(sandbox.chapterUrl, { waitUntil: 'domcontentloaded' })
+    await expect(page.getByRole('alert').filter({ hasText: 'Глава уже редактируется' })).toBeVisible()
+    await page.getByRole('button', { name: 'Локальные черновики' }).click()
+    await expect(page.getByLabel('HTML черновика')).toHaveValue('<p>Черновик для навигации</p>')
+  })
+
+  test('JSON комикса сохраняет амперсанды в URL после reload', async ({ sandbox }) => {
+    const pages = ['/placeholder.jpg?x=1&y=2']
+    await sandbox.db.query(
+      'UPDATE chapters SET content = $2 WHERE id = $1',
+      [sandbox.comicId, JSON.stringify(pages)],
+    )
+
+    const page = sandbox.owner.page
+    await page.goto(sandbox.comicUrl, { waitUntil: 'domcontentloaded' })
+    await waitForComicEditing(page)
+    await expect(page.getByAltText('Страница 1')).toHaveAttribute('src', /placeholder\.jpg\?x=1&y=2/)
+
+    page.once('dialog', dialog => dialog.accept('/second.png?a=1&b=2'))
+    await page.getByRole('button', { name: '+ URL' }).click()
+    await expect.poll(async () => {
+      const { rows: [row] } = await sandbox.db.query(
+        'SELECT content FROM chapters WHERE id = $1', [sandbox.comicId],
+      )
+      return row.content
+    }).toBe(JSON.stringify(['/placeholder.jpg?x=1&y=2', '/second.png?a=1&b=2']))
+
+    await page.reload()
+    await waitForComicEditing(page)
+    await expect(page.getByAltText('Страница 2')).toHaveAttribute('src', /second\.png\?a=1&b=2/)
   })
 })

@@ -8,6 +8,7 @@ export interface LeaseRenewalResult {
 export type LeaseRenewalOutcome =
   | { status: 'ok'; lease: ChapterLeaseView }
   | { status: 'lost' }
+  | { status: 'revoked' }
   | { status: 'degraded' }
 
 /**
@@ -22,6 +23,7 @@ export async function settleLeaseRenewal(
     const result = await renew()
     if (result.ok) return { status: 'ok', lease: result.lease }
     if (result.code === 'lease-lost') return { status: 'lost' }
+    if (result.code === 'forbidden') return { status: 'revoked' }
     return { status: 'degraded' }
   } catch {
     return { status: 'degraded' }

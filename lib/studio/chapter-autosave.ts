@@ -57,7 +57,8 @@ export async function saveChapterAutosave<T extends { title: string; content: st
     if (!saved.ok) {
       const shouldArchive = saved.code === 'conflict' ||
         saved.code === 'lease-lost' ||
-        saved.code === 'lease-required'
+        saved.code === 'lease-required' ||
+        saved.code === 'forbidden'
       return {
         result: { acknowledged: {}, error: new Error(saved.message) },
         failure: saved,

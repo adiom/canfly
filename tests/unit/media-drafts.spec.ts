@@ -4,12 +4,13 @@ import {
   mediaDraftKey,
   removeMediaDraft,
   saveMediaDraft,
+  storeMediaDraft,
   type MediaDraftKind,
 } from '@/lib/studio/media-drafts'
 
 class FakeStorage {
   private data = new Map<string, string>()
-  constructor(private readonly fail = false) {}
+  constructor(public fail = false) {}
   get length() { return this.data.size }
   key(index: number) { return [...this.data.keys()][index] ?? null }
   getItem(key: string) { return this.data.get(key) ?? null }
@@ -58,6 +59,28 @@ test('возвращает false, если недоступны оба хран�
   installWindow(new FakeStorage(true), new FakeStorage(true))
   expect(saveMediaDraft(base)).toBe(false)
   expect(loadMediaDraft('audio', 'user-1', 'chapter-1')).toBeNull()
+})
+
+test('восстанавливает новый fallback, даже если старая копия осталась в localStorage', () => {
+  const local = new FakeStorage()
+  const session = new FakeStorage()
+  installWindow(local, session)
+  expect(saveMediaDraft(base)).toBe(true)
+  local.fail = true
+  expect(saveMediaDraft({ ...base, title: 'Новая правка' })).toBe(true)
+  expect(loadMediaDraft('audio', 'user-1', 'chapter-1')?.title).toBe('Новая правка')
+  local.fail = false
+  expect(saveMediaDraft({ ...base, title: 'Последняя правка' })).toBe(true)
+  expect(loadMediaDraft('audio', 'user-1', 'chapter-1')?.title).toBe('Последняя правка')
+})
+
+test('подтверждение старого снимка не удаляет более новую правку', () => {
+  const first = storeMediaDraft(base)
+  expect(first).not.toBeNull()
+  const latest = storeMediaDraft({ ...base, title: 'Новая правка' })
+  expect(storeMediaDraft({ ...base, title: 'Новая правка' })).toEqual(latest)
+  removeMediaDraft('audio', 'user-1', 'chapter-1', first!.savedAt)
+  expect(loadMediaDraft('audio', 'user-1', 'chapter-1')).toEqual(latest)
 })
 
 test('удаляет черновик и сохраняет pending audio', () => {
