@@ -21,6 +21,24 @@ export async function fetchEditionsByRelease(releaseId: string) {
   )
 }
 
+/** One database round-trip for editions and published chapter counts on a release page.
+ * Keep the existing edition ordering and all edition columns unchanged.
+ * A correlated count uses the edition_id filter, avoiding a whole-site chapter aggregate.
+ */
+export async function fetchEditionsWithPublishedChapterCounts(releaseId: string) {
+  return dbQuery<(Edition & { published_chapter_count: number })>(
+    `SELECT
+       e.id, e.release_id, e.format, e.platform, e.external_url, e.artwork_url,
+       e.slug, e.status, e.is_primary, e.quality_tier, e.created_at, e.updated_at,
+       (SELECT COUNT(*)::integer FROM chapters c
+        WHERE c.edition_id = e.id AND c.status = 'published') AS published_chapter_count
+     FROM editions e
+     WHERE e.release_id = $1
+     ORDER BY e.created_at ASC`,
+    [releaseId],
+  )
+}
+
 export async function fetchReleaseChapterCounts(releaseId: string): Promise<Record<string, number>> {
   const rows = await dbQuery<{ edition_id: string; chapter_count: number }>(
     `SELECT c.edition_id, COUNT(*)::integer AS chapter_count

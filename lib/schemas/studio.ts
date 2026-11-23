@@ -146,7 +146,7 @@ export const lyricsSchema = z.object({
 
 export const chapterUpdateSchema = z.object({
   title: optionalString.optional(),
-  content: optionalString.optional(),
+  content: z.string().trim().nullable().optional(),
   audio_url: optionalString.optional(),
   audio_blob_path: optionalString.optional(),
   duration_seconds: z.number().int().nonnegative().nullable().optional(),

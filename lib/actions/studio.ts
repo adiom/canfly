@@ -416,57 +416,21 @@ export async function updateChapterAction(id: string, data: {
   if (!parsed.success) {
     throw new Error(parsed.error.issues[0]?.message ?? 'Ошибка валидации главы')
   }
-  const valid = parsed.data
-
-  const chapter = await chaptersDb.fetchChapterById(id)
-  if (!chapter) return null
-
-  const wordCount = valid.content
-    ? valid.content.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(Boolean).length
-    : chapter.word_count
-
-  if (valid.content && chapter.content && valid.content !== chapter.content) {
-    await chaptersDb.createChapterVersion(id, chapter.content)
-  }
-
-  const updated = await chaptersDb.updateChapter(id, {
-    title: valid.title ?? chapter.title,
-    content: valid.content ?? chapter.content,
-    audio_url: valid.audio_url ?? chapter.audio_url,
-    audio_blob_path: valid.audio_blob_path ?? chapter.audio_blob_path,
-    duration_seconds: valid.duration_seconds ?? chapter.duration_seconds,
-    audio_metadata: valid.audio_metadata ?? chapter.audio_metadata,
-    audio_content_type: valid.audio_content_type ?? chapter.audio_content_type,
-    audio_file_size_bytes: valid.audio_file_size_bytes ?? chapter.audio_file_size_bytes,
-    audio_uploaded_at: valid.audio_uploaded_at ?? chapter.audio_uploaded_at,
-    chapter_index: valid.chapter_index ?? chapter.chapter_index,
-    status: chapter.status,
-    word_count: wordCount,
-  })
-
-  revalidatePath(`/studio/editions/${chapter.edition_id}`)
+  const { title, ...patch } = parsed.data
+  const updated = await chaptersDb.updateChapter(id, { ...patch, title: title ?? undefined })
+  if (updated) revalidatePath(`/studio/editions/${updated.edition_id}`)
   return updated
 }
 
 export async function updateComicChapterPagesAction(chapterId: string, pages: string[]) {
   await requireChapterOwnership(chapterId)
-  const content = JSON.stringify(pages)
-  const chapter = await chaptersDb.fetchChapterById(chapterId)
-  if (!chapter) throw new Error('Глава не найдена')
-
-  if (chapter.content !== content) {
-    await chaptersDb.createChapterVersion(chapterId, chapter.content ?? '')
-  }
-
   const updated = await chaptersDb.updateChapter(chapterId, {
-    title: chapter.title,
-    content,
-    chapter_index: chapter.chapter_index,
-    status: chapter.status,
+    content: JSON.stringify(pages),
     word_count: 0,
-  })
+  }, { archiveEmptyContent: true })
+  if (!updated) throw new Error('Глава не найдена')
 
-  revalidatePath(`/studio/editions/${chapter.edition_id}`)
+  revalidatePath(`/studio/editions/${updated.edition_id}`)
   return updated
 }
 
@@ -501,18 +465,14 @@ export async function finalizeAudioChapterUploadAction(id: string, data: {
 
   const previousPath = chapter.audio_blob_path
   const updated = await chaptersDb.updateChapter(id, {
-    title: parsed.metadata.title ?? chapter.title,
-    content: chapter.content,
+    title: parsed.metadata.title ?? undefined,
     audio_url: blobInfo.url,
     audio_blob_path: blobInfo.pathname,
-    duration_seconds: parsed.durationSeconds ?? chapter.duration_seconds,
+    duration_seconds: parsed.durationSeconds ?? undefined,
     audio_metadata: parsed.metadata,
     audio_content_type: blobInfo.contentType ?? data.contentType ?? null,
     audio_file_size_bytes: blobInfo.size ?? data.size ?? null,
     audio_uploaded_at: blobInfo.uploadedAt.toISOString(),
-    chapter_index: chapter.chapter_index,
-    status: chapter.status,
-    word_count: chapter.word_count,
   })
 
   if (previousPath && previousPath !== blobInfo.pathname && previousPath.startsWith(`audio/chapters/${id}/`)) {
@@ -561,8 +521,6 @@ export async function removeAudioChapterFileAction(id: string) {
   }
 
   const updated = await chaptersDb.updateChapter(id, {
-    title: chapter.title,
-    content: chapter.content,
     audio_url: null,
     audio_blob_path: null,
     duration_seconds: null,
@@ -570,9 +528,6 @@ export async function removeAudioChapterFileAction(id: string) {
     audio_content_type: null,
     audio_file_size_bytes: null,
     audio_uploaded_at: null,
-    chapter_index: chapter.chapter_index,
-    status: chapter.status,
-    word_count: chapter.word_count,
   })
 
   revalidatePath(`/studio/editions/${chapter.edition_id}`)

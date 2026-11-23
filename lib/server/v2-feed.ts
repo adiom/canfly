@@ -2,6 +2,7 @@ import 'server-only'
 
 import { z } from 'zod'
 import { dbQuery } from '@/lib/db'
+import { normalizeHighlightText } from '@/lib/highlights/anchor'
 import { chapterPlainText } from '@/lib/server/highlight-source'
 import { relationshipLabel } from '@/lib/relationships-kinds'
 import { FEED_KINDS, type FeedItem, type FeedKind, type FeedPage } from '@/lib/v2-feed'
@@ -39,17 +40,28 @@ function encode(cursor: Cursor): string {
   return Buffer.from(JSON.stringify(cursor)).toString('base64url')
 }
 
-function plain(value: string | null, max = 650): string {
-  const text = chapterPlainText(value ?? '')
+function clip(text: string, max: number): string {
   if (text.length <= max) return text
   const cut = text.slice(0, max)
   const space = cut.lastIndexOf(' ')
   return `${cut.slice(0, space > max / 2 ? space : max).trimEnd()}…`
 }
 
+/** Chapter markup: extract readable text first, then clip. */
+function htmlText(html: string | null, max = 650): string {
+  return clip(chapterPlainText(html ?? ''), max)
+}
+
+/** Feed fields stored as plain text (posts, highlights, place/relationship notes):
+ * clip without HTML parsing, so literal `<main>` and `&amp;` survive untouched.
+ */
+function plain(value: string | null, max = 650): string {
+  return clip(normalizeHighlightText(value ?? ''), max)
+}
+
 export function excerptParagraphs(html: string): string[] {
   const parts = html.split(/<\/(?:p|div|blockquote|h[1-6])\s*>|<br\s*\/?\s*>|\r?\n\s*\r?\n/i)
-    .map((part) => plain(part, 650)).filter(Boolean)
+    .map((part) => htmlText(part, 650)).filter(Boolean)
   const result: string[] = []
   let length = 0
   for (const part of parts) {
@@ -145,7 +157,8 @@ async function thoughts(cursor: Cursor): Promise<Candidate[]> {
   const rows = await dbQuery<Row & { content: string; image_url: string | null; name: string; slug: string; avatar: string | null }>(`
     SELECT post.id, ${stamp('post')}, LEFT(post.content,2400) AS content, post.image_url, c.name, c.slug, c.avatar
     FROM character_posts post JOIN characters c ON c.id=post.character_id
-    WHERE c.character_type='person' AND (post.scheduled_at IS NULL OR post.scheduled_at <= $1::timestamptz)
+    -- Publication visibility follows the database clock; the cursor snapshot only drives keyset paging.
+    WHERE c.character_type='person' AND (post.scheduled_at IS NULL OR post.scheduled_at <= NOW())
       AND NULLIF(trim(post.content),'') IS NOT NULL AND ${where('post')} ${order('post')}`, paging('thought', cursor))
   return rows.map((row) => ({ ...row, item: {
     id: `thought:${row.id}`, kind: 'thought', text: plain(row.content, 1200), image: row.image_url,

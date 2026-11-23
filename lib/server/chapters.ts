@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg'
 import { dbQuery, dbQueryOne, dbUpdatePartial, withTransaction } from '@/lib/db'
 import type { UpdatableColumn } from '@/lib/db'
 import { sanitizeChapterHtml } from '@/lib/sanitize'
@@ -181,23 +182,69 @@ const chapterUpdatable: Record<string, UpdatableColumn> = {
   word_count: { column: 'word_count' },
 }
 
-/**
- * Частичный апдейт: перезаписываются только переданные поля. Раньше запрос
- * выставлял все колонки сразу, поэтому вызов с одним title обнулял аудио-поля
- * главы (audio_url, duration_seconds и остальные пять).
- */
-export async function updateChapter(id: string, data: Record<string, unknown>) {
-  const patch = { ...data }
-  if (patch.content !== undefined) {
-    patch.content = safeContent(patch.content)
-  }
-
+function updateChapterFields(id: string, data: Record<string, unknown>, client?: PoolClient) {
   return dbUpdatePartial<Chapter>({
     table: 'chapters',
     id,
-    data: patch,
+    data,
     columns: chapterUpdatable,
     returning: chapterColumns,
+    client,
+  })
+}
+
+async function lockChapterContent(client: PoolClient, id: string) {
+  const { rows } = await client.query<{ content: string | null }>(
+    'SELECT content FROM chapters WHERE id = $1 FOR UPDATE',
+    [id],
+  )
+  return rows[0] ?? null
+}
+
+/** Вызывается только после блокировки главы на том же клиенте. */
+async function updateLockedChapter(
+  client: PoolClient,
+  id: string,
+  currentContent: string | null,
+  data: Record<string, unknown>,
+  content: string | null,
+  archiveEmptyContent = false,
+) {
+  const previous = sanitizeChapterHtml(currentContent)
+  if ((previous || archiveEmptyContent) && previous !== (content ?? '')) {
+    await client.query(
+      `INSERT INTO chapter_versions (chapter_id, content, version_number)
+       SELECT $1, $2, COALESCE(MAX(version_number), 0) + 1
+       FROM chapter_versions WHERE chapter_id = $1`,
+      [id, previous],
+    )
+  }
+
+  const updated = await updateChapterFields(id, {
+    ...data,
+    content,
+    word_count: data.word_count ?? countChapterWords(content),
+  }, client)
+  if (!updated) throw new Error('Не удалось обновить заблокированную главу')
+  return updated
+}
+
+/** Перезаписывает только переданные поля и архивирует заменяемое содержимое. */
+export async function updateChapter(
+  id: string,
+  data: Record<string, unknown>,
+  { archiveEmptyContent = false } = {},
+) {
+  if (data.content === undefined) {
+    const chapter = await updateChapterFields(id, data)
+    return chapter ? withSafeContent(chapter) : null
+  }
+
+  const content = safeContent(data.content)
+  return withTransaction(async (client) => {
+    const current = await lockChapterContent(client, id)
+    if (!current) return null
+    return updateLockedChapter(client, id, current.content, data, content, archiveEmptyContent)
   })
 }
 
@@ -248,22 +295,6 @@ export async function incrementChapterViews(id: string) {
 
 // --- Chapter Versions ---
 
-export async function createChapterVersion(chapterId: string, content: string) {
-  const last = await dbQueryOne<{ version_number: number }>(
-    `SELECT version_number FROM chapter_versions
-     WHERE chapter_id = $1 ORDER BY version_number DESC LIMIT 1`,
-    [chapterId],
-  )
-  const nextVersion = (last?.version_number ?? 0) + 1
-
-  return dbQueryOne<ChapterVersion>(
-    `INSERT INTO chapter_versions (chapter_id, content, version_number)
-     VALUES ($1, $2, $3)
-     RETURNING id, chapter_id, content, version_number, created_at`,
-    [chapterId, sanitizeChapterHtml(content), nextVersion],
-  )
-}
-
 export async function fetchChapterVersions(chapterId: string) {
   return dbQuery<ChapterVersion>(
     `SELECT id, chapter_id, content, version_number, created_at
@@ -290,41 +321,16 @@ export async function fetchChapterVersion(versionId: string) {
  */
 export async function restoreChapterVersion(chapterId: string, versionId: string) {
   return withTransaction(async (client) => {
-    const versionResult = await client.query<{ content: string; chapter_id: string }>(
-      `SELECT content, chapter_id FROM chapter_versions WHERE id = $1 FOR SHARE`,
-      [versionId],
-    )
-    const version = versionResult.rows[0]
-    if (!version || version.chapter_id !== chapterId) return null
-
-    const currentResult = await client.query<{ content: string | null }>(
-      'SELECT content FROM chapters WHERE id = $1 FOR UPDATE',
-      [chapterId],
-    )
-    const current = currentResult.rows[0]
+    const current = await lockChapterContent(client, chapterId)
     if (!current) return null
 
-    if (current.content) {
-      const last = await client.query<{ version_number: number }>(
-        `SELECT version_number FROM chapter_versions
-         WHERE chapter_id = $1 ORDER BY version_number DESC LIMIT 1`,
-        [chapterId],
-      )
-      const nextVersion = (last.rows[0]?.version_number ?? 0) + 1
-      await client.query(
-        `INSERT INTO chapter_versions (chapter_id, content, version_number)
-         VALUES ($1, $2, $3)`,
-        [chapterId, sanitizeChapterHtml(current.content), nextVersion],
-      )
-    }
-
-    const content = sanitizeChapterHtml(version.content)
-    const updated = await client.query<Chapter>(
-      `UPDATE chapters SET content = $2, word_count = $3
-       WHERE id = $1
-       RETURNING ${chapterColumns}`,
-      [chapterId, content, countChapterWords(content)],
+    const { rows } = await client.query<{ content: string }>(
+      'SELECT content FROM chapter_versions WHERE id = $1 AND chapter_id = $2',
+      [versionId, chapterId],
     )
-    return updated.rows[0] ?? null
+    const version = rows[0]
+    if (!version) return null
+
+    return updateLockedChapter(client, chapterId, current.content, {}, sanitizeChapterHtml(version.content))
   })
 }

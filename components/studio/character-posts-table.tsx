@@ -19,6 +19,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { deleteCharacterPostAction } from '@/lib/actions/studio-characters'
+import { formatStudioDate } from '@/lib/studio/format-studio-date'
 import type { CharacterPost } from '@/lib/types'
 
 const postTypeLabels: Record<string, string> = {
@@ -31,16 +32,6 @@ const postTypeBadgeStyles: Record<string, string> = {
   thought: 'bg-violet-50 text-violet-600 border-violet-200/80',
   announcement: 'bg-amber-50 text-amber-600 border-amber-200/80',
   question: 'bg-sky-50 text-sky-600 border-sky-200/80',
-}
-
-function formatDate(value: string) {
-  return new Date(value).toLocaleString('ru-RU', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
 }
 
 export function CharacterPostsTable({
@@ -85,11 +76,11 @@ export function CharacterPostsTable({
                   {scheduled ? (
                     <Badge variant="outline" className="gap-1 border-violet-200/80 bg-violet-50 text-violet-600 rounded-lg px-2.5 py-0.5">
                       <Clock className="h-3 w-3" />
-                      {formatDate(post.scheduled_at!)}
+                      {formatStudioDate(post.scheduled_at!)}
                     </Badge>
                   ) : (
                     <span className="text-xs text-gray-400">
-                      {formatDate(post.created_at)}
+                      {formatStudioDate(post.created_at)}
                     </span>
                   )}
                 </div>

@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 import { randomBytes, randomInt } from 'node:crypto'
 import { Client } from 'pg'
 import { loadTestCredentials, type TestCredentials } from './setup/credentials'
-import { loginViaMagicLink } from './setup/login-helper'
+import { loginViaMagicToken } from './setup/login-helper'
 import { loadEnvLocal, pgConfig } from './setup/pg'
 import mammoth from 'mammoth'
 
@@ -48,7 +48,22 @@ test.describe('smoke: studio routes (admin role)', () => {
   })
 
   test.beforeEach(async ({ page }) => {
-    await loginViaMagicLink(page, credentials.email)
+    await loginViaMagicToken(page, credentials.email)
+  })
+
+  test('admin sidebar shows the active PostgreSQL database', async ({ page }) => {
+    const name = await withDb(async (client) => {
+      const result = await client.query<{ name: string }>('SELECT current_database() AS name')
+      return result.rows[0]?.name
+    })
+    expect(name).toBeTruthy()
+
+    await page.goto('/studio', { waitUntil: 'domcontentloaded' })
+    const connection = page.getByTestId('studio-database-info')
+    await expect(connection).toBeVisible()
+    await expect(connection).toContainText(name!)
+    await expect(connection).toContainText('Local')
+    await expect(connection).toContainText('127.0.0.1')
   })
 
   for (const path of STUDIO_ROUTES) {
