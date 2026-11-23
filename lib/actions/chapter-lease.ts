@@ -23,9 +23,11 @@ export type ChapterLeaseAcquireResult =
 export async function acquireChapterLeaseAction(
   chapterId: string,
   sessionId: string,
+  documentId: string,
 ): Promise<ChapterLeaseAcquireResult> {
   if (!chapterIdSchema.safeParse(chapterId).success ||
-      typeof sessionId !== 'string' || sessionId.length < 8 || sessionId.length > 128) {
+      typeof sessionId !== 'string' || sessionId.length < 8 || sessionId.length > 128 ||
+      typeof documentId !== 'string' || documentId.length < 8 || documentId.length > 128) {
     return { ok: false, code: 'validation', holder: null }
   }
 
@@ -34,6 +36,7 @@ export async function acquireChapterLeaseAction(
     const acquired = await acquireChapterLease({
       chapterId,
       sessionId,
+      documentId,
       actor: { userId: session.user.id, actorKind: 'studio' },
     })
     return acquired.ok

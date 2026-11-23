@@ -85,6 +85,13 @@ async function waitForLost(page: Page) {
     .toBeVisible({ timeout: 30_000 })
 }
 
+async function setVisibility(page: Page, state: 'hidden' | 'visible') {
+  await page.evaluate((value) => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => value })
+    document.dispatchEvent(new Event('visibilitychange'))
+  }, state)
+}
+
 async function waitForComicEditing(page: Page) {
   await expect(page.getByRole('button', { name: 'Загрузить' })).toBeEnabled({ timeout: 20_000 })
   await expect(page.getByAltText('Страница 1')).toBeVisible()
@@ -265,16 +272,84 @@ test.describe('Эксклюзивное редактирование главы'
     }
   })
 
+  test('H4: дубликат без BroadcastChannel ACK не перехватывает lease', async ({ sandbox }) => {
+    const original = sandbox.owner.page
+    const sessionId = await original.evaluate(() => sessionStorage.getItem('cf-editor-session-id'))
+    expect(sessionId).toBeTruthy()
+
+    const duplicate = await original.context().newPage()
+    try {
+      await duplicate.addInitScript(() => {
+        class NoopBroadcastChannel {
+          onmessage: ((event: MessageEvent) => void) | null = null
+          postMessage() {}
+          addEventListener() {}
+          removeEventListener() {}
+          close() {}
+        }
+        Object.defineProperty(window, 'BroadcastChannel', {
+          configurable: true,
+          writable: true,
+          value: NoopBroadcastChannel,
+        })
+      })
+      await duplicate.goto(sandbox.chapterUrl, { waitUntil: 'domcontentloaded' })
+      await duplicate.evaluate(
+        id => sessionStorage.setItem('cf-editor-session-id', id as string),
+        sessionId as string,
+      )
+      await duplicate.reload({ waitUntil: 'domcontentloaded' })
+      await waitForReadOnly(duplicate, 'Lease owner')
+
+      await original.locator('[contenteditable=true]').fill('Текст без BroadcastChannel ACK')
+      await expect(original.getByRole('status')).toContainText('Сохранено')
+      const { rows: [saved] } = await sandbox.db.query(
+        'SELECT content FROM chapters WHERE id = $1', [sandbox.chapterId],
+      )
+      expect(saved.content).toBe('<p>Текст без BroadcastChannel ACK</p>')
+    } finally {
+      await duplicate.close()
+    }
+  })
+
+  test('H4/H5: reload освобождает lease и возвращает редактирование', async ({ sandbox }) => {
+    const page = sandbox.owner.page
+    await page.reload()
+    await waitForEditable(page)
+    await page.locator('[contenteditable=true]').fill('Текст после reload')
+    await expect(page.getByRole('status')).toContainText('Сохранено')
+    const { rows: [saved] } = await sandbox.db.query(
+      'SELECT content FROM chapters WHERE id = $1', [sandbox.chapterId],
+    )
+    expect(saved.content).toBe('<p>Текст после reload</p>')
+  })
+
+  test('H5: фоновая вкладка восстанавливает истёкший lease и сохраняет черновик', async ({ sandbox }) => {
+    const page = sandbox.owner.page
+    await expireLease(sandbox.db, sandbox.chapterId)
+    await page.locator('[contenteditable=true]').fill('Фоновый черновик')
+    await setVisibility(page, 'hidden')
+    await expect(page.getByRole('status')).toContainText(/Режим только для чтения|только для чтения/)
+
+    await setVisibility(page, 'visible')
+    await expect(page.getByRole('status')).toContainText('Сохранено', { timeout: 30_000 })
+    await expect(page.locator('[contenteditable=true]')).toHaveText('Фоновый черновик')
+    await expect(page.getByRole('alert').filter({ hasText: 'Глава уже редактируется' })).toHaveCount(0)
+
+    const { rows: [saved] } = await sandbox.db.query(
+      'SELECT content FROM chapters WHERE id = $1', [sandbox.chapterId],
+    )
+    expect(saved.content).toBe('<p>Фоновый черновик</p>')
+  })
+
   test('C1/H1: после возврата lease грязная очередь повторяет сохранение при той же ревизии', async ({ sandbox }) => {
     const page = sandbox.owner.page
     await expireLease(sandbox.db, sandbox.chapterId)
     await page.locator('[contenteditable=true]').fill('Текст до потери lease')
     await expect(page.getByRole('status')).toContainText(/Режим только для чтения|только для чтения/)
 
-    await waitForLost(page)
-    await page.getByRole('button', { name: 'Попробовать снова' }).click()
-    await waitForEditable(page)
-    await expect(page.getByRole('status')).toContainText('Сохранено', { timeout: 20_000 })
+    await expect(page.getByRole('status')).toContainText('Сохранено', { timeout: 35_000 })
+    await expect(page.locator('[contenteditable=true]')).toBeVisible()
 
     const { rows: [saved] } = await sandbox.db.query(
       'SELECT content FROM chapters WHERE id = $1', [sandbox.chapterId],
@@ -292,10 +367,7 @@ test.describe('Эксклюзивное редактирование главы'
       "UPDATE chapters SET title = 'Серверная глава', content = '<p>Серверный текст</p>' WHERE id = $1",
       [sandbox.chapterId],
     )
-    await waitForLost(page)
-    await page.getByRole('button', { name: 'Попробовать снова' }).click()
-    await waitForEditable(page)
-    await expect(page.locator('[contenteditable=true]')).toHaveText('Серверный текст')
+    await expect(page.locator('[contenteditable=true]')).toHaveText('Серверный текст', { timeout: 35_000 })
     await expect(page.getByRole('status')).toContainText('Локальные черновики')
 
     await page.reload()
@@ -318,7 +390,14 @@ test.describe('Эксклюзивное редактирование главы'
       'UPDATE chapters SET content = $2 WHERE id = $1',
       [sandbox.comicId, JSON.stringify(['/logo.png'])],
     )
-    await waitForLost(page)
+
+    const second = await sandbox.newPageFor(sandbox.collaborator.email)
+    await second.goto(sandbox.comicUrl, { waitUntil: 'domcontentloaded' })
+    await waitForComicEditing(second)
+
+    await setVisibility(page, 'visible')
+    await expect(page.getByRole('alert').filter({ hasText: 'Глава уже редактируется' }))
+      .toBeVisible({ timeout: 30_000 })
 
     const deleteButton = page.getByRole('button', { name: 'Удалить страницу 1' })
     await expect(deleteButton).toBeDisabled()
@@ -326,8 +405,8 @@ test.describe('Эксклюзивное редактирование главы'
     await deleteButton.click({ force: true })
     await expect(page.getByAltText('Страница 1')).toBeVisible()
 
-    await page.getByRole('button', { name: 'Попробовать снова' }).click()
-    await expect(page.getByAltText('Страница 1')).toHaveAttribute('src', /logo\.png/, { timeout: 20_000 })
+    await second.goto('/studio', { waitUntil: 'domcontentloaded' })
+    await expect(page.getByAltText('Страница 1')).toHaveAttribute('src', /logo\.png/, { timeout: 30_000 })
     await expect(page.getByAltText('Страница 2')).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Удалить страницу 1' })).toBeEnabled()
   })
@@ -343,10 +422,9 @@ test.describe('Эксклюзивное редактирование главы'
       "UPDATE chapters SET title = 'Серверное название' WHERE id = $1",
       [sandbox.audioId],
     )
-    await waitForLost(page)
+    await setVisibility(page, 'visible')
 
-    await page.getByRole('button', { name: 'Попробовать снова' }).click()
-    await expect(page.getByLabel('Название')).toHaveValue('Серверное название', { timeout: 20_000 })
+    await expect(page.getByLabel('Название')).toHaveValue('Серверное название', { timeout: 30_000 })
     await expect(page.getByRole('button', { name: 'Сохранить' })).toBeEnabled()
 
     const { rows: [saved] } = await sandbox.db.query(

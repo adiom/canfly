@@ -122,14 +122,13 @@ export function ChapterEditorPage({
   const tiptapRef = useRef<Editor | null>(null)
   const revisionRef = useRef(chapter.revision)
   const leaseProofRef = useRef<ChapterLeaseProof | null>(null)
-  const leaseLostRef = useRef(false)
   const readOnlyRef = useRef(true)
   const comicPagesRef = useRef<string[]>(parseComicPages(chapter.content))
   const audioDraftRef = useRef<ChapterDraft | null>(null)
   const isReadOnly = useCallback(() => readOnlyRef.current, [])
   const getRevision = useCallback(() => revisionRef.current, [])
   const saveComicPages = useCallback(async (pages: string[]) => {
-    const proof = leaseProofRef.current
+    const proof = readOnlyRef.current ? null : leaseProofRef.current
     if (!proof) {
       return {
         ok: false as const,
@@ -171,7 +170,7 @@ export function ChapterEditorPage({
     save: async (draft, patch) => {
       const outcome = await saveChapterAutosave(draft, patch, {
         revision: revisionRef.current,
-        proof: leaseProofRef.current,
+        proof: readOnlyRef.current ? null : leaseProofRef.current,
         archive: archiveDraft,
         update: (revision, proof, nextPatch) => updateChapterAction(
           chapter.id,
@@ -234,7 +233,6 @@ export function ChapterEditorPage({
   const lease = useChapterLease({
     chapterId: chapter.id,
     onLost: () => {
-      leaseLostRef.current = true
       const current = autosave.getValue()
       if (autosave.isDirty() && !archiveDraft(current, revisionRef.current)) {
         toast.error('Не удалось сохранить черновик в архив. Скопируйте текст из редактора.')
@@ -243,12 +241,14 @@ export function ChapterEditorPage({
       toast.warning('Право редактирования потеряно. Текст сохранён в локальных черновиках.')
     },
     onAcquired: async (acquired) => {
-      if (!leaseLostRef.current) return
       leaseProofRef.current = {
         sessionId: acquired.sessionId,
         token: acquired.token,
         generation: acquired.generation,
       }
+      // onAcquired вызывается сразу после успешного захвата, до эффекта,
+      // который обновляет readOnlyRef из состояния.
+      readOnlyRef.current = false
       try {
         const { chapter: fresh } = await getChapter(chapter.id)
         if (!fresh) return
@@ -258,7 +258,6 @@ export function ChapterEditorPage({
           freshRevision: fresh.revision,
         })
         if (action === 'retry') {
-          leaseLostRef.current = false
           setSaveError(null)
           if (autosave.isDirty()) {
             try {
@@ -270,7 +269,6 @@ export function ChapterEditorPage({
           return
         }
         if (action === 'none') {
-          leaseLostRef.current = false
           setSaveError(null)
           return
         }
@@ -280,7 +278,6 @@ export function ChapterEditorPage({
           'Глава изменилась, пока вы были в режиме чтения. Загружена серверная версия; ваш текст сохранён в «Локальные черновики».',
         )
         toast.warning('Глава изменилась. Откройте «Локальные черновики», чтобы восстановить свой текст.')
-        leaseLostRef.current = false
       } catch {
         setSaveError({
           ok: false,

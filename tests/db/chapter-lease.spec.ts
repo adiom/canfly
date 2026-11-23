@@ -83,6 +83,7 @@ async function leaseFor(userId: string, chapterId: string) {
   const acquired = await acquireChapterLease({
     chapterId,
     sessionId: `session-${randomUUID()}`,
+    documentId: `doc-${randomUUID()}`,
     actor: { userId, actorKind: 'studio' },
   })
   if (!acquired.ok) throw new Error('Expected a free chapter lease')
@@ -128,6 +129,7 @@ test('keeps the same chapter locked for a second session and frees it after TTL'
   const second = await acquireChapterLease({
     chapterId: chapter.id,
     sessionId: `session-${randomUUID()}`,
+    documentId: `doc-${randomUUID()}`,
     actor: { userId, actorKind: 'studio' },
   })
   expect(second).toMatchObject({ ok: false, holder: { userId, actorKind: 'studio' } })
@@ -136,6 +138,7 @@ test('keeps the same chapter locked for a second session and frees it after TTL'
   const third = await acquireChapterLease({
     chapterId: chapter.id,
     sessionId: `session-${randomUUID()}`,
+    documentId: `doc-${randomUUID()}`,
     actor: { userId, actorKind: 'studio' },
   })
   expect(third.ok).toBe(true)
@@ -149,6 +152,42 @@ test('keeps the same chapter locked for a second session and frees it after TTL'
     proof: { sessionId: first.sessionId, token: first.token, generation: first.generation },
   })
   expect(renewed.ok).toBe(false)
+})
+
+test('H4: та же сессия с другим документом не перехватывает активный lease', async ({ sandbox: { chapter, userId } }) => {
+  const sessionId = `session-${randomUUID()}`
+  const documentId = `doc-${randomUUID()}`
+  const first = await acquireChapterLease({
+    chapterId: chapter.id,
+    sessionId,
+    documentId,
+    actor: { userId, actorKind: 'studio' },
+  })
+  expect(first.ok).toBe(true)
+  if (!first.ok) return
+
+  const duplicate = await acquireChapterLease({
+    chapterId: chapter.id,
+    sessionId,
+    documentId: `doc-${randomUUID()}`,
+    actor: { userId, actorKind: 'studio' },
+  })
+  expect(duplicate).toMatchObject({ ok: false, holder: { userId, actorKind: 'studio' } })
+
+  const sameDocument = await acquireChapterLease({
+    chapterId: chapter.id,
+    sessionId,
+    documentId,
+    actor: { userId, actorKind: 'studio' },
+  })
+  expect(sameDocument.ok).toBe(true)
+  if (!sameDocument.ok) return
+  expect(sameDocument.lease.generation).toBe(first.lease.generation + 1)
+
+  await expect(updateChapter(chapter.id, { content: edited }, {
+    expectedRevision: chapter.revision,
+    lease: sessionGrant(userId, first.lease),
+  })).rejects.toMatchObject({ code: 'lease-lost' })
 })
 
 test('rejects stale tokens and generations after a new holder appears', async ({ sandbox: { chapter, userId } }) => {
@@ -280,6 +319,7 @@ test('two PostgreSQL connections acquire exactly one lease', async ({ sandbox: {
     const won = await acquireChapterLeaseOnClient(first, {
       chapterId: chapter.id,
       sessionId: 'race-a-session',
+      documentId: 'race-a-document',
       actor: { userId, actorKind: 'studio' },
     })
     expect(won.ok).toBe(true)
@@ -288,6 +328,7 @@ test('two PostgreSQL connections acquire exactly one lease', async ({ sandbox: {
     const pending = acquireChapterLeaseOnClient(second, {
       chapterId: chapter.id,
       sessionId: 'race-b-session',
+      documentId: 'race-b-document',
       actor: { userId, actorKind: 'studio' },
     })
     await first.query('COMMIT')
@@ -419,6 +460,7 @@ test('reorder waits for an in-flight acquisition over an expired lease row', asy
     const acquired = await acquireChapterLeaseOnClient(client, {
       chapterId: chapter.id,
       sessionId: 'late-acquire-session',
+      documentId: 'late-acquire-document',
       actor: { userId, actorKind: 'studio' },
     })
     expect(acquired.ok).toBe(true)
@@ -442,6 +484,7 @@ test('deleteEdition waits for an in-flight acquisition over an expired lease row
     const acquired = await acquireChapterLeaseOnClient(client, {
       chapterId: chapter.id,
       sessionId: 'late-delete-edition-session',
+      documentId: 'late-delete-edition-document',
       actor: { userId, actorKind: 'studio' },
     })
     expect(acquired.ok).toBe(true)
@@ -466,6 +509,7 @@ test('deleteRelease waits for an in-flight acquisition over an expired lease row
     const acquired = await acquireChapterLeaseOnClient(client, {
       chapterId: chapter.id,
       sessionId: 'late-delete-release-session',
+      documentId: 'late-delete-release-document',
       actor: { userId, actorKind: 'studio' },
     })
     expect(acquired.ok).toBe(true)

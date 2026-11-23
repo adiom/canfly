@@ -9,7 +9,6 @@ import {
   CHAPTER_LEASE_HEARTBEAT_MS,
   CHAPTER_LEASE_RETRY_MS,
   toLeaseProof,
-  type ChapterLeaseHolderView,
   type ChapterLeaseProof,
   type ChapterLeaseState,
   type ChapterLeaseView,
@@ -19,6 +18,16 @@ import { settleLeaseRenewal } from '@/lib/studio/chapter-lease-renewal'
 const SESSION_KEY = 'cf-editor-session-id'
 const SESSION_CHANNEL = 'cf-editor-sessions'
 const SESSION_PROBE_TIMEOUT_MS = 150
+
+/**
+ * Идентификатор документа. Живёт только в памяти и не попадает в
+ * sessionStorage, поэтому duplicate tab не может его унаследовать. Сервер
+ * разрешает повторный захват живого lease только при совпадении
+ * user + session + documentId; reload полагается на release при pagehide или TTL.
+ */
+const DOCUMENT_ID = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+  ? crypto.randomUUID()
+  : `document-${Date.now()}-${Math.random().toString(16).slice(2)}`
 
 /**
  * Идентификатор вкладки. sessionStorage переживает перезагрузку (вкладка
@@ -108,6 +117,8 @@ export function useChapterLease({
   const [state, setState] = useState<ChapterLeaseState>({ status: 'acquiring' })
   const leaseRef = useRef<ChapterLeaseView | null>(null)
   const heldRef = useRef(false)
+  const reconcileRef = useRef(false)
+  const lostNotifiedRef = useRef(false)
   const acquireInFlight = useRef<Promise<void> | null>(null)
   const releaseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const callbacks = useRef({ onAcquired, onLost })
@@ -115,10 +126,9 @@ export function useChapterLease({
     callbacks.current = { onAcquired, onLost }
   }, [onAcquired, onLost])
 
-  const markLost = useCallback((holder: ChapterLeaseHolderView | null) => {
-    leaseRef.current = null
-    heldRef.current = false
-    setState({ status: 'lost', holder })
+  const notifyLost = useCallback(() => {
+    if (lostNotifiedRef.current) return
+    lostNotifiedRef.current = true
     callbacks.current.onLost?.()
   }, [])
 
@@ -128,28 +138,32 @@ export function useChapterLease({
     const run = (async () => {
       try {
         const id = await sharedSessionId()
-        const acquired = await acquireChapterLeaseAction(chapterId, id)
+        const acquired = await acquireChapterLeaseAction(chapterId, id, DOCUMENT_ID)
         if (acquired.ok) {
-          const wasHeld = heldRef.current
+          const reconcile = reconcileRef.current
           leaseRef.current = acquired.lease
           heldRef.current = true
+          reconcileRef.current = false
+          lostNotifiedRef.current = false
           setState({ status: 'active', lease: acquired.lease, degraded: false })
-          // Повторный захват после простоя: страница должна перечитать снимок.
-          if (!wasHeld) callbacks.current.onAcquired?.(acquired.lease)
+          if (reconcile) callbacks.current.onAcquired?.(acquired.lease)
           return
         }
 
-        if (heldRef.current) {
-          markLost(acquired.holder)
-          return
-        }
+        if (heldRef.current) notifyLost()
+        leaseRef.current = null
+        heldRef.current = false
+        reconcileRef.current = true
         setState({ status: 'read-only', holder: acquired.holder })
       } catch {
-        if (heldRef.current) {
-          setState(previous => previous.status === 'active' ? { ...previous, degraded: true } : previous)
-        } else {
-          setState({ status: 'error', message: 'Не удалось проверить право редактирования' })
-        }
+        reconcileRef.current = true
+        setState(previous => {
+          if (previous.status === 'active' || previous.status === 'recovering' ||
+              previous.status === 'read-only' || previous.status === 'lost') {
+            return { status: 'recovering', holder: null }
+          }
+          return { status: 'error', message: 'Не удалось проверить право редактирования' }
+        })
       }
     })()
 
@@ -158,7 +172,40 @@ export function useChapterLease({
       if (acquireInFlight.current === run) acquireInFlight.current = null
     })
     return run
-  }, [chapterId, markLost])
+  }, [chapterId, notifyLost])
+
+  /**
+   * Возврат из фона: сначала продлеваем текущий lease. Если он истёк или его
+   * перехватили, сразу пробуем новый захват — только после неудачи показываем
+   * read-only. На время попытки редактор уже read-only.
+   */
+  const recover = useCallback(async () => {
+    if (document.visibilityState !== 'visible') return
+    const proof = toLeaseProof(leaseRef.current)
+    if (!proof) {
+      await acquire()
+      return
+    }
+
+    const outcome = await settleLeaseRenewal(
+      () => renewChapterLeaseAction(chapterId, proof.sessionId, proof),
+    )
+    if (outcome.status === 'ok') {
+      leaseRef.current = outcome.lease
+      setState({ status: 'active', lease: outcome.lease, degraded: false })
+      return
+    }
+    if (outcome.status === 'degraded') {
+      setState(previous => previous.status === 'active' ? { ...previous, degraded: true } : previous)
+      return
+    }
+
+    reconcileRef.current = true
+    setState(previous => previous.status === 'active'
+      ? { status: 'recovering', holder: null }
+      : previous)
+    await acquire()
+  }, [acquire, chapterId])
 
   useEffect(() => {
     void acquire()
@@ -167,39 +214,30 @@ export function useChapterLease({
   useEffect(() => {
     if (state.status !== 'active') return
     const timer = setInterval(() => {
-      if (document.visibilityState !== 'visible') return
-      const proof = toLeaseProof(leaseRef.current)
-      if (!proof) return
-      void (async () => {
-        const outcome = await settleLeaseRenewal(
-          () => renewChapterLeaseAction(chapterId, proof.sessionId, proof),
-        )
-        if (outcome.status === 'ok') {
-          leaseRef.current = outcome.lease
-          setState({ status: 'active', lease: outcome.lease, degraded: false })
-          return
-        }
-        if (outcome.status === 'lost') {
-          markLost(null)
-          return
-        }
-        setState(previous => previous.status === 'active' ? { ...previous, degraded: true } : previous)
-      })()
+      if (document.visibilityState === 'visible') void recover()
     }, CHAPTER_LEASE_HEARTBEAT_MS)
     return () => clearInterval(timer)
-  }, [state.status, chapterId, markLost])
+  }, [state.status, recover])
 
   useEffect(() => {
-    if (state.status !== 'read-only' && state.status !== 'lost') return
+    const wake = () => {
+      if (document.visibilityState === 'visible') void recover()
+    }
+    document.addEventListener('visibilitychange', wake)
+    window.addEventListener('online', wake)
+    return () => {
+      document.removeEventListener('visibilitychange', wake)
+      window.removeEventListener('online', wake)
+    }
+  }, [recover])
+
+  useEffect(() => {
+    if (state.status !== 'read-only' && state.status !== 'lost' && state.status !== 'recovering') return
     const retry = () => {
       if (document.visibilityState === 'visible') void acquire()
     }
     const timer = setInterval(retry, CHAPTER_LEASE_RETRY_MS)
-    document.addEventListener('visibilitychange', retry)
-    return () => {
-      clearInterval(timer)
-      document.removeEventListener('visibilitychange', retry)
-    }
+    return () => clearInterval(timer)
   }, [state.status, acquire])
 
   useEffect(() => {

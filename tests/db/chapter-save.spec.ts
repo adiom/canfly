@@ -350,6 +350,7 @@ test.describe('MCP chapter writes', () => {
     const acquired = await acquireChapterLease({
       chapterId: id,
       sessionId: `session-${randomUUID()}`,
+      documentId: `doc-${randomUUID()}`,
       actor: { userId, actorKind: 'studio' },
     })
     if (!acquired.ok) throw new Error('Expected free chapter')

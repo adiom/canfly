@@ -18,12 +18,14 @@ export function ChapterLeaseBanner({ state, onRetry }: {
   const box = 'mx-auto max-w-4xl px-4 md:px-8 pt-4'
   const base = 'flex flex-wrap items-center gap-3 rounded-2xl border px-4 py-3 text-sm'
 
-  if (state.status === 'acquiring') {
+  if (state.status === 'acquiring' || state.status === 'recovering') {
     return (
       <div className={box} aria-live="polite">
         <div className={`${base} border-cf-text-1/10 bg-cf-bg-2 text-cf-text-3`}>
           <Loader2 className="h-4 w-4 animate-spin" />
-          Проверяю право редактирования главы…
+          {state.status === 'acquiring'
+            ? 'Проверяю право редактирования главы…'
+            : 'Восстанавливаю право редактирования…'}
         </div>
       </div>
     )

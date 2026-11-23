@@ -53,6 +53,7 @@ export interface ChapterLease {
   userId: string | null
   actorKind: ChapterLeaseActorKind
   sessionId: string
+  documentId: string | null
   token: string
   generation: number
   expiresAt: string
@@ -77,12 +78,13 @@ interface LeaseRow {
   user_id: string | null
   actor_kind: ChapterLeaseActorKind
   session_id: string
+  document_id: string
   lease_token: string
   generation: string | number
   expires_at: Date
 }
 
-const leaseColumns = `chapter_id, user_id, actor_kind, session_id, lease_token, generation, expires_at`
+const leaseColumns = `chapter_id, user_id, actor_kind, session_id, document_id, lease_token, generation, expires_at`
 
 function newLeaseToken() {
   return randomBytes(32).toString('hex')
@@ -144,6 +146,7 @@ function toLease(row: LeaseRow): ChapterLease {
     userId: row.user_id,
     actorKind: row.actor_kind,
     sessionId: row.session_id,
+    documentId: row.document_id,
     token: row.lease_token,
     generation: Number(row.generation),
     expiresAt: row.expires_at.toISOString(),
@@ -181,9 +184,9 @@ async function readHolder(client: Queryable, chapterId: string): Promise<Chapter
  */
 export async function acquireChapterLeaseOnClient(
   client: Queryable,
-  input: { chapterId: string; sessionId: string; actor: ChapterLeaseActor },
+  input: { chapterId: string; sessionId: string; documentId: string; actor: ChapterLeaseActor },
 ): Promise<{ ok: true; lease: ChapterLease } | { ok: false; holder: ChapterLeaseHolder | null }> {
-  const { chapterId, sessionId, actor } = input
+  const { chapterId, sessionId, documentId, actor } = input
   const token = newLeaseToken()
 
   await client.query(
@@ -195,14 +198,15 @@ export async function acquireChapterLeaseOnClient(
   try {
     ({ rows } = await client.query<LeaseRow>(
       `INSERT INTO chapter_edit_leases AS l (
-         chapter_id, user_id, actor_kind, session_id, lease_token, generation,
+         chapter_id, user_id, actor_kind, session_id, document_id, lease_token, generation,
          acquired_at, expires_at, released_at, updated_at
        )
-       VALUES ($1, $2, $3, $4, $5, 1, now(), now() + make_interval(secs => $6), NULL, now())
+       VALUES ($1, $2, $3, $4, $5, $6, 1, now(), now() + make_interval(secs => $7), NULL, now())
        ON CONFLICT (chapter_id) DO UPDATE SET
          user_id = EXCLUDED.user_id,
          actor_kind = EXCLUDED.actor_kind,
          session_id = EXCLUDED.session_id,
+         document_id = EXCLUDED.document_id,
          lease_token = EXCLUDED.lease_token,
          generation = l.generation + 1,
          acquired_at = now(),
@@ -210,9 +214,11 @@ export async function acquireChapterLeaseOnClient(
          released_at = NULL,
          updated_at = now()
        WHERE l.expires_at <= now()
-          OR (l.user_id IS NOT DISTINCT FROM EXCLUDED.user_id AND l.session_id = EXCLUDED.session_id)
+          OR (l.user_id IS NOT DISTINCT FROM EXCLUDED.user_id
+              AND l.session_id = EXCLUDED.session_id
+              AND l.document_id = EXCLUDED.document_id)
        RETURNING ${leaseColumns}`,
-      [chapterId, actor.userId, actor.actorKind, sessionId, token, CHAPTER_LEASE_TTL_SECONDS],
+      [chapterId, actor.userId, actor.actorKind, sessionId, documentId, token, CHAPTER_LEASE_TTL_SECONDS],
     ))
   } catch (error) {
     if ((error as { code?: string }).code === '23503') throw new ChapterWriteError('not-found')
@@ -227,6 +233,7 @@ export async function acquireChapterLeaseOnClient(
 export async function acquireChapterLease(input: {
   chapterId: string
   sessionId: string
+  documentId: string
   actor: ChapterLeaseActor
 }) {
   return withTransaction(client => acquireChapterLeaseOnClient(client, input))
@@ -385,6 +392,7 @@ export async function withChapterLease<T>(
   const acquired = await acquireChapterLeaseOnClient(client, {
     chapterId,
     sessionId: grant.sessionId,
+    documentId: grant.sessionId,
     actor: grant.actor,
   })
   if (!acquired.ok) throw new ChapterWriteError('lease-held')

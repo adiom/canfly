@@ -28,6 +28,7 @@ export interface ChapterLeaseHolderView {
 
 export type ChapterLeaseState =
   | { status: 'acquiring' }
+  | { status: 'recovering'; holder: ChapterLeaseHolderView | null }
   | { status: 'active'; lease: ChapterLeaseView; degraded: boolean }
   | { status: 'read-only'; holder: ChapterLeaseHolderView | null }
   | { status: 'lost'; holder: ChapterLeaseHolderView | null }

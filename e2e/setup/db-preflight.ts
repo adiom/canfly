@@ -38,6 +38,11 @@ export default async function verifyDbTestTarget() {
             SELECT 1 FROM pg_catalog.pg_constraint c
             WHERE c.conrelid = to_regclass('public.chapter_edit_leases')
               AND c.contype = 'p' AND c.conname = 'chapter_edit_leases_pkey'
+          )
+          AND EXISTS (
+            SELECT 1 FROM pg_catalog.pg_attribute a
+            WHERE a.attrelid = to_regclass('public.chapter_edit_leases')
+              AND a.attname = 'document_id' AND NOT a.attisdropped
           ) AS chapter_lease
     `, [url.pathname.slice(1), Number(url.port)])
 
