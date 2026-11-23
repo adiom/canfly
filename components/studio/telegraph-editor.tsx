@@ -76,6 +76,7 @@ export const TelegraphEditor = forwardRef<HTMLDivElement, TelegraphEditorProps>(
       extensions: [
         StarterKit.configure({
           heading: { levels: [2, 3] },
+          link: false,
         }),
         Placeholder.configure({
           placeholder: 'Начните писать...',

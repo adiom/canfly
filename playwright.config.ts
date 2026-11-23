@@ -4,6 +4,8 @@ import { e2eEnvironment } from './e2e/setup/environment'
 // Config loads before Playwright starts its web server, fixtures or workers.
 const { baseURL, databaseUrl, webServer } = e2eEnvironment(process.env)
 process.env.DATABASE_URL = databaseUrl
+// Playwright forces color in child processes, which conflicts with inherited NO_COLOR.
+delete process.env.NO_COLOR
 
 export default defineConfig({
   testDir: './e2e',
