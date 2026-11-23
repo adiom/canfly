@@ -59,7 +59,8 @@ test('C2: ошибка сети при продлении lease не счита�
 
 test('H1: план повторного захвата сохраняет черновик при той же ревизии и перечитывает при новой', () => {
   expect(planLeaseReacquire({ dirty: true, currentRevision: 4, freshRevision: 4 })).toBe('retry')
-  expect(planLeaseReacquire({ dirty: true, currentRevision: 4, freshRevision: 5 })).toBe('reload')
+  expect(planLeaseReacquire({ dirty: true, currentRevision: 4, freshRevision: 5, archived: true })).toBe('reload')
+  expect(planLeaseReacquire({ dirty: true, currentRevision: 4, freshRevision: 5, archived: false })).toBe('blocked')
   expect(planLeaseReacquire({ dirty: false, currentRevision: 4, freshRevision: 4 })).toBe('none')
   expect(planLeaseReacquire({ dirty: false, currentRevision: 4, freshRevision: 5 })).toBe('reload')
 })

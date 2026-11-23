@@ -432,4 +432,151 @@ test.describe('Эксклюзивное редактирование главы'
     )
     expect(saved.title).toBe('Серверное название')
   })
+
+  test('H1: переполнение хранилища не сбрасывает текст и предлагает копирование', async ({ sandbox }) => {
+    const page = sandbox.owner.page
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+    await page.evaluate(() => {
+      const original = Storage.prototype.setItem
+      ;(window as unknown as { __originalSetItem: Storage['setItem'] }).__originalSetItem = original
+      Storage.prototype.setItem = function setItem(key: string, value: string) {
+        if (String(key).startsWith('cf-chapter-draft-archive:') || String(key).startsWith('cf-media-draft:')) {
+          throw new DOMException('QuotaExceededError', 'QuotaExceededError')
+        }
+        return original.call(this, key, value)
+      }
+    })
+
+    await expireLease(sandbox.db, sandbox.chapterId)
+    await page.locator('[contenteditable=true]').fill('Текст при переполнении')
+    await expect(page.getByRole('status')).toContainText(/Режим только для чтения|только для чтения/)
+    await sandbox.db.query(
+      "UPDATE chapters SET content = '<p>Серверный текст</p>' WHERE id = $1",
+      [sandbox.chapterId],
+    )
+    await setVisibility(page, 'visible')
+
+    const blocked = page.getByRole('alert').filter({ hasText: 'Хранилище браузера переполнено' })
+    await expect(blocked).toBeVisible({ timeout: 30_000 })
+    await expect(page.locator('.ProseMirror')).toHaveText('Текст при переполнении')
+    await expect(page.locator('[contenteditable="true"]')).toHaveCount(0)
+    await expect(page.getByRole('status')).not.toContainText('Сохранено')
+    await expect(page.getByLabel('Текст несохранённого черновика')).toHaveValue('<p>Текст при переполнении</p>')
+
+    await page.getByRole('button', { name: 'Скопировать текст' }).click()
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('Текст при переполнении')
+
+    await page.evaluate(() => {
+      Storage.prototype.setItem = (window as unknown as { __originalSetItem: Storage['setItem'] }).__originalSetItem
+    })
+    await page.getByRole('button', { name: 'Повторить сохранение черновика' }).click()
+    await expect(page.locator('[contenteditable=true]')).toHaveText('Серверный текст', { timeout: 10_000 })
+    await page.getByRole('button', { name: 'Локальные черновики' }).click()
+    await expect(page.getByLabel('HTML черновика')).toHaveValue('<p>Текст при переполнении</p>')
+  })
+
+  test('H2: аудио сохраняет локальный черновик между перезагрузками', async ({ sandbox }) => {
+    const page = sandbox.owner.page
+    await page.goto(sandbox.audioUrl, { waitUntil: 'domcontentloaded' })
+    await waitForAudioEditing(page)
+
+    await page.getByLabel('Название').fill('Локальное название')
+    await expect(page.getByRole('status')).toContainText('Есть несохранённые правки')
+
+    await page.reload()
+    await waitForAudioEditing(page)
+    await expect(page.getByText('Найден локальный черновик аудио')).toBeVisible()
+    await page.getByRole('button', { name: 'Восстановить поля' }).click()
+    await expect(page.getByLabel('Название')).toHaveValue('Локальное название')
+    await expect(page.getByRole('status')).toContainText('Есть несохранённые правки')
+
+    await page.getByRole('button', { name: 'Сохранить' }).click()
+    await expect(page.getByRole('status')).toContainText('Сохранено')
+    const { rows: [saved] } = await sandbox.db.query(
+      'SELECT title FROM chapters WHERE id = $1', [sandbox.audioId],
+    )
+    expect(saved.title).toBe('Локальное название')
+  })
+
+  test('H2: комикс сохраняет черновик при offline и восстанавливает после reload', async ({ sandbox }) => {
+    const page = sandbox.owner.page
+    await page.goto(sandbox.comicUrl, { waitUntil: 'domcontentloaded' })
+    await waitForComicEditing(page)
+
+    await page.context().setOffline(true)
+    await page.getByRole('button', { name: 'Удалить страницу 1' }).click()
+    await expect(page.getByAltText('Страница 1')).toHaveAttribute('src', /placeholder-user\.jpg/)
+    await page.context().setOffline(false)
+
+    await page.reload()
+    await waitForComicEditing(page)
+    await expect(page.getByText('Найден локальный черновик комикса')).toBeVisible()
+    await expect(page.getByAltText('Страница 2')).toBeVisible()
+    await expect(page.getByText('Сохранено')).toHaveCount(0)
+
+    await page.getByRole('button', { name: 'Восстановить страницы' }).click()
+    await expect(page.getByAltText('Страница 2')).toHaveCount(0)
+    await expect.poll(async () => {
+      const { rows: [row] } = await sandbox.db.query(
+        'SELECT content FROM chapters WHERE id = $1', [sandbox.comicId],
+      )
+      return row.content
+    }).toBe(JSON.stringify(['/placeholder-user.jpg']))
+  })
+
+  test('H2: конфликт ревизий комикса не перезаписывается автоматически', async ({ sandbox }) => {
+    const page = sandbox.owner.page
+    await page.goto(sandbox.comicUrl, { waitUntil: 'domcontentloaded' })
+    await waitForComicEditing(page)
+
+    await page.context().setOffline(true)
+    await page.getByRole('button', { name: 'Удалить страницу 1' }).click()
+    await page.context().setOffline(false)
+
+    await sandbox.db.query(
+      'UPDATE chapters SET content = $2 WHERE id = $1',
+      [sandbox.comicId, JSON.stringify(['/logo.png'])],
+    )
+    await page.reload()
+    await waitForComicEditing(page)
+
+    await expect(page.getByText('Глава изменилась: восстановление заменит текущие страницы.')).toBeVisible()
+    await expect(page.getByAltText('Страница 1')).toHaveAttribute('src', /logo\.png/)
+    const { rows: [row] } = await sandbox.db.query(
+      'SELECT content FROM chapters WHERE id = $1', [sandbox.comicId],
+    )
+    expect(row.content).toBe(JSON.stringify(['/logo.png']))
+  })
+
+  test('H2: загруженный, но непривязанный Blob показывается как черновик', async ({ sandbox }) => {
+    const key = `cf-media-draft:audio:${sandbox.owner.id}:${sandbox.audioId}`
+    await sandbox.owner.page.evaluate(({ key, chapterId, userId }) => {
+      localStorage.setItem(key, JSON.stringify({
+        version: 1,
+        kind: 'audio',
+        chapterId,
+        userId,
+        baseRevision: 0,
+        savedAt: Date.now(),
+        title: 'Черновик с файлом',
+        content: JSON.stringify({
+          duration_seconds: 10,
+          audio_metadata: { artist: 'Автор' },
+          pending_audio: {
+            url: 'https://example.test/audio.mp3',
+            pathname: `audio/chapters/${chapterId}/audio.mp3`,
+            contentType: 'audio/mpeg',
+            size: 1024,
+          },
+        }),
+      }))
+    }, { key, chapterId: sandbox.audioId, userId: sandbox.owner.id })
+
+    await sandbox.owner.page.goto(sandbox.audioUrl, { waitUntil: 'domcontentloaded' })
+    await waitForAudioEditing(sandbox.owner.page)
+    await expect(sandbox.owner.page.getByText('Найден локальный черновик аудио')).toBeVisible()
+    await sandbox.owner.page.getByRole('button', { name: 'Восстановить поля' }).click()
+    await expect(sandbox.owner.page.getByText('Аудиофайл загружен, но не привязан к главе')).toBeVisible()
+    await expect(sandbox.owner.page.getByRole('button', { name: 'Привязать загруженный файл' })).toBeVisible()
+  })
 })

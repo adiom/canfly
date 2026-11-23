@@ -141,12 +141,21 @@ export function useChapterLease({
         const acquired = await acquireChapterLeaseAction(chapterId, id, DOCUMENT_ID)
         if (acquired.ok) {
           const reconcile = reconcileRef.current
-          leaseRef.current = acquired.lease
-          heldRef.current = true
           reconcileRef.current = false
           lostNotifiedRef.current = false
+          leaseRef.current = acquired.lease
+          heldRef.current = true
+          if (reconcile) {
+            // Держим редактор read-only, пока страница перечитывает ревизию
+            // и либо повторяет очередь, либо архивирует черновик.
+            setState({ status: 'recovering', holder: null })
+            try {
+              await callbacks.current.onAcquired?.(acquired.lease)
+            } catch {
+              // Ошибку показала страница; lease уже наш.
+            }
+          }
           setState({ status: 'active', lease: acquired.lease, degraded: false })
-          if (reconcile) callbacks.current.onAcquired?.(acquired.lease)
           return
         }
 

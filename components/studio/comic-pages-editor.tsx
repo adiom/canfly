@@ -8,12 +8,21 @@ import { Plus, Trash2, Check, Loader2 } from 'lucide-react'
 import type { Chapter } from '@/lib/releases-types'
 import { AutosaveQueue } from '@/lib/studio/autosave-queue'
 import type { ChapterWriteResult } from '@/lib/studio/chapter-write'
+import {
+  loadMediaDraft,
+  removeMediaDraft,
+  saveMediaDraft,
+  type MediaDraft,
+} from '@/lib/studio/media-drafts'
 
 interface ComicPagesEditorProps {
   initialPages: string[]
   savePages: (pages: string[]) => Promise<ChapterWriteResult<Chapter>>
   readOnly?: boolean
   onPagesChange?: (pages: string[]) => void
+  draftOwner: string
+  chapterId: string
+  chapterRevision: number
 }
 
 export function ComicPagesEditor({
@@ -21,6 +30,9 @@ export function ComicPagesEditor({
   savePages,
   readOnly = false,
   onPagesChange,
+  draftOwner,
+  chapterId,
+  chapterRevision,
 }: ComicPagesEditorProps) {
   const [pages, setPages] = useState<string[]>(initialPages)
   const [uploading, setUploading] = useState(false)
@@ -33,21 +45,71 @@ export function ComicPagesEditor({
       setSaveError(result.message)
       throw new Error(result.message)
     }
+    removeMediaDraft('comic', draftOwner, chapterId)
     setSaveError(null)
   }))
   const status = useSyncExternalStore(queue.subscribe, queue.getStatus, () => 'saved' as const)
   const isPending = status === 'pending' || status === 'saving'
   const wasReadOnly = useRef(readOnly)
+  const initialJson = JSON.stringify(initialPages)
+  const [recovery, setRecovery] = useState<MediaDraft | null>(null)
+  const [draftLoaded, setDraftLoaded] = useState(false)
+
+  useEffect(() => {
+    // Читаем хранилище после гидратации, чтобы SSR и клиент совпадали.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage недоступен на сервере
+    setRecovery(loadMediaDraft('comic', draftOwner, chapterId))
+    setDraftLoaded(true)
+  }, [chapterId, draftOwner])
 
   useEffect(() => {
     onPagesChange?.(pages)
   }, [onPagesChange, pages])
 
   useEffect(() => {
+    if (!draftLoaded || recovery) return
+    if (JSON.stringify(pages) === initialJson) {
+      removeMediaDraft('comic', draftOwner, chapterId)
+      return
+    }
+    const saved = saveMediaDraft({
+      kind: 'comic',
+      chapterId,
+      userId: draftOwner,
+      baseRevision: chapterRevision,
+      title: 'Комикс',
+      content: JSON.stringify(pages),
+    })
+    if (!saved) toast.error('Не удалось сохранить локальный черновик: хранилище переполнено')
+  }, [chapterId, chapterRevision, draftLoaded, draftOwner, initialJson, pages, recovery])
+
+  useEffect(() => {
     // Возврат lease при неизменной ревизии: повторяем грязную очередь.
     if (wasReadOnly.current && !readOnly) void queue.flush().catch(() => {})
     wasReadOnly.current = readOnly
   }, [queue, readOnly])
+
+  function restoreDraft() {
+    if (!recovery || readOnly) return
+    try {
+      const parsed = JSON.parse(recovery.content) as unknown
+      if (!Array.isArray(parsed) || parsed.some(item => typeof item !== 'string')) {
+        throw new Error('invalid')
+      }
+      setPages(parsed)
+      queue.update({ pages: parsed })
+      setRecovery(null)
+      setSaveError(null)
+      toast.success('Локальный черновик комикса восстановлен')
+    } catch {
+      toast.error('Черновик комикса повреждён')
+    }
+  }
+
+  function discardDraft() {
+    removeMediaDraft('comic', draftOwner, chapterId)
+    setRecovery(null)
+  }
 
   function persist(newPages: string[]) {
     if (readOnly) return
@@ -139,14 +201,32 @@ export function ComicPagesEditor({
 
   return (
     <div className="space-y-4">
+      {recovery && (
+        <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          <p className="font-semibold">Найден локальный черновик комикса</p>
+          <p className="mt-1 text-xs">
+            Сохранён {new Date(recovery.savedAt).toLocaleString('ru-RU')}, ревизия {recovery.baseRevision}.
+            {recovery.baseRevision !== chapterRevision && ' Глава изменилась: восстановление заменит текущие страницы.'}
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" disabled={readOnly} onClick={restoreDraft}>
+              Восстановить страницы
+            </Button>
+            <Button size="sm" variant="ghost" onClick={discardDraft}>
+              Удалить черновик
+            </Button>
+          </div>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h3 className="font-semibold">Страницы комикса ({pages.length})</h3>
           <span className="text-xs text-muted-foreground">
             {isPending && <Loader2 className="inline h-3 w-3 animate-spin mr-1" />}
-            {status === 'saved' && !saveError && <Check className="inline h-3 w-3 text-emerald-500 mr-1" />}
+            {!recovery && status === 'saved' && !saveError && <Check className="inline h-3 w-3 text-emerald-500 mr-1" />}
             {isPending && 'Сохраняю...'}
-            {status === 'saved' && !saveError && 'Сохранено'}
+            {recovery && 'Есть локальный черновик'}
+            {!recovery && status === 'saved' && !saveError && 'Сохранено'}
             {saveError || (status === 'error' && 'Ошибка сохранения')}
           </span>
         </div>

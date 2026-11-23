@@ -7,6 +7,8 @@ import type { ChapterWriteFailure } from '@/lib/studio/chapter-write'
 import { archiveChapterDraft, type ChapterDraft } from '@/lib/studio/chapter-drafts'
 import { saveChapterAutosave } from '@/lib/studio/chapter-autosave'
 import { planLeaseReacquire } from '@/lib/studio/chapter-reacquire'
+import { saveMediaDraft, type PendingAudioUpload } from '@/lib/studio/media-drafts'
+import { ChapterDraftBlocked } from '@/components/studio/chapter-draft-blocked'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import type { Editor } from '@tiptap/react'
@@ -103,7 +105,7 @@ export function ChapterEditorPage({
   const router = useRouter()
   const isAudioEditor = audioFormats.has(editionFormat)
   const isComic = editionFormat === 'comic'
-  const [mediaSaveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [mediaSaveStatus, setSaveStatus] = useState<'idle' | 'pending' | 'saving' | 'saved' | 'error'>('idle')
   const [chapterTitle, setChapterTitle] = useState(chapter.title)
   const [chapterSnapshot, setChapterSnapshot] = useState(chapter)
   const [recoveryNotice, setRecoveryNotice] = useState<string | null>(null)
@@ -124,7 +126,7 @@ export function ChapterEditorPage({
   const leaseProofRef = useRef<ChapterLeaseProof | null>(null)
   const readOnlyRef = useRef(true)
   const comicPagesRef = useRef<string[]>(parseComicPages(chapter.content))
-  const audioDraftRef = useRef<ChapterDraft | null>(null)
+  const audioDraftRef = useRef<(ChapterDraft & { pendingAudio?: PendingAudioUpload }) | null>(null)
   const isReadOnly = useCallback(() => readOnlyRef.current, [])
   const getRevision = useCallback(() => revisionRef.current, [])
   const saveComicPages = useCallback(async (pages: string[]) => {
@@ -143,6 +145,11 @@ export function ChapterEditorPage({
   const restorePending = useRef(false)
   const [restoring, setRestoring] = useState(false)
   const [saveError, setSaveError] = useState<ChapterWriteFailure | null>(null)
+  const [blockedRecovery, setBlockedRecovery] = useState<{
+    fresh: Chapter
+    draft: ChapterDraft
+    revision: number
+  } | null>(null)
   const [, setContentVersion] = useState(0)
   const archivePrefix = `cf-chapter-draft-archive:${editorUserId}:${chapter.id}:`
   const archiveDraft = useCallback((draft: ChapterDraft, revision: number) =>
@@ -157,7 +164,7 @@ export function ChapterEditorPage({
   const handleComicPagesChange = useCallback((pages: string[]) => {
     comicPagesRef.current = pages
   }, [])
-  const handleAudioDraftChange = useCallback((draft: ChapterDraft) => {
+  const handleAudioDraftChange = useCallback((draft: ChapterDraft & { pendingAudio?: PendingAudioUpload }) => {
     audioDraftRef.current = draft
   }, [])
   const autosave = useAutosave({
@@ -197,37 +204,100 @@ export function ChapterEditorPage({
     onRestore: applyDraft,
   })
 
-  function archiveLocalMedia() {
+  function archiveLocalMedia(): boolean {
+    let ok = true
     if (isComic) {
       const pages = comicPagesRef.current
       if (JSON.stringify(pages) !== JSON.stringify(parseComicPages(chapterSnapshot.content))) {
-        archiveDraft({ title: chapterTitle, content: JSON.stringify(pages) }, revisionRef.current)
+        ok = saveMediaDraft({
+          kind: 'comic',
+          chapterId: chapter.id,
+          userId: editorUserId,
+          baseRevision: revisionRef.current,
+          title: chapterTitle || 'Комикс',
+          content: JSON.stringify(pages),
+        }) && ok
       }
     }
     if (isAudioEditor && audioDraftRef.current) {
+      const draft = audioDraftRef.current
       const serverDraft = JSON.stringify({
         duration_seconds: chapterSnapshot.duration_seconds,
         audio_metadata: chapterSnapshot.audio_metadata,
       })
-      if (audioDraftRef.current.title !== chapterSnapshot.title ||
-          audioDraftRef.current.content !== serverDraft) {
-        archiveDraft(audioDraftRef.current, revisionRef.current)
+      if (draft.title !== chapterSnapshot.title || draft.content !== serverDraft || draft.pendingAudio) {
+        ok = saveMediaDraft({
+          kind: 'audio',
+          chapterId: chapter.id,
+          userId: editorUserId,
+          baseRevision: revisionRef.current,
+          title: draft.title,
+          content: draft.content,
+          pendingAudio: draft.pendingAudio,
+        }) && ok
       }
     }
+    return ok
   }
 
-  function applyServerSnapshot(fresh: Chapter, { archive = true }: { archive?: boolean } = {}) {
-    if (archive) {
-      const current = autosave.getValue()
-      if (autosave.isDirty()) archiveDraft(current, revisionRef.current)
-      archiveLocalMedia()
+  function hasLocalMediaChanges(): boolean {
+    if (isComic && JSON.stringify(comicPagesRef.current) !== JSON.stringify(parseComicPages(chapterSnapshot.content))) {
+      return true
     }
+    if (isAudioEditor && audioDraftRef.current) {
+      const draft = audioDraftRef.current
+      const serverDraft = JSON.stringify({
+        duration_seconds: chapterSnapshot.duration_seconds,
+        audio_metadata: chapterSnapshot.audio_metadata,
+      })
+      return draft.title !== chapterSnapshot.title || draft.content !== serverDraft || !!draft.pendingAudio
+    }
+    return false
+  }
+
+  function archiveLocalDraft(): boolean {
+    let ok = true
+    const current = autosave.getValue()
+    if (autosave.isDirty()) ok = archiveDraft(current, revisionRef.current) && ok
+    return archiveLocalMedia() && ok
+  }
+
+  function applyServerSnapshot(fresh: Chapter) {
     revisionRef.current = fresh.revision
     setChapterSnapshot(fresh)
     const draft = { title: fresh.title, content: fresh.content ?? '' }
     autosave.reset(draft)
     if (!isAudioEditor && !isComic) applyDraft(draft)
     setSaveError(null)
+  }
+
+  function retryBlockedArchive() {
+    if (!blockedRecovery) return
+    if (!archiveLocalDraft()) {
+      toast.error('Хранилище всё ещё недоступно. Скопируйте текст из редактора.')
+      return
+    }
+    applyServerSnapshot(blockedRecovery.fresh)
+    setBlockedRecovery(null)
+    setRecoveryNotice('Черновик сохранён в «Локальные черновики». Загружена серверная версия.')
+  }
+
+  function loadBlockedServerVersion() {
+    if (!blockedRecovery) return
+    applyServerSnapshot(blockedRecovery.fresh)
+    setBlockedRecovery(null)
+    setRecoveryNotice(null)
+    toast.warning('Загружена серверная версия. Локальный текст остался в редакторе до этого действия.')
+  }
+
+  async function copyBlockedDraft() {
+    if (!blockedRecovery) return
+    try {
+      await navigator.clipboard.writeText(blockedRecovery.draft.content)
+      toast.success('Текст черновика скопирован')
+    } catch {
+      toast.error('Выделите текст в поле черновика и скопируйте вручную')
+    }
   }
 
   const lease = useChapterLease({
@@ -246,19 +316,37 @@ export function ChapterEditorPage({
         token: acquired.token,
         generation: acquired.generation,
       }
-      // onAcquired вызывается сразу после успешного захвата, до эффекта,
-      // который обновляет readOnlyRef из состояния.
-      readOnlyRef.current = false
+      // onAcquired вызывается при повторном захвате; до завершения
+      // восстановления редактор остаётся read-only.
       try {
         const { chapter: fresh } = await getChapter(chapter.id)
         if (!fresh) return
+        const dirty = autosave.isDirty() || hasLocalMediaChanges()
+        const archived = archiveLocalDraft()
         const action = planLeaseReacquire({
-          dirty: autosave.isDirty(),
+          dirty,
           currentRevision: revisionRef.current,
           freshRevision: fresh.revision,
+          archived,
         })
+        if (action === 'blocked') {
+          readOnlyRef.current = true
+          setBlockedRecovery({
+            fresh,
+            draft: autosave.getValue(),
+            revision: revisionRef.current,
+          })
+          setSaveError({
+            ok: false,
+            code: 'error',
+            message: 'Черновик не сохранён в браузере. Скопируйте текст перед загрузкой серверной версии.',
+          })
+          return
+        }
         if (action === 'retry') {
           setSaveError(null)
+          // Восстановление подтверждено: lease наш, ревизия совпадает.
+          readOnlyRef.current = false
           if (autosave.isDirty()) {
             try {
               await autosave.flush()
@@ -288,7 +376,7 @@ export function ChapterEditorPage({
     },
   })
 
-  const readOnly = lease.state.status !== 'active'
+  const readOnly = lease.state.status !== 'active' || blockedRecovery !== null
 
   useEffect(() => {
     leaseProofRef.current = lease.proof
@@ -575,6 +663,14 @@ export function ChapterEditorPage({
       </header>
 
       <ChapterLeaseBanner state={lease.state} onRetry={() => void lease.reacquire()} />
+      {blockedRecovery && (
+        <ChapterDraftBlocked
+          draft={blockedRecovery.draft}
+          onCopy={() => void copyBlockedDraft()}
+          onRetry={retryBlockedArchive}
+          onLoadServer={loadBlockedServerVersion}
+        />
+      )}
 
       <div className="mx-auto max-w-6xl px-4 md:px-8 py-8">
         {isAudioEditor ? (
@@ -587,6 +683,7 @@ export function ChapterEditorPage({
               readOnly={readOnly}
               onSaveStatus={setSaveStatus}
               onLocalDraft={handleAudioDraftChange}
+              draftOwner={editorUserId}
             />
           </div>
         ) : isComic ? (
@@ -598,6 +695,9 @@ export function ChapterEditorPage({
                 savePages={saveComicPages}
                 readOnly={readOnly}
                 onPagesChange={handleComicPagesChange}
+                draftOwner={editorUserId}
+                chapterId={chapter.id}
+                chapterRevision={chapterSnapshot.revision}
               />
             </div>
           </div>
