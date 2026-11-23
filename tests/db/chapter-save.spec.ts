@@ -204,11 +204,86 @@ test('MCP accepts legacy writes and optionally rejects stale edits', async ({ ch
 
   const stale = await callChapterMcp('canfly_update_chapter', { id, expected_revision: revision, content: original })
   expect(stale.isError).toBe(true)
+  expect(stale.content[0].text).toContain('Глава изменилась')
   const [previous] = await fetchChapterVersions(id)
   const staleRestore = await callChapterMcp('canfly_restore_chapter_version', {
     chapter_id: id, version_id: previous.id, expected_revision: revision,
   })
   expect(staleRestore.isError).toBe(true)
+  expect(staleRestore.content[0].text).toContain('Глава изменилась')
   const current = await callChapterMcp('canfly_get_chapter', { id })
   expect(JSON.parse(current.content[0].text)).toMatchObject({ revision: revision + 1, content: edited })
+
+  const legacyRestore = await callChapterMcp('canfly_restore_chapter_version', {
+    chapter_id: id, version_id: previous.id,
+  })
+  expect(legacyRestore.isError).not.toBe(true)
+  expect(JSON.parse(legacyRestore.content[0].text)).toMatchObject({ revision: revision + 2 })
+  expect(await fetchChapterById(id)).toMatchObject({ content: original })
+})
+
+test.describe('MCP chapter writes v2', () => {
+  test('applies a current patch and returns a structured conflict for a stale patch', async ({ chapter }) => {
+    const { id, revision } = chapter
+    const saved = await callChapterMcp('canfly_update_chapter_v2', {
+      id, expected_revision: revision, content: edited,
+    })
+    expect(saved.isError).not.toBe(true)
+    expect(JSON.parse(saved.content[0].text)).toMatchObject({ ok: true, id, revision: revision + 1 })
+    const current = await fetchChapterById(id)
+    expect(current).toMatchObject({ title: chapter.title, content: edited, audio_url: audioUrl })
+    const history = await fetchChapterVersions(id)
+    expect(history).toMatchObject([{ version_number: 1, content: original }])
+
+    const stale = await callChapterMcp('canfly_update_chapter_v2', {
+      id, expected_revision: revision, title: 'Stale title', content: original,
+    })
+    expect(stale).toMatchObject({ isError: true, structuredContent: { ok: false, code: 'conflict' } })
+    expect(JSON.parse(stale.content[0].text)).toEqual(stale.structuredContent)
+    expect(await fetchChapterById(id)).toEqual(current)
+    expect(await fetchChapterVersions(id)).toEqual(history)
+  })
+
+  test('rejects both operations without a revision', async ({ chapter }) => {
+    const { id, revision } = chapter
+    const current = await updateChapter(id, { content: edited }, { expectedRevision: revision })
+    const history = await fetchChapterVersions(id)
+    const update = await callChapterMcp('canfly_update_chapter_v2', { id, content: original })
+    const restore = await callChapterMcp('canfly_restore_chapter_version_v2', {
+      chapter_id: id, version_id: history[0].id,
+    })
+    for (const result of [update, restore]) {
+      expect(result.isError).toBe(true)
+      expect(result.content[0].text).toContain('expected_revision')
+    }
+    expect(await fetchChapterById(id)).toEqual(current)
+    expect(await fetchChapterVersions(id)).toEqual(history)
+  })
+
+  test('rejects a stale restore and archives the latest text on deliberate restore', async ({ chapter }) => {
+    const { id, revision } = chapter
+    await updateChapter(id, { content: edited }, { expectedRevision: revision })
+    const latestText = '<p>Later chapter draft</p>'
+    const latest = await updateChapter(id, { content: latestText }, { expectedRevision: revision + 1 })
+    const history = await fetchChapterVersions(id)
+    const args = { chapter_id: id, version_id: history[1].id }
+
+    const stale = await callChapterMcp('canfly_restore_chapter_version_v2', {
+      ...args, expected_revision: revision + 1,
+    })
+    expect(stale).toMatchObject({ isError: true, structuredContent: { ok: false, code: 'conflict' } })
+    expect(await fetchChapterById(id)).toEqual(latest)
+    expect(await fetchChapterVersions(id)).toEqual(history)
+
+    const restored = await callChapterMcp('canfly_restore_chapter_version_v2', {
+      ...args, expected_revision: revision + 2,
+    })
+    expect(restored.isError).not.toBe(true)
+    expect(JSON.parse(restored.content[0].text)).toMatchObject({ ok: true, revision: revision + 3 })
+    expect(await fetchChapterById(id)).toMatchObject({ content: original })
+    expect(await fetchChapterVersions(id)).toMatchObject([
+      { version_number: 3, content: latestText },
+      ...history,
+    ])
+  })
 })

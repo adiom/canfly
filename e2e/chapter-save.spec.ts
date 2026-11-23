@@ -138,7 +138,7 @@ test.describe('Защита сохранения главы', () => {
       )
       await page.locator('[contenteditable=true]').fill(studioText)
       await studioRequest
-      mcpWrite = callChapterMcp('canfly_update_chapter', {
+      mcpWrite = callChapterMcp('canfly_update_chapter_v2', {
         id: chapter.id, expected_revision: row.revision, content: mcpText,
       })
     } finally {
@@ -146,6 +146,7 @@ test.describe('Защита сохранения главы', () => {
     }
 
     const mcp = await mcpWrite
+    if (mcp.isError) expect(mcp.structuredContent).toMatchObject({ code: 'conflict' })
     await expect(page.getByRole('status')).toContainText(mcp.isError ? 'Сохранено' : 'Глава изменилась')
     const { rows: [row] } = await chapter.db.query(
       'SELECT content, revision FROM chapters WHERE id = $1', [chapter.id],

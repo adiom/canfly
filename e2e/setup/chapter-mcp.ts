@@ -15,5 +15,9 @@ export async function callChapterMcp(name: string, args: object) {
   const body = await response.text()
   const data = body.split('\n').find(line => line.startsWith('data: '))?.slice(6) ?? body
   expect(response.status, body).toBe(200)
-  return (JSON.parse(data) as { result: { isError?: boolean; content: { text: string }[] } }).result
+  const rpc = JSON.parse(data) as {
+    result?: { isError?: boolean; content: { text: string }[]; structuredContent?: unknown }
+  }
+  if (!rpc.result) throw new Error(`MCP ${name}: ${data}`)
+  return rpc.result
 }

@@ -12,7 +12,7 @@ interface JsonRpcResponse {
   id?: number
   result?: {
     serverInfo?: { name: string }
-    tools?: Array<{ name: string }>
+    tools?: Array<{ name: string; description?: string; inputSchema: { required?: string[] } }>
   }
   error?: { code: number; message: string }
 }
@@ -86,7 +86,8 @@ test.describe('MCP tools', () => {
     expect(init.result?.serverInfo?.name).toBe('canfly')
 
     const list = await rpc(request, { jsonrpc: '2.0', id: 2, method: 'tools/list' })
-    const names = (list.result?.tools ?? []).map((tool) => tool.name)
+    const tools = list.result?.tools ?? []
+    const names = tools.map((tool) => tool.name)
 
     expect(names).toEqual(expect.arrayContaining([
       'canfly_list_releases',
@@ -96,8 +97,10 @@ test.describe('MCP tools', () => {
       'canfly_read_chapter_text',
       'canfly_create_chapter',
       'canfly_update_chapter',
+      'canfly_update_chapter_v2',
       'canfly_export_edition',
       'canfly_restore_chapter_version',
+      'canfly_restore_chapter_version_v2',
       'canfly_create_series',
       'canfly_create_news',
       'canfly_set_release_series',
@@ -110,6 +113,14 @@ test.describe('MCP tools', () => {
       'canfly_metrika_entrances',
       'canfly_metrika_devices',
     ]))
+
+    for (const name of ['canfly_update_chapter', 'canfly_restore_chapter_version']) {
+      const legacy = tools.find(tool => tool.name === name)
+      expect(legacy?.description).toContain(`Устарело: используйте ${name}_v2`)
+      expect(legacy?.inputSchema.required).not.toContain('expected_revision')
+      expect(tools.find(tool => tool.name === `${name}_v2`)?.inputSchema.required)
+        .toContain('expected_revision')
+    }
 
     // Никаких новых удалений релизов, изданий, глав, персонажей и серий.
     expect(names).not.toContain('canfly_delete_release')

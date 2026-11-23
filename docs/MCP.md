@@ -148,9 +148,11 @@ curl -s http://localhost:3000/api/mcp \
 **Главы**
 
 - `canfly_list_chapters`, `canfly_get_chapter`, `canfly_create_chapter`,
-  `canfly_update_chapter`
+  `canfly_update_chapter_v2`
 - `canfly_reorder_chapters`, `canfly_publish_chapter`
-- `canfly_list_chapter_versions`, `canfly_restore_chapter_version`
+- `canfly_list_chapter_versions`, `canfly_restore_chapter_version_v2`
+- Устаревшие инструменты для совместимости: `canfly_update_chapter`,
+  `canfly_restore_chapter_version`.
 
 ### Редакторский цикл: запись → чтение → экспорт
 
@@ -159,19 +161,29 @@ curl -s http://localhost:3000/api/mcp \
   объект. Возвращает чистый текстовый MCP-блок с HTML-фрагментом, смещением,
   `NEXT_OFFSET` и SHA-256; JSON-обёртка не используется. Максимум 3000
   символов за вызов. Сравнивайте SHA-256 между фрагментами.
-- `canfly_create_chapter`, `canfly_update_chapter`, publish и restore возвращают
+- Создание, обновление, публикация и восстановление возвращают
   короткое подтверждение: `ok`, `id`, `status`, `word_count`, `revision`,
   `content_hash` (SHA-256 очищенного полного HTML) и метаданные.
-- Для `canfly_update_chapter` и `canfly_restore_chapter_version` передавайте
-  `expected_revision` из `canfly_get_chapter`. При конфликте перечитайте главу
-  и сверяйте правки перед повтором. Старые клиенты могут опускать этот параметр
-  и сохраняют прежнее поведение без проверки ревизии.
+- `canfly_update_chapter_v2({ id, expected_revision, …поля })` обновляет только
+  переданные поля. `canfly_restore_chapter_version_v2({ chapter_id, version_id, expected_revision })`
+  восстанавливает сохранённую версию и архивирует вытесняемый непустой текст.
+  Для обеих операций обязателен `expected_revision` из того снимка
+  `canfly_get_chapter`, на котором основана правка.
+- При несовпадении ревизий результат содержит `isError: true` и
+  `structuredContent: { ok: false, code: "conflict", message: "…" }`.
+  Текстовый блок содержит тот же объект в JSON. Глава и история версий
+  остаются прежними. Перечитайте главу и сверьте изменения перед повтором.
+- Старые update и restore по-прежнему принимают запрос без ревизии и могут
+  перезаписать свежие данные. Публикация и изменение порядка тоже работают
+  без проверки ревизии. См. [аудит и план перехода](refactor/mcp-chapter-write-safety.md).
 - `canfly_get_chapter({ id, offset = 0, limit = 8000 })` возвращает
   `content` и `next_offset`; максимальный `limit` — 12000.
   Смещения — в Unicode code points (не байтах и не UTF-16 units).
   Повторяйте вызов, пока `next_offset` не станет `null`.
   Если `content_hash` между страницами изменился, начните чтение заново:
-  текст мог быть отредактирован во время выгрузки.
+  текст мог быть отредактирован во время выгрузки. Перед записью сверяйте
+  также `revision` между страницами, поскольку метаданные могут измениться
+  при том же хеше текста.
 - `canfly_export_edition({ edition_id, format: "docx" | "md" })`:
   приватный экспорт издания формата `book`, включает главы `draft`
   и `published` в порядке `chapter_index`. Возвращает `url`,
@@ -182,10 +194,11 @@ curl -s http://localhost:3000/api/mcp \
 - Обычные публичные `/vvvvv/*.docx` и `/vvvvv/*.md` не менялись и
   продолжают требовать опубликованные издание и релиз.
 
-Тестировать полный цикл только на отдельной БД:
-`MCP_E2E_ISOLATED_DB=true`, `MCP_E2E_TEST_EDITION_ID` (UUID подготовленного
-`book` / `draft` издания), `DATABASE_URL` и `MCP_TOKEN`.
-Без этих переменных интеграционный E2E пропускается. Unit: `pnpm test:unit`.
+Для `pnpm test:db` и `pnpm test:e2e` укажите `CANFLY_E2E_DATABASE_URL`
+одноразовой PostgreSQL `canfly_e2e_*` на `127.0.0.1` с явным портом.
+Для полного цикла с экспортом дополнительно задайте `MCP_E2E_ISOLATED_DB=true`,
+`MCP_E2E_TEST_EDITION_ID` (UUID подготовленного издания `book` в статусе `draft`)
+и тестовый `MCP_TOKEN`. Unit-тесты запускаются через `pnpm test:unit`.
 
 **Персонажи и места**
 

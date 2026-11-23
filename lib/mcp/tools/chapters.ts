@@ -1,5 +1,5 @@
 import * as z from 'zod-v4'
-import type { McpServer } from '@modelcontextprotocol/server'
+import type { CallToolResult, McpServer } from '@modelcontextprotocol/server'
 import {
   fetchChaptersByEdition,
   fetchChapterById,
@@ -14,11 +14,54 @@ import { fetchEditionById } from '@/lib/server/editions'
 import { countWords } from '@/lib/mcp/word-count'
 import { chapterReadPage, chapterTextMessage, chapterWriteReceipt } from '@/lib/mcp/chapter-response'
 import { json, notFound, toolError, withToolCatch } from '@/lib/mcp/tool-result'
+import { ChapterWriteError } from '@/lib/studio/chapter-write'
 
 const uuid = z.uuid()
 
 const chapterStatus = z.enum(['draft', 'published'])
-const expectedRevision = z.number().int().min(0).max(2147483647).optional()
+const expectedRevision = z.number().int().min(0).max(2147483647)
+
+const updateChapterInput = z.object({
+  id: uuid.describe('UUID главы'),
+  expected_revision: expectedRevision.optional(),
+  title: z.string().refine(title => title.trim().length > 0).optional().describe('Название главы'),
+  content: z.string().optional().describe('Новый HTML-контент'),
+  chapter_index: z.number().int().min(1).optional().describe('Новый порядковый номер'),
+  status: chapterStatus.optional().describe('Статус'),
+  audio_url: z.string().nullable().optional().describe('URL аудио-файла (null — отвязать)'),
+})
+
+const restoreChapterInput = z.object({
+  chapter_id: uuid.describe('UUID главы'),
+  version_id: uuid.describe('UUID версии для восстановления'),
+  expected_revision: expectedRevision.optional(),
+})
+
+async function updateChapterTool({ id, expected_revision, ...data }: z.infer<typeof updateChapterInput>) {
+  const updated = await updateChapter(id, data, { expectedRevision: expected_revision })
+  return updated ? json(chapterWriteReceipt(updated)) : notFound('Глава', id)
+}
+
+async function restoreChapterTool({ chapter_id, version_id, expected_revision }: z.infer<typeof restoreChapterInput>) {
+  const restored = await restoreChapterVersion(chapter_id, version_id, expected_revision)
+  return restored ? json(chapterWriteReceipt(restored)) : toolError('Версия не найдена или не принадлежит главе')
+}
+
+function withChapterConflict<Args>(handler: (args: Args) => Promise<CallToolResult>) {
+  return withToolCatch(async (args: Args) => {
+    try {
+      return await handler(args)
+    } catch (error) {
+      if (!(error instanceof ChapterWriteError) || error.code !== 'conflict') throw error
+      const failure = {
+        ok: false,
+        code: error.code,
+        message: 'Глава изменилась. Перечитайте главу и сверьте правки перед повтором.',
+      }
+      return { ...json(failure), isError: true, structuredContent: failure }
+    }
+  })
+}
 
 export function registerChaptersTools(server: McpServer) {
   server.registerTool(
@@ -106,24 +149,25 @@ export function registerChaptersTools(server: McpServer) {
   server.registerTool(
     'canfly_update_chapter',
     {
-      title: 'Обновить главу',
+      title: 'Обновить главу (устарело)',
       description:
-        'Обновить главу. Непереданные поля сохраняются. Передайте expected_revision из чтения главы, чтобы отклонить запись при изменении главы. Старая непустая версия текста сохраняется, HTML очищается.',
-      inputSchema: z.object({
-        id: uuid.describe('UUID главы'),
-        expected_revision: expectedRevision,
-        title: z.string().refine(title => title.trim().length > 0).optional().describe('Название главы'),
-        content: z.string().optional().describe('Новый HTML-контент'),
-        chapter_index: z.number().int().min(1).optional().describe('Новый порядковый номер'),
-        status: chapterStatus.optional().describe('Статус'),
-        audio_url: z.string().nullable().optional().describe('URL аудио-файла (null — отвязать)'),
-      }),
+        'Устарело: используйте canfly_update_chapter_v2. Без expected_revision возможна перезапись свежих данных. Непереданные поля сохраняются, заменяемый непустой текст архивируется, HTML очищается.',
+      inputSchema: updateChapterInput,
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     },
-    withToolCatch(async ({ id, expected_revision, ...data }) => {
-      const updated = await updateChapter(id, data, { expectedRevision: expected_revision })
-      return updated ? json(chapterWriteReceipt(updated)) : notFound('Глава', id)
-    }),
+    withToolCatch(updateChapterTool),
+  )
+
+  server.registerTool(
+    'canfly_update_chapter_v2',
+    {
+      title: 'Обновить главу с проверкой ревизии',
+      description:
+        'Обновить переданные поля с expected_revision из canfly_get_chapter. При несовпадении ревизий возвращает conflict. Заменяемый непустой текст архивируется, HTML очищается.',
+      inputSchema: updateChapterInput.extend({ expected_revision: expectedRevision }),
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    },
+    withChapterConflict(updateChapterTool),
   )
 
   server.registerTool(
@@ -177,19 +221,24 @@ export function registerChaptersTools(server: McpServer) {
   server.registerTool(
     'canfly_restore_chapter_version',
     {
-      title: 'Откатить главу к версии',
+      title: 'Откатить главу к версии (устарело)',
       description:
-        'Откатить главу к сохранённой версии. Передайте expected_revision из чтения главы для защиты от перезаписи. Текущее непустое содержимое сохраняется как новая версия.',
-      inputSchema: z.object({
-        chapter_id: uuid.describe('UUID главы'),
-        version_id: uuid.describe('UUID версии для восстановления'),
-        expected_revision: expectedRevision,
-      }),
+        'Устарело: используйте canfly_restore_chapter_version_v2. Без expected_revision возможна перезапись свежих данных. Текущее непустое содержимое сохраняется как новая версия.',
+      inputSchema: restoreChapterInput,
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
     },
-    withToolCatch(async ({ chapter_id, version_id, expected_revision }) => {
-      const restored = await restoreChapterVersion(chapter_id, version_id, expected_revision)
-      return restored ? json(chapterWriteReceipt(restored)) : toolError('Версия не найдена или не принадлежит главе')
-    }),
+    withToolCatch(restoreChapterTool),
+  )
+
+  server.registerTool(
+    'canfly_restore_chapter_version_v2',
+    {
+      title: 'Откатить главу к версии с проверкой ревизии',
+      description:
+        'Восстановить сохранённую версию с expected_revision из canfly_get_chapter. При несовпадении ревизий возвращает conflict. Текущее непустое содержимое сохраняется как новая версия.',
+      inputSchema: restoreChapterInput.extend({ expected_revision: expectedRevision }),
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
+    },
+    withChapterConflict(restoreChapterTool),
   )
 }
