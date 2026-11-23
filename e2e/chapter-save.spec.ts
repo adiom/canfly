@@ -4,6 +4,7 @@ import { expect, test as base } from '@playwright/test'
 import { loadTestCredentials } from './setup/credentials'
 import { requireE2eDatabaseUrl } from './setup/environment'
 import { pgConfig } from './setup/pg'
+import { callChapterMcp } from './setup/chapter-mcp'
 
 const original = '<p>Исходный текст</p>'
 const restored = '<p>Восстановленный текст</p>'
@@ -76,6 +77,102 @@ test.describe('Защита сохранения главы', () => {
     await title.fill('Позднее изменение')
     await expect(status).toContainText('Глава удалена')
     await expect(status).not.toContainText('Сохранено')
+  })
+
+  test('сохраняет текст с пустым заголовком и восстанавливает незавершённое поле при перезагрузке', async ({ chapter, page }) => {
+    const title = page.getByPlaceholder('Заголовок главы')
+    await title.fill('')
+    await page.locator('[contenteditable=true]').fill('Текст при пустом заголовке')
+    await expect(page.getByRole('status')).toContainText('Введите заголовок главы')
+    await expect.poll(async () => {
+      const { rows: [row] } = await chapter.db.query('SELECT title, content FROM chapters WHERE id = $1', [chapter.id])
+      return row
+    }).toEqual({ title: 'Глава', content: '<p>Текст при пустом заголовке</p>' })
+    await expect(page.getByRole('status')).not.toContainText('Сохранено')
+    await expect(page.getByRole('status')).not.toContainText('Сохраняю')
+    page.once('dialog', dialog => dialog.accept())
+    await page.reload()
+    await expect(title).toHaveValue('')
+    await expect(page.locator('[contenteditable=true]')).toHaveText('Текст при пустом заголовке')
+  })
+
+  test('хранит конфликтующий черновик при новой записи и восстанавливает его только по выбору автора', async ({ chapter, page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+    await chapter.db.query('UPDATE chapters SET content = $2 WHERE id = $1', [chapter.id, '<p>Свежий текст</p>'])
+    await page.locator('[contenteditable=true]').fill('Текст из старой вкладки')
+    await expect(page.getByRole('status')).toContainText('Глава изменилась')
+    page.once('dialog', dialog => dialog.accept())
+    await page.reload()
+    const editor = page.locator('[contenteditable=true]')
+    await expect(editor).toHaveText('Свежий текст')
+    await editor.fill('Новая правка')
+    await expect(page.getByRole('status')).toContainText('Сохранено')
+    await page.reload()
+    await expect(editor).toHaveText('Новая правка')
+    await page.getByRole('button', { name: 'Локальные черновики' }).click()
+    await expect(page.getByLabel('HTML черновика')).toHaveValue('<p>Текст из старой вкладки</p>')
+    await page.getByRole('button', { name: 'Скопировать HTML' }).click()
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('<p>Текст из старой вкладки</p>')
+    await page.getByRole('button', { name: 'Восстановить и сохранить текст' }).click()
+    await expect(editor).toHaveText('Текст из старой вкладки')
+    await expect(page.getByRole('status')).toContainText('Сохранено')
+    const { rows: [row] } = await chapter.db.query('SELECT content FROM chapters WHERE id = $1', [chapter.id])
+    expect(row.content).toBe('<p>Текст из старой вкладки</p>')
+    await page.getByRole('button', { name: 'Локальные черновики' }).click()
+    await expect(page.getByLabel('HTML черновика')).toHaveValue('<p>Текст из старой вкладки</p>')
+    await page.getByRole('button', { name: 'Удалить черновик' }).click()
+    await expect(page.getByText('Архивных черновиков нет.')).toBeVisible()
+  })
+
+  test('записи Studio и MCP с одной ревизией имеют одного победителя', async ({ chapter, page }) => {
+    const studioText = 'Правка из Studio'
+    const mcpText = '<p>Правка из MCP</p>'
+    await chapter.db.query('BEGIN')
+    let mcpWrite: ReturnType<typeof callChapterMcp>
+    try {
+      const { rows: [row] } = await chapter.db.query<{ revision: number }>(
+        'SELECT revision FROM chapters WHERE id = $1 FOR UPDATE', [chapter.id],
+      )
+      const studioRequest = page.waitForRequest(request =>
+        request.method() === 'POST' && new URL(request.url()).pathname === chapter.url,
+      )
+      await page.locator('[contenteditable=true]').fill(studioText)
+      await studioRequest
+      mcpWrite = callChapterMcp('canfly_update_chapter', {
+        id: chapter.id, expected_revision: row.revision, content: mcpText,
+      })
+    } finally {
+      await chapter.db.query('COMMIT')
+    }
+
+    const mcp = await mcpWrite
+    await expect(page.getByRole('status')).toContainText(mcp.isError ? 'Сохранено' : 'Глава изменилась')
+    const { rows: [row] } = await chapter.db.query(
+      'SELECT content, revision FROM chapters WHERE id = $1', [chapter.id],
+    )
+    expect(row).toEqual({ content: mcp.isError ? `<p>${studioText}</p>` : mcpText, revision: 1 })
+    const { rows: history } = await chapter.db.query(
+      'SELECT content FROM chapter_versions WHERE chapter_id = $1', [chapter.id],
+    )
+    expect(history).toEqual([{ content: original }])
+  })
+
+  test('переносит черновик PR1 без привязки к автору в архив без автозаписи', async ({ chapter, page }) => {
+    await page.evaluate(({ id, content }) => {
+      sessionStorage.setItem(`cf-chapter-draft:${id}`, JSON.stringify({
+        version: 1, revision: 0,
+        base: JSON.stringify({ title: 'Глава', content }),
+        value: { title: 'Глава', content: '<p>Старый локальный черновик</p>' },
+      }))
+    }, { id: chapter.id, content: original })
+    await page.reload()
+    await expect(page.locator('[contenteditable=true]')).toHaveText('Исходный текст')
+    await page.getByRole('button', { name: 'Локальные черновики' }).click()
+    await expect(page.getByLabel('HTML черновика')).toHaveValue('<p>Старый локальный черновик</p>')
+    const { rows: [row] } = await chapter.db.query(
+      'SELECT content, revision FROM chapters WHERE id = $1', [chapter.id],
+    )
+    expect(row).toEqual({ content: original, revision: 0 })
   })
 
   test('откат синхронизирует редактор и следующий патч заголовка', async ({ chapter, page }) => {

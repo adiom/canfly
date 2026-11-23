@@ -3,7 +3,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { AutosaveQueue, autosavePatch } from '@/lib/studio/autosave-queue'
+import { AutosaveQueue, autosavePatch, type AutosaveResult } from '@/lib/studio/autosave-queue'
 
 export function useAutosave<T extends object>({
   storageKey,
@@ -11,12 +11,16 @@ export function useAutosave<T extends object>({
   save,
   onRestore,
   getRevision,
+  archiveDraft,
+  legacyStorageKey,
 }: {
   storageKey: string
   initial: T
-  save: (value: T, patch: Partial<T>) => Promise<void>
+  save: (value: T, patch: Partial<T>) => Promise<AutosaveResult<T>>
   onRestore: (value: T) => void
   getRevision?: () => number
+  archiveDraft?: (value: T, revision: number) => boolean
+  legacyStorageKey?: string
 }) {
   const router = useRouter()
   const [queue] = useState(() => new AutosaveQueue(initial, save))
@@ -26,9 +30,16 @@ export function useAutosave<T extends object>({
   const status = useSyncExternalStore(queue.subscribe, queue.getStatus, () => 'saved' as const)
 
   useEffect(() => {
-    let keepExistingDraft = false
+    const unarchivedDrafts = new Map<string, { value: T; revision: number }>()
     const persist = () => {
       try {
+        for (const [key, draft] of unarchivedDrafts) {
+          if (archiveDraft?.(draft.value, draft.revision)) {
+            sessionStorage.removeItem(key)
+            unarchivedDrafts.delete(key)
+          }
+        }
+        if (unarchivedDrafts.has(storageKey)) return
         if (queue.isDirty()) {
           sessionStorage.setItem(storageKey, JSON.stringify({
             version: 1,
@@ -36,15 +47,15 @@ export function useAutosave<T extends object>({
             revision: getRevision?.(),
             value: queue.getValue(),
           }))
-          keepExistingDraft = false
-        } else if (!keepExistingDraft) {
+        } else {
           sessionStorage.removeItem(storageKey)
         }
       } catch { /* Storage can be disabled; server saving still works. */ }
     }
-    try {
-      const raw = sessionStorage.getItem(storageKey)
-      if (raw) {
+    for (const key of legacyStorageKey ? [legacyStorageKey, storageKey] : [storageKey]) {
+      try {
+        const raw = sessionStorage.getItem(key)
+        if (!raw) continue
         const draft = JSON.parse(raw) as { version?: number; base?: string; revision?: number; value?: T }
         const matchesBase = getRevision
           ? (draft.revision ?? 0) === getRevision() &&
@@ -52,18 +63,26 @@ export function useAutosave<T extends object>({
           : draft.base === base
         if (draft.version === 1 && draft.base && draft.value && typeof draft.value === 'object' &&
             Object.keys(shape).every(key => typeof draft.value?.[key as keyof T] === typeof shape[key as keyof T])) {
-          if (matchesBase) {
+          if (key === storageKey && matchesBase) {
             const patch = getRevision ? autosavePatch(JSON.parse(draft.base) as T, draft.value) : draft.value
             queue.update(patch)
             restore(queue.getValue())
             toast.info('Восстановлены несохранённые правки')
           } else if (getRevision) {
-            keepExistingDraft = true
-            toast.warning('Локальный черновик относится к старой версии главы.')
+            const revision = draft.revision ?? 0
+            if (archiveDraft?.(draft.value, revision)) {
+              sessionStorage.removeItem(key)
+            } else {
+              unarchivedDrafts.set(key, { value: draft.value, revision })
+            }
+            const message = unarchivedDrafts.has(key)
+              ? 'Браузер не смог перенести старый черновик в архив. Исходная копия сохранена в этой вкладке.'
+              : 'Ранее сохранённый черновик доступен в разделе «Локальные черновики».'
+            toast.warning(message)
           }
         }
-      }
-    } catch { /* Ignore invalid local drafts. */ }
+      } catch { /* Ignore invalid local drafts. */ }
+    }
     const unsubscribe = queue.subscribe(persist)
     const beforeUnload = (event: BeforeUnloadEvent) => {
       if (!queue.isDirty()) return
@@ -101,7 +120,10 @@ export function useAutosave<T extends object>({
       // Also flush on browser Back. The queue survives component teardown.
       void queue.flush().catch(() => {})
     }
-  }, [queue, storageKey, base, shape, restore, router, getRevision])
+  }, [queue, storageKey, base, shape, restore, router, getRevision, archiveDraft, legacyStorageKey])
 
-  return { update: queue.update, flush: queue.flush, reset: queue.reset, status }
+  return {
+    update: queue.update, flush: queue.flush, reset: queue.reset, status,
+    getValue: queue.getValue, isDirty: queue.isDirty,
+  }
 }

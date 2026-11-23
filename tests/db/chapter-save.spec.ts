@@ -1,10 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { expect, test as base } from '@playwright/test'
-import { createMcpHandler } from 'mcp-handler'
 import { dbQuery, withTransaction } from '@/lib/db'
 import type { Chapter } from '@/lib/releases-types'
 import { chapterUpdateSchema } from '@/lib/schemas/studio'
-import { registerChaptersTools } from '@/lib/mcp/tools/chapters'
+import { callChapterMcp } from '@/e2e/setup/chapter-mcp'
 import {
   createChapter,
   fetchChapterById,
@@ -198,28 +197,18 @@ test('a guarded write fails if the chapter disappeared', async ({ chapter }) => 
 })
 
 test('MCP accepts legacy writes and optionally rejects stale edits', async ({ chapter }) => {
-  const handler = createMcpHandler(registerChaptersTools)
-  async function call(name: string, args: object) {
-    const response = await handler(new Request('http://localhost/api/mcp', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
-      body: JSON.stringify({
-        jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args },
-      }),
-    }))
-    const body = await response.text()
-    const data = body.split('\n').find(line => line.startsWith('data: '))?.slice(6) ?? body
-    expect(response.status, body).toBe(200)
-    return (JSON.parse(data) as { result: { isError?: boolean; content: { text: string }[] } }).result
-  }
-
   const { id, revision } = chapter
-  const legacy = await call('canfly_update_chapter', { id, content: edited })
+  const legacy = await callChapterMcp('canfly_update_chapter', { id, content: edited })
   expect(legacy.isError).not.toBe(true)
   expect(JSON.parse(legacy.content[0].text)).toMatchObject({ revision: revision + 1 })
 
-  const stale = await call('canfly_update_chapter', { id, expected_revision: revision, content: original })
+  const stale = await callChapterMcp('canfly_update_chapter', { id, expected_revision: revision, content: original })
   expect(stale.isError).toBe(true)
-  const current = await call('canfly_get_chapter', { id })
+  const [previous] = await fetchChapterVersions(id)
+  const staleRestore = await callChapterMcp('canfly_restore_chapter_version', {
+    chapter_id: id, version_id: previous.id, expected_revision: revision,
+  })
+  expect(staleRestore.isError).toBe(true)
+  const current = await callChapterMcp('canfly_get_chapter', { id })
   expect(JSON.parse(current.content[0].text)).toMatchObject({ revision: revision + 1, content: edited })
 })

@@ -1,4 +1,5 @@
 export type SaveStatus = 'pending' | 'saving' | 'saved' | 'error'
+export type AutosaveResult<T> = void | { acknowledged: Partial<T>; error: Error }
 
 export function autosavePatch<T extends object>(saved: T, value: T): Partial<T> {
   const patch: Partial<T> = {}
@@ -18,7 +19,7 @@ export class AutosaveQueue<T extends object> {
   private writing = false
   private listeners = new Set<() => void>()
 
-  constructor(initial: T, private readonly save: (value: T, patch: Partial<T>) => Promise<void>) {
+  constructor(initial: T, private readonly save: (value: T, patch: Partial<T>) => Promise<AutosaveResult<T>>) {
     this.latest = initial
     this.saved = initial
   }
@@ -68,8 +69,13 @@ export class AutosaveQueue<T extends object> {
         const value = this.latest
         this.writing = true
         this.notify('saving')
-        await this.save(value, autosavePatch(this.saved, value))
-        this.saved = value
+        const result = await this.save(value, autosavePatch(this.saved, value))
+        if (result) {
+          this.saved = { ...this.saved, ...result.acknowledged }
+          if (value === this.latest) throw result.error
+        } else {
+          this.saved = value
+        }
       }
       this.writing = false
       this.notify('saved')

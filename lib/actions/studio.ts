@@ -351,8 +351,8 @@ export async function getChapters(editionId: string) {
 }
 
 export async function getChapter(id: string) {
-  await requireChapterOwnership(id)
-  return chaptersDb.fetchChapterById(id)
+  const { session } = await requireChapterOwnership(id)
+  return { chapter: await chaptersDb.fetchChapterById(id), editorUserId: session.user.id }
 }
 
 /**

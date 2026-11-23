@@ -9,7 +9,7 @@ export default async function ChapterEditPage({
   params: Promise<{ id: string; chapterId: string }>
 }) {
   const { id: editionId, chapterId } = await params
-  const chapter = await getChapter(chapterId)
+  const { chapter, editorUserId } = await getChapter(chapterId)
   if (!chapter) notFound()
   if (chapter.edition_id !== editionId) notFound()
 
@@ -20,8 +20,9 @@ export default async function ChapterEditPage({
 
   return (
     <ChapterEditorPage
-      key={chapterId}
+      key={`${editorUserId}:${chapterId}`}
       chapter={chapter}
+      editorUserId={editorUserId}
       editionId={editionId}
       editionFormat={edition.format}
       prevChapter={neighbors.prev}

@@ -4,6 +4,7 @@ import { useState, useRef, useCallback, type ReactNode } from 'react'
 import { useRouter, unstable_rethrow } from 'next/navigation'
 import { useAutosave } from '@/lib/studio/use-autosave'
 import type { ChapterWriteFailure } from '@/lib/studio/chapter-write'
+import { archiveChapterDraft, type ChapterDraft } from '@/lib/studio/chapter-drafts'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import type { Editor } from '@tiptap/react'
@@ -16,6 +17,7 @@ import { TelegraphEditor } from '@/components/studio/telegraph-editor'
 import { AudioChapterEditor } from '@/components/studio/audio-chapter-editor'
 import { ComicPagesEditor } from '@/components/studio/comic-pages-editor'
 import { VersionHistory } from '@/components/studio/version-history'
+import { ChapterDraftRecovery } from '@/components/studio/chapter-draft-recovery'
 import { EditorialNotesPanel } from '@/components/studio/editorial-notes-panel'
 import { EditorialNotesOverlay } from '@/components/studio/editorial-notes-overlay'
 import { collectParagraphs } from '@/lib/studio/paragraphs'
@@ -80,12 +82,14 @@ function parseComicPages(content: string | null): string[] {
 
 export function ChapterEditorPage({
   chapter,
+  editorUserId,
   editionId,
   editionFormat,
   prevChapter,
   nextChapter,
 }: {
   chapter: Chapter
+  editorUserId: string
   editionId: string
   editionFormat: EditionFormat
   prevChapter: ChapterNavTarget | null
@@ -120,7 +124,10 @@ export function ChapterEditorPage({
   const [restoring, setRestoring] = useState(false)
   const [saveError, setSaveError] = useState<ChapterWriteFailure | null>(null)
   const [, setContentVersion] = useState(0)
-  const applyDraft = useCallback((draft: { title: string; content: string }) => {
+  const archivePrefix = `cf-chapter-draft-archive:${editorUserId}:${chapter.id}:`
+  const archiveDraft = useCallback((draft: ChapterDraft, revision: number) =>
+    archiveChapterDraft(archivePrefix, draft, revision), [archivePrefix])
+  const applyDraft = useCallback((draft: ChapterDraft) => {
     setChapterTitle(draft.title)
     setInitialContent(draft.content)
     setHtmlContent(draft.content)
@@ -128,21 +135,40 @@ export function ChapterEditorPage({
     if (editor && !editor.isDestroyed) editor.commands.setContent(draft.content, { emitUpdate: false })
   }, [])
   const autosave = useAutosave({
-    storageKey: `cf-chapter-draft:${chapter.id}`,
+    storageKey: `cf-chapter-draft:${editorUserId}:${chapter.id}`,
+    legacyStorageKey: `cf-chapter-draft:${chapter.id}`,
     initial: { title: chapter.title, content: chapter.content ?? '' },
     getRevision,
-    save: async (_draft, patch) => {
-      const result = await updateChapterAction(chapter.id, revisionRef.current, patch)
-      if (!result.ok) {
-        setSaveError(error => error?.code === 'conflict' || error?.code === 'not-found' ? error : result)
-        throw new Error(result.message)
+    archiveDraft,
+    save: async (draft, patch) => {
+      const { title, ...contentPatch } = patch
+      const invalidTitle = title !== undefined && !title.trim()
+      const revision = revisionRef.current
+      if (!invalidTitle || contentPatch.content !== undefined) {
+        const result = await updateChapterAction(chapter.id, revision, invalidTitle ? contentPatch : patch)
+        if (!result.ok) {
+          if (result.code === 'conflict' && !archiveDraft(draft, revision)) {
+            toast.warning('Браузер не смог записать архив. Скопируйте текст из редактора.')
+          }
+          setSaveError(error => error?.code === 'conflict' || error?.code === 'not-found' ? error : result)
+          throw new Error(result.message)
+        }
+        revisionRef.current = result.value.revision
+        setSaveError(null)
       }
-      revisionRef.current = result.value.revision
-      setSaveError(null)
+      if (invalidTitle) return {
+        acknowledged: contentPatch,
+        error: new Error('Введите заголовок главы'),
+      }
     },
     onRestore: applyDraft,
   })
   const saveStatus = isAudioEditor || isComic ? mediaSaveStatus : autosave.status
+  const titleError = !isAudioEditor && !isComic && !chapterTitle.trim() ? 'Введите заголовок главы' : null
+  const saveMessage = saveError?.code === 'conflict'
+    ? 'Глава изменилась после открытия. Проверьте локальные черновики перед перезагрузкой.'
+    : saveError?.message ?? titleError
+  const canRestoreDraft = !restoring && saveError?.code !== 'conflict' && saveError?.code !== 'not-found'
   const updateDraft = autosave.update
   const handleDraftChange = useCallback((patch: { title?: string; content?: string }) => {
     if (restorePending.current) return
@@ -154,6 +180,18 @@ export function ChapterEditorPage({
     }
     updateDraft(patch)
   }, [updateDraft])
+
+  function restoreLocalText(draft: ChapterDraft) {
+    if (!canRestoreDraft || restorePending.current) return false
+    const current = autosave.getValue()
+    if (autosave.isDirty() && !archiveDraft(current, revisionRef.current)) {
+      toast.error('Не удалось сохранить текущий черновик в архив. Скопируйте его перед восстановлением.')
+      return false
+    }
+    updateDraft({ content: draft.content })
+    applyDraft({ ...current, content: draft.content })
+    return true
+  }
 
   async function handleRestoreVersion(versionId: string) {
     if (restorePending.current) return
@@ -319,11 +357,11 @@ export function ChapterEditorPage({
             <span className="text-sm text-cf-text-3" role="status" aria-live="polite">
               {saveStatus === 'pending' && 'Есть несохранённые правки'}
               {saveStatus === 'saving' && <Loader2 className="inline h-3 w-3 animate-spin text-cf-accent" />}
-              {saveStatus === 'saved' && !saveError && <Check className="inline h-3 w-3 text-cf-status-resolved" />}
-              {(saveStatus === 'error' || saveError) && <AlertCircle className="inline h-3 w-3 text-cf-accent" />}
+              {saveStatus === 'saved' && !saveMessage && <Check className="inline h-3 w-3 text-cf-status-resolved" />}
+              {(saveStatus === 'error' || saveMessage) && <AlertCircle className="inline h-3 w-3 text-cf-accent" />}
               {saveStatus === 'saving' && ' Сохраняю...'}
-              {saveStatus === 'saved' && !saveError && ' Сохранено'}
-              {saveError?.message || (saveStatus === 'error' && ' Ошибка')}
+              {saveStatus === 'saved' && !saveMessage && ' Сохранено'}
+              {saveMessage || (saveStatus === 'error' && ' Ошибка')}
             </span>
           </div>
 
@@ -352,6 +390,9 @@ export function ChapterEditorPage({
           )}
 
           {!isAudioEditor && !isComic && <VersionHistory chapterId={chapter.id} onRestore={handleRestoreVersion} />}
+          {!isAudioEditor && !isComic && (
+            <ChapterDraftRecovery prefix={archivePrefix} canRestore={canRestoreDraft} onRestore={restoreLocalText} />
+          )}
 
           {chapter.status !== 'published' && (
             <Button size="sm" disabled={restoring} onClick={handlePublish} className="rounded-xl bg-cf-status-resolved text-cf-bg hover:opacity-90">
