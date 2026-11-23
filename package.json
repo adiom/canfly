@@ -7,6 +7,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "next:check": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/next-tools-check.mjs",
+    "studio:browser:login": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/studio-browser-login.mjs",
     "db:bootstrap:test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-db.mjs bootstrap",
     "db:verify-schema": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-db.mjs verify",
     "db:migrate:status": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/db-migrate.mjs status",

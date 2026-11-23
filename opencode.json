@@ -1,0 +1,48 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "cocoindex-code": {
+      "type": "local",
+      "command": [
+        "ccc", "mcp"
+      ]
+    },
+    "next-devtools": {
+      "type": "local",
+      "command": [
+        "npx", "-y", "next-devtools-mcp@0.4.0"
+      ]
+    }
+  },
+  "compaction": {
+    "auto": true,
+    "prune": true
+  },
+  "permissions": [
+    {
+      "action": "shell",
+      "resource": "git push *",
+      "effect": "ask"
+    },
+    {
+      "action": "shell",
+      "resource": "git reset *",
+      "effect": "ask"
+    },
+    {
+      "action": "shell",
+      "resource": "git clean *",
+      "effect": "ask"
+    },
+    {
+      "action": "shell",
+      "resource": "git rebase *",
+      "effect": "ask"
+    },
+    {
+      "action": "shell",
+      "resource": "git commit *",
+      "effect": "ask"
+    }
+  ]
+}

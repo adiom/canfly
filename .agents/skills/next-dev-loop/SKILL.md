@@ -32,41 +32,6 @@ The two views cross-check each other.
 
 - Next.js **16.3+** with **Turbopack** — `/_next/mcp` plus the
   proactive compile check via `get_compilation_issues`.
-- `agent-browser` >= 0.31.1.
----
-name: next-dev-loop
-description: >
-  Verify Next.js runtime behavior after editing app code. Use this
-  skill to confirm a change actually works in a running app — not
-  just that it compiles or type-checks. Combines /_next/mcp
-  (Next.js's view) with agent-browser (the browser's view).
-  Requires a running `next dev`.
----
-
-# next-dev-loop
-
-The edit/verify rhythm during `next dev` — make a change, then
-confirm it actually works at runtime, not only that the types or
-the build are happy.
-
-You verify through two views of the same running app:
-
-- **`/_next/mcp`** — an HTTP endpoint Next.js exposes about itself.
-  Knows framework-specific things: routes, segments, RSC, server
-  actions, server logs, and errors as Next.js saw them. Call
-  `tools/list` for the current surface.
-- **`agent-browser`** — a CLI that drives a real Chrome. Knows
-  framework-agnostic browser things: DOM, console, network, React
-  fiber, vitals. Before driving it, run `agent-browser skills get core`
-  once for the version-matched usage guide — don't guess subcommands
-  from memory.
-
-The two views cross-check each other.
-
-## requires
-
-- Next.js **16.3+** with **Turbopack** — `/_next/mcp` plus the
-  proactive compile check via `get_compilation_issues`.
 - `agent-browser` **>= 0.31.1** — React introspection, worktree-scoped
   `session id`, idempotent `--restore`, and launch flag reconciliation.
 
@@ -152,7 +117,8 @@ Four failure modes. Check each:
 - **Runs without errors** — `/_next/mcp` (server and bubbled-up
   browser errors both surface here).
 - **Behaves as intended** — `agent-browser` drives the page; assert
-  what the user actually sees.
+  what the user actually sees. To inspect what a link prefetched in dev,
+  [pause the navigation in the browser](https://nextjs.org/docs/app/guides/instant-navigation#inspect-loading-states-with-browser-automation).
 - **React-level behavior** — `agent-browser` with react-devtools
   enabled exposes the component tree, props, state, and render
   counts. Anchor framework-level checks here (extra renders,
@@ -183,7 +149,7 @@ manual rather than from memory.
   server say it rendered cleanly, a stale or misdirected browser
   session is the likelier cause than a real bug — reconcile the views
   before debugging the app.
-- Confirming a click or navigation: the page settles a beat later, so
+- After an ordinary navigation, the page settles a beat later, so
   wait with `wait --load networkidle` (no path to get wrong), then
   snapshot/read to confirm the page. Avoid `wait --url` unless you pass
   the link's exact href — a guessed or placeholder path won't match the

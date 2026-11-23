@@ -59,9 +59,11 @@ Route Handlers оборачивай в `apiHandler()`, если не требу�
 
 ## Инструменты агента
 
-- `.agents/skills/` — скиллы рабочей копии: `next-dev-loop` (официальный Vercel: правка → проверка в живом `next dev` через `/_next/mcp` и `agent-browser`), `canfly-architecture`, `canfly-data-access`, `canfly-guardrails`, `canfly-e2e`. Папка в `.gitignore`, на новой машине скиллы ставятся заново: `npx skills add vercel/next.js --skill next-dev-loop вручную --copy`.
-- `.mcp.json` — MCP-серверы: `next-devtools` (ошибки, роуты, server actions работающего dev-сервера) и `playwright` (браузерная проверка страниц). `next-devtools` подключается только при запущенном `pnpm dev`.
-- Рабочий цикл: локальные доки Next → минимальная правка → проверка в браузере → `pnpm lint` + `pnpm build` → узкий e2e.
+- `.agents/skills/` — отслеживаемые скиллы рабочей копии: `next-dev-loop` (официальный Vercel: правка → проверка в живом `next dev` через `/_next/mcp` и `agent-browser`), `canfly-architecture`, `canfly-data-access`, `canfly-guardrails`, `canfly-refactor`, `canfly-e2e`. Остальные файлы `.agents/` игнорируются. Обновить официальный скилл: `npx skills add vercel/next.js --skill next-dev-loop --copy`.
+- `.mcp.json` и `opencode.json` подключают `next-devtools-mcp@0.4.0` к OpenCode и другим MCP-клиентам. Он видит ошибки, роуты, server actions и компиляцию работающего `next dev` через `/_next/mcp`; без запущенного dev-сервера `nextjs_index` ничего не найдёт.
+- `agent-browser` (глобально, >= 0.31.1) — настоящий Chrome для проверки UI. На этой Linux-машине Chrome запускается с `--args "--no-sandbox"`. Сессия: `agent-browser session id --scope worktree --prefix canfly-studio`, состояние входа сохраняется через `--restore`.
+- Проверка версий и MCP: `pnpm next:check`. Локальный вход в Studio на одноразовой БД: `pnpm studio:browser:login` (принимает только `canfly_e2e_*` на loopback и печатает команды `agent-browser`).
+- Рабочий цикл: локальные доки Next → минимальная правка → `get_compilation_issues` → проверка в браузере через `agent-browser`/`next-dev-loop` → `pnpm lint` + `pnpm build` → узкий e2e. Не удаляй `.next` при запущенном `next dev`.
 - Для аудита техдолга и рефакторинга с сохранением поведения используй [canfly-refactor](.agents/skills/canfly-refactor/SKILL.md). Для многоэтапного рефакторинга веди [ExecPlan](docs/refactor/EXECPLAN.template.md).
 
 ## Тесты, коммиты и PR
