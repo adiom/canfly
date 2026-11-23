@@ -13,6 +13,7 @@ export function useAutosave<T extends object>({
   getRevision,
   archiveDraft,
   legacyStorageKey,
+  isReadOnly,
 }: {
   storageKey: string
   initial: T
@@ -21,6 +22,7 @@ export function useAutosave<T extends object>({
   getRevision?: () => number
   archiveDraft?: (value: T, revision: number) => boolean
   legacyStorageKey?: string
+  isReadOnly?: () => boolean
 }) {
   const router = useRouter()
   const [queue] = useState(() => new AutosaveQueue(initial, save))
@@ -91,10 +93,9 @@ export function useAutosave<T extends object>({
       event.returnValue = ''
     }
     const visibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
-        persist()
-        void queue.flush().catch(() => {})
-      }
+      if (document.visibilityState !== 'hidden') return
+      persist()
+      if (!isReadOnly?.()) void queue.flush().catch(() => {})
     }
     const navigate = (event: MouseEvent) => {
       if (!queue.isDirty() || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
@@ -104,6 +105,8 @@ export function useAutosave<T extends object>({
       if (url.origin !== location.origin || (url.pathname === location.pathname && url.search === location.search)) return
       event.preventDefault()
       event.stopPropagation()
+      // В режиме чтения сохранять некуда: черновик уже лёг в архив/sessionStorage.
+      if (isReadOnly?.()) return
       void queue.flush().then(() => {
         router.push(`${url.pathname}${url.search}${url.hash}`)
       }).catch(() => { toast.error('Не удалось сохранить правки. Повторите попытку перед переходом.') })
@@ -118,9 +121,9 @@ export function useAutosave<T extends object>({
       document.removeEventListener('visibilitychange', visibilityChange)
       document.removeEventListener('click', navigate, true)
       // Also flush on browser Back. The queue survives component teardown.
-      void queue.flush().catch(() => {})
+      if (!isReadOnly?.()) void queue.flush().catch(() => {})
     }
-  }, [queue, storageKey, base, shape, restore, router, getRevision, archiveDraft, legacyStorageKey])
+  }, [queue, storageKey, base, shape, restore, router, getRevision, archiveDraft, legacyStorageKey, isReadOnly])
 
   return {
     update: queue.update, flush: queue.flush, reset: queue.reset, status,

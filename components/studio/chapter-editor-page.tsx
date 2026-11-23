@@ -119,6 +119,8 @@ export function ChapterEditorPage({
   const revisionRef = useRef(chapter.revision)
   const leaseProofRef = useRef<ChapterLeaseProof | null>(null)
   const leaseLostRef = useRef(false)
+  const readOnlyRef = useRef(true)
+  const isReadOnly = useCallback(() => readOnlyRef.current, [])
   const getRevision = useCallback(() => revisionRef.current, [])
   const saveComicPages = useCallback(async (pages: string[]) => {
     const proof = leaseProofRef.current
@@ -153,6 +155,7 @@ export function ChapterEditorPage({
     initial: { title: chapter.title, content: chapter.content ?? '' },
     getRevision,
     archiveDraft,
+    isReadOnly,
     save: async (draft, patch) => {
       const { title, ...contentPatch } = patch
       const invalidTitle = title !== undefined && !title.trim()
@@ -166,7 +169,7 @@ export function ChapterEditorPage({
           message: 'Редактирование недоступно: глава открыта в другой сессии.',
         }
         setSaveError(failure)
-        throw new Error(failure.message)
+        return
       }
       if (!invalidTitle || contentPatch.content !== undefined) {
         const result = await updateChapterAction(
@@ -224,11 +227,12 @@ export function ChapterEditorPage({
     },
   })
 
+  const readOnly = lease.state.status !== 'active'
+
   useEffect(() => {
     leaseProofRef.current = lease.proof
-  }, [lease.proof])
-
-  const readOnly = lease.state.status !== 'active'
+    readOnlyRef.current = readOnly
+  }, [lease.proof, readOnly])
   const saveStatus = isAudioEditor || isComic ? mediaSaveStatus : autosave.status
   const titleError = !isAudioEditor && !isComic && !chapterTitle.trim() ? 'Введите заголовок главы' : null
   const saveMessage = saveError?.code === 'conflict'
