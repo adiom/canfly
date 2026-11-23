@@ -204,7 +204,7 @@ test('implicit MCP lease writes only a free chapter and releases in the same tra
 })
 
 test('implicit MCP lease cannot evict an active Studio session', async ({ sandbox: { chapter, userId } }) => {
-  const lease = await leaseFor(userId, chapter.id)
+  await leaseFor(userId, chapter.id)
 
   await expect(updateChapter(chapter.id, { content: edited }, {
     expectedRevision: chapter.revision,

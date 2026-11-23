@@ -12,9 +12,10 @@ import type { ChapterWriteResult } from '@/lib/studio/chapter-write'
 interface ComicPagesEditorProps {
   initialPages: string[]
   savePages: (pages: string[]) => Promise<ChapterWriteResult<Chapter>>
+  readOnly?: boolean
 }
 
-export function ComicPagesEditor({ initialPages, savePages }: ComicPagesEditorProps) {
+export function ComicPagesEditor({ initialPages, savePages, readOnly = false }: ComicPagesEditorProps) {
   const [pages, setPages] = useState<string[]>(initialPages)
   const [uploading, setUploading] = useState(false)
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
@@ -128,7 +129,7 @@ export function ComicPagesEditor({ initialPages, savePages }: ComicPagesEditorPr
           </span>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={handleAddByUrl}>
+          <Button variant="outline" size="sm" onClick={handleAddByUrl} disabled={readOnly}>
             + URL
           </Button>
           <label>
@@ -137,13 +138,13 @@ export function ComicPagesEditor({ initialPages, savePages }: ComicPagesEditorPr
               accept="image/*"
               multiple
               onChange={handleUpload}
-              disabled={uploading}
+              disabled={uploading || readOnly}
               className="hidden"
             />
             <Button
               variant="outline"
               size="sm"
-              disabled={uploading}
+              disabled={uploading || readOnly}
               onClick={e => {
                 e.preventDefault()
                 const input = e.currentTarget.previousElementSibling as HTMLInputElement | null

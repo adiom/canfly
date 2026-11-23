@@ -14,9 +14,10 @@ import {
 } from '@/components/ui/sheet'
 import { History, RotateCcw } from 'lucide-react'
 
-export function VersionHistory({ chapterId, onRestore }: {
+export function VersionHistory({ chapterId, onRestore, disabled = false }: {
   chapterId: string
   onRestore: (versionId: string) => Promise<void>
+  disabled?: boolean
 }) {
   const [versions, setVersions] = useState<ChapterVersion[]>([])
   const [loading, setLoading] = useState(false)
@@ -72,7 +73,7 @@ export function VersionHistory({ chapterId, onRestore }: {
                   <Button
                     variant="ghost"
                     size="sm"
-                    disabled={restoring !== null}
+                    disabled={restoring !== null || disabled}
                     onClick={() => handleRestore(v.id)}
                   >
                     <RotateCcw className="mr-1 h-3 w-3" />

@@ -2,6 +2,13 @@ import { randomBytes } from 'node:crypto'
 import type { PoolClient } from 'pg'
 import { dbQuery, withTransaction } from '@/lib/db'
 import { ChapterWriteError } from '@/lib/studio/chapter-write'
+import {
+  CHAPTER_LEASE_TTL_SECONDS,
+  type ChapterLeaseActorKind,
+} from '@/lib/studio/chapter-lease'
+
+export { CHAPTER_LEASE_TTL_SECONDS }
+export type { ChapterLeaseActorKind }
 
 /**
  * Эксклюзивное редактирование главы.
@@ -18,10 +25,6 @@ import { ChapterWriteError } from '@/lib/studio/chapter-write'
  * Reorder и каскадное удаление блокируют строки глав в порядке `chapters.id`,
  * а lease-строки читают без `FOR UPDATE`, поэтому цикла с писателем нет.
  */
-export const CHAPTER_LEASE_TTL_SECONDS = 60
-
-export type ChapterLeaseActorKind = 'studio' | 'mcp'
-
 /** Достаточно `query`: подходит и PoolClient, и отдельный Client в тестах. */
 type Queryable = Pick<PoolClient, 'query'>
 

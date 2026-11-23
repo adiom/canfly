@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback, type ReactNode } from 'react'
+import { useState, useRef, useCallback, useEffect, type ReactNode } from 'react'
 import { useRouter, unstable_rethrow } from 'next/navigation'
 import { useAutosave } from '@/lib/studio/use-autosave'
 import type { ChapterWriteFailure } from '@/lib/studio/chapter-write'
@@ -10,7 +10,7 @@ import { toast } from 'sonner'
 import type { Editor } from '@tiptap/react'
 import type { Chapter, ChapterEditorialNote, EditionFormat } from '@/lib/releases-types'
 import {
-  publishChapterAction, deleteChapterAction, updateChapterAction,
+  getChapter, publishChapterAction, deleteChapterAction, updateChapterAction,
   restoreChapterVersionAction, updateComicChapterPagesAction,
 } from '@/lib/actions/studio'
 import { TelegraphEditor } from '@/components/studio/telegraph-editor'
@@ -18,6 +18,9 @@ import { AudioChapterEditor } from '@/components/studio/audio-chapter-editor'
 import { ComicPagesEditor } from '@/components/studio/comic-pages-editor'
 import { VersionHistory } from '@/components/studio/version-history'
 import { ChapterDraftRecovery } from '@/components/studio/chapter-draft-recovery'
+import { ChapterLeaseBanner } from '@/components/studio/chapter-lease-banner'
+import { useChapterLease } from '@/lib/studio/use-chapter-lease'
+import type { ChapterLeaseProof } from '@/lib/studio/chapter-lease'
 import { EditorialNotesPanel } from '@/components/studio/editorial-notes-panel'
 import { EditorialNotesOverlay } from '@/components/studio/editorial-notes-overlay'
 import { collectParagraphs } from '@/lib/studio/paragraphs'
@@ -114,9 +117,19 @@ export function ChapterEditorPage({
   }, [])
   const tiptapRef = useRef<Editor | null>(null)
   const revisionRef = useRef(chapter.revision)
+  const leaseProofRef = useRef<ChapterLeaseProof | null>(null)
+  const leaseLostRef = useRef(false)
   const getRevision = useCallback(() => revisionRef.current, [])
   const saveComicPages = useCallback(async (pages: string[]) => {
-    const result = await updateComicChapterPagesAction(chapter.id, revisionRef.current, pages)
+    const proof = leaseProofRef.current
+    if (!proof) {
+      return {
+        ok: false as const,
+        code: 'lease-lost' as const,
+        message: 'Редактирование недоступно: глава открыта в другой сессии.',
+      }
+    }
+    const result = await updateComicChapterPagesAction(chapter.id, revisionRef.current, proof, pages)
     if (result.ok) revisionRef.current = result.value.revision
     return result
   }, [chapter.id])
@@ -144,13 +157,32 @@ export function ChapterEditorPage({
       const { title, ...contentPatch } = patch
       const invalidTitle = title !== undefined && !title.trim()
       const revision = revisionRef.current
+      const proof = leaseProofRef.current
+      if (!proof) {
+        archiveDraft(draft, revision)
+        const failure: ChapterWriteFailure = {
+          ok: false,
+          code: 'lease-lost',
+          message: 'Редактирование недоступно: глава открыта в другой сессии.',
+        }
+        setSaveError(failure)
+        throw new Error(failure.message)
+      }
       if (!invalidTitle || contentPatch.content !== undefined) {
-        const result = await updateChapterAction(chapter.id, revision, invalidTitle ? contentPatch : patch)
+        const result = await updateChapterAction(
+          chapter.id,
+          revision,
+          proof,
+          invalidTitle ? contentPatch : patch,
+        )
         if (!result.ok) {
-          if (result.code === 'conflict' && !archiveDraft(draft, revision)) {
+          const archive = result.code === 'conflict' || result.code === 'lease-lost' || result.code === 'lease-required'
+          if (archive && !archiveDraft(draft, revision)) {
             toast.warning('Браузер не смог записать архив. Скопируйте текст из редактора.')
           }
-          setSaveError(error => error?.code === 'conflict' || error?.code === 'not-found' ? error : result)
+          setSaveError(error => error && (error.code === 'conflict' || error.code === 'not-found')
+            ? error
+            : result)
           throw new Error(result.message)
         }
         revisionRef.current = result.value.revision
@@ -163,12 +195,48 @@ export function ChapterEditorPage({
     },
     onRestore: applyDraft,
   })
+
+  const lease = useChapterLease({
+    chapterId: chapter.id,
+    onLost: () => {
+      leaseLostRef.current = true
+      const current = autosave.getValue()
+      if (autosave.isDirty() && !archiveDraft(current, revisionRef.current)) {
+        toast.error('Не удалось сохранить черновик в архив. Скопируйте текст из редактора.')
+      }
+      toast.warning('Право редактирования потеряно. Текст сохранён в локальных черновиках.')
+    },
+    onAcquired: async () => {
+      if (!leaseLostRef.current) return
+      const { chapter: fresh } = await getChapter(chapter.id)
+      if (!fresh) return
+      if (fresh.revision !== revisionRef.current) {
+        const current = autosave.getValue()
+        if (autosave.isDirty()) archiveDraft(current, revisionRef.current)
+        revisionRef.current = fresh.revision
+        const draft = { title: fresh.title, content: fresh.content ?? '' }
+        autosave.reset(draft)
+        applyDraft(draft)
+        toast.info('Глава перечитана после освобождения: пока вы читали, её изменили.')
+      }
+      leaseLostRef.current = false
+      setSaveError(null)
+    },
+  })
+
+  useEffect(() => {
+    leaseProofRef.current = lease.proof
+  }, [lease.proof])
+
+  const readOnly = lease.state.status !== 'active'
   const saveStatus = isAudioEditor || isComic ? mediaSaveStatus : autosave.status
   const titleError = !isAudioEditor && !isComic && !chapterTitle.trim() ? 'Введите заголовок главы' : null
   const saveMessage = saveError?.code === 'conflict'
     ? 'Глава изменилась после открытия. Проверьте локальные черновики перед перезагрузкой.'
-    : saveError?.message ?? titleError
-  const canRestoreDraft = !restoring && saveError?.code !== 'conflict' && saveError?.code !== 'not-found'
+    : saveError?.code === 'lease-lost' || saveError?.code === 'lease-held'
+      ? 'Режим только для чтения: правки сохраняются в локальные черновики.'
+      : saveError?.message ?? titleError
+  const canRestoreDraft = !restoring && !readOnly && saveError?.code !== 'conflict' && saveError?.code !== 'not-found'
   const updateDraft = autosave.update
   const handleDraftChange = useCallback((patch: { title?: string; content?: string }) => {
     if (restorePending.current) return
@@ -200,7 +268,17 @@ export function ChapterEditorPage({
     try {
       if (tiptapRef.current && !tiptapRef.current.isDestroyed) tiptapRef.current.setEditable(false, false)
       await autosave.flush()
-      const result = await restoreChapterVersionAction(chapter.id, versionId, revisionRef.current)
+      const proof = leaseProofRef.current
+      if (!proof) {
+        const failure: ChapterWriteFailure = {
+          ok: false,
+          code: 'lease-lost',
+          message: 'Восстановление недоступно: глава открыта в другой сессии.',
+        }
+        setSaveError(failure)
+        throw new Error(failure.message)
+      }
+      const result = await restoreChapterVersionAction(chapter.id, versionId, revisionRef.current, proof)
       if (!result.ok) {
         setSaveError(result)
         throw new Error(result.message)
@@ -310,7 +388,9 @@ export function ChapterEditorPage({
     if (restorePending.current) return
     try {
       await autosave.flush()
-      const result = await publishChapterAction(chapter.id, revisionRef.current)
+      const proof = leaseProofRef.current
+      if (!proof) throw new Error('Публикация недоступна: глава открыта в другой сессии.')
+      const result = await publishChapterAction(chapter.id, revisionRef.current, proof)
       if (!result.ok) {
         setSaveError(result)
         toast.error(result.message)
@@ -329,7 +409,9 @@ export function ChapterEditorPage({
     if (restorePending.current) return
     try {
       await autosave.flush()
-      const result = await deleteChapterAction(chapter.id, revisionRef.current)
+      const proof = leaseProofRef.current
+      if (!proof) throw new Error('Удаление недоступно: глава открыта в другой сессии.')
+      const result = await deleteChapterAction(chapter.id, revisionRef.current, proof)
       if (!result.ok) {
         setSaveError(result)
         toast.error(result.message)
@@ -380,7 +462,7 @@ export function ChapterEditorPage({
             <Button
               variant="ghost"
               size="sm"
-              disabled={restoring}
+              disabled={restoring || readOnly}
               onClick={isHtmlMode ? switchToWysiwyg : switchToHtml}
               className={`rounded-xl ${isHtmlMode ? 'bg-cf-status-open/15 text-cf-status-open border border-cf-status-open/40 font-semibold' : 'text-cf-text-3 hover:text-cf-accent hover:bg-cf-accent/10'}`}
             >
@@ -389,13 +471,15 @@ export function ChapterEditorPage({
             </Button>
           )}
 
-          {!isAudioEditor && !isComic && <VersionHistory chapterId={chapter.id} onRestore={handleRestoreVersion} />}
+          {!isAudioEditor && !isComic && (
+            <VersionHistory chapterId={chapter.id} onRestore={handleRestoreVersion} disabled={readOnly} />
+          )}
           {!isAudioEditor && !isComic && (
             <ChapterDraftRecovery prefix={archivePrefix} canRestore={canRestoreDraft} onRestore={restoreLocalText} />
           )}
 
           {chapter.status !== 'published' && (
-            <Button size="sm" disabled={restoring} onClick={handlePublish} className="rounded-xl bg-cf-status-resolved text-cf-bg hover:opacity-90">
+            <Button size="sm" disabled={restoring || readOnly} onClick={handlePublish} className="rounded-xl bg-cf-status-resolved text-cf-bg hover:opacity-90">
               <Globe className="mr-2 h-4 w-4" />
               Опубликовать
             </Button>
@@ -403,7 +487,7 @@ export function ChapterEditorPage({
 
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button variant="ghost" size="icon-sm" disabled={restoring} className="rounded-xl text-cf-text-4 hover:text-cf-accent hover:bg-cf-accent/10">
+              <Button variant="ghost" size="icon-sm" disabled={restoring || readOnly} className="rounded-xl text-cf-text-4 hover:text-cf-accent hover:bg-cf-accent/10">
                 <Trash2 className="h-4 w-4" />
               </Button>
             </AlertDialogTrigger>
@@ -423,10 +507,18 @@ export function ChapterEditorPage({
         </div>
       </header>
 
+      <ChapterLeaseBanner state={lease.state} onRetry={() => void lease.reacquire()} />
+
       <div className="mx-auto max-w-6xl px-4 md:px-8 py-8">
         {isAudioEditor ? (
           <div className="mx-auto max-w-4xl">
-            <AudioChapterEditor chapter={chapter} revisionRef={revisionRef} onSaveStatus={setSaveStatus} />
+            <AudioChapterEditor
+              chapter={chapter}
+              revisionRef={revisionRef}
+              leaseRef={leaseProofRef}
+              readOnly={readOnly}
+              onSaveStatus={setSaveStatus}
+            />
           </div>
         ) : isComic ? (
           <div className="mx-auto max-w-4xl">
@@ -434,6 +526,7 @@ export function ChapterEditorPage({
               <ComicPagesEditor
                 initialPages={parseComicPages(chapter.content)}
                 savePages={saveComicPages}
+                readOnly={readOnly}
               />
             </div>
           </div>
@@ -443,7 +536,7 @@ export function ChapterEditorPage({
               <div className="bg-cf-bg-2 border border-cf-text-1/10 rounded-2xl p-4">
                 <label className="text-sm font-semibold text-cf-text-2 mb-2 block">HTML код главы</label>
                 <textarea
-                  disabled={restoring}
+                  disabled={restoring || readOnly}
                   value={htmlContent}
                   onChange={(e) => {
                     setHtmlContent(e.target.value)
@@ -455,7 +548,7 @@ export function ChapterEditorPage({
                 <div className="flex justify-end gap-3 mt-4">
                   <Button
                     variant="outline"
-                    disabled={restoring}
+                    disabled={restoring || readOnly}
                     onClick={switchToWysiwyg}
                     className="rounded-xl border-cf-text-1/10 bg-cf-bg text-cf-text-2 hover:bg-cf-bg-2"
                   >
@@ -463,7 +556,7 @@ export function ChapterEditorPage({
                   </Button>
                   <Button
                     onClick={handleHtmlSave}
-                    disabled={restoring || saveStatus === 'saving'}
+                    disabled={restoring || readOnly || saveStatus === 'saving'}
                     className="rounded-xl bg-cf-accent text-cf-bg hover:bg-cf-accent-hover"
                   >
                     {saveStatus === 'saving' ? 'Сохраняю...' : 'Сохранить'}
@@ -492,7 +585,7 @@ export function ChapterEditorPage({
               />
               <TelegraphEditor
                 ref={editorCallbackRef}
-                disabled={restoring}
+                disabled={restoring || readOnly}
                 initialTitle={chapterTitle}
                 initialContent={initialContent}
                 onDraftChange={handleDraftChange}

@@ -19,10 +19,13 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
+import type { ChapterLeaseProof } from '@/lib/studio/chapter-lease'
 
 interface AudioChapterEditorProps {
   chapter: Chapter
   revisionRef: RefObject<number>
+  leaseRef: RefObject<ChapterLeaseProof | null>
+  readOnly: boolean
   onSaveStatus: (status: 'idle' | 'saving' | 'saved' | 'error') => void
 }
 
@@ -41,7 +44,7 @@ function numberMeta(metadata: Record<string, unknown>, key: string) {
 
 type LyricsMode = 'edit' | 'sync' | 'preview'
 
-export function AudioChapterEditor({ chapter, revisionRef, onSaveStatus }: AudioChapterEditorProps) {
+export function AudioChapterEditor({ chapter, revisionRef, leaseRef, readOnly, onSaveStatus }: AudioChapterEditorProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const previewAudioRef = useRef<HTMLAudioElement>(null)
   const syncLineRef = useRef<HTMLDivElement>(null)
@@ -70,7 +73,7 @@ export function AudioChapterEditor({ chapter, revisionRef, onSaveStatus }: Audio
   const [syncCurrentTime, setSyncCurrentTime] = useState(0)
   const [previewCurrentTime, setPreviewCurrentTime] = useState(0)
 
-  const canSave = title.trim().length > 0 && !uploading && !isPending
+  const canSave = title.trim().length > 0 && !uploading && !isPending && !readOnly
 
   const buildMetadata = useCallback(() => ({
     ...initialMetadata,
@@ -143,6 +146,10 @@ export function AudioChapterEditor({ chapter, revisionRef, onSaveStatus }: Audio
   }
 
   const uploadAudio = useCallback(async (file: File) => {
+    if (readOnly || !leaseRef.current) {
+      toast.error('Редактирование недоступно: глава открыта в другой сессии')
+      return
+    }
     if (!file.type.startsWith('audio/') && !/\.(mp3|m4a|aac|ogg|wav|flac)$/i.test(file.name)) {
       toast.error('Поддерживаются только m4a, mp3, aac, ogg, wav, flac')
       return
@@ -181,7 +188,7 @@ export function AudioChapterEditor({ chapter, revisionRef, onSaveStatus }: Audio
         onUploadProgress: event => setProgress(event.percentage),
       })
 
-      const result = await finalizeAudioChapterUploadAction(chapter.id, expectedRevision, {
+      const result = await finalizeAudioChapterUploadAction(chapter.id, expectedRevision, leaseRef.current, {
         url: blob.url,
         pathname: blob.pathname,
         contentType: blob.contentType ?? file.type,
@@ -212,7 +219,7 @@ export function AudioChapterEditor({ chapter, revisionRef, onSaveStatus }: Audio
     } finally {
       setUploading(false)
     }
-  }, [chapter.id, onSaveStatus, revisionRef])
+  }, [chapter.id, leaseRef, onSaveStatus, readOnly, revisionRef])
 
   const handleFile = useCallback((file: File | null) => {
     if (file) void uploadAudio(file)
@@ -223,7 +230,8 @@ export function AudioChapterEditor({ chapter, revisionRef, onSaveStatus }: Audio
     onSaveStatus('saving')
     startTransition(async () => {
       try {
-        const result = await updateChapterAction(chapter.id, revisionRef.current, {
+        if (!leaseRef.current) throw new Error('Редактирование недоступно')
+        const result = await updateChapterAction(chapter.id, revisionRef.current, leaseRef.current, {
           title: title.trim(),
           duration_seconds: durationSeconds,
           audio_metadata: buildMetadata(),
@@ -244,7 +252,8 @@ export function AudioChapterEditor({ chapter, revisionRef, onSaveStatus }: Audio
     startTransition(async () => {
       onSaveStatus('saving')
       try {
-        const result = await removeAudioChapterFileAction(chapter.id, revisionRef.current)
+        if (!leaseRef.current) throw new Error('Редактирование недоступно')
+        const result = await removeAudioChapterFileAction(chapter.id, revisionRef.current, leaseRef.current)
         if (!result.ok) throw new Error(result.message)
         revisionRef.current = result.value.revision
         setAudioUrl('')
@@ -289,13 +298,13 @@ export function AudioChapterEditor({ chapter, revisionRef, onSaveStatus }: Audio
       <div
         onDragOver={event => {
           event.preventDefault()
-          if (!uploading) setDragOver(true)
+          if (!uploading && !readOnly) setDragOver(true)
         }}
         onDragLeave={() => setDragOver(false)}
         onDrop={event => {
           event.preventDefault()
           setDragOver(false)
-          handleFile(event.dataTransfer.files?.[0] ?? null)
+          if (!readOnly) handleFile(event.dataTransfer.files?.[0] ?? null)
         }}
         className={cn(
           'rounded-2xl border-2 border-dashed bg-white/60 p-6 text-center shadow-sm shadow-black/5 transition-colors',
@@ -306,6 +315,7 @@ export function AudioChapterEditor({ chapter, revisionRef, onSaveStatus }: Audio
           ref={inputRef}
           type="file"
           accept={ACCEPTED_AUDIO}
+          disabled={readOnly}
           className="hidden"
           onChange={event => {
             handleFile(event.target.files?.[0] ?? null)
@@ -320,7 +330,7 @@ export function AudioChapterEditor({ chapter, revisionRef, onSaveStatus }: Audio
         <Button
           type="button"
           onClick={() => inputRef.current?.click()}
-          disabled={uploading || isPending}
+          disabled={uploading || isPending || readOnly}
           className="mt-4 rounded-xl bg-violet-600 text-white hover:bg-violet-700"
         >
           {uploading ? 'Загружаю...' : 'Выбрать файл'}
@@ -399,7 +409,7 @@ export function AudioChapterEditor({ chapter, revisionRef, onSaveStatus }: Audio
 
         <div className="mt-5 flex flex-wrap justify-end gap-3">
           {audioUrl && (
-            <Button type="button" variant="outline" onClick={removeAudio} disabled={uploading || isPending} className="rounded-xl border-red-200 text-red-600 hover:bg-red-50">
+            <Button type="button" variant="outline" onClick={removeAudio} disabled={uploading || isPending || readOnly} className="rounded-xl border-red-200 text-red-600 hover:bg-red-50">
               <Trash2 className="mr-2 h-4 w-4" />
               Удалить аудио
             </Button>
