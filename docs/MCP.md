@@ -147,12 +147,13 @@ curl -s http://localhost:3000/api/mcp \
 
 **Главы**
 
-- `canfly_list_chapters`, `canfly_get_chapter`, `canfly_create_chapter`,
-  `canfly_update_chapter_v2`
+- `canfly_list_chapters`, `canfly_get_chapter`, `canfly_get_chapter_lease`,
+  `canfly_create_chapter`, `canfly_update_chapter_v2`
 - `canfly_reorder_chapters`, `canfly_publish_chapter`
 - `canfly_list_chapter_versions`, `canfly_restore_chapter_version_v2`
 - Устаревшие инструменты для совместимости: `canfly_update_chapter`,
-  `canfly_restore_chapter_version`.
+  `canfly_restore_chapter_version`. Без `expected_revision` они возвращают
+  `revision_required` и ничего не меняют.
 
 ### Редакторский цикл: запись → чтение → экспорт
 
@@ -173,9 +174,17 @@ curl -s http://localhost:3000/api/mcp \
   `structuredContent: { ok: false, code: "conflict", message: "…" }`.
   Текстовый блок содержит тот же объект в JSON. Глава и история версий
   остаются прежними. Перечитайте главу и сверьте изменения перед повтором.
-- Старые update и restore по-прежнему принимают запрос без ревизии и могут
-  перезаписать свежие данные. Публикация и изменение порядка тоже работают
-  без проверки ревизии. См. [аудит и план перехода](refactor/mcp-chapter-write-safety.md).
+- Запись главы защищена PostgreSQL lease. MCP захватывает кратковременный
+  lease внутри той же транзакции, что проверка ревизии и UPDATE. Если главу
+  сейчас редактирует Studio-вкладка, результат — `isError: true` и
+  `structuredContent: { ok: false, code: "lease_held" }`; глава не меняется.
+  Освобождённый или истёкший lease не блокирует запись.
+- `canfly_publish_chapter` принимает `expected_revision`; без ревизии —
+  `revision_required`. `canfly_reorder_chapters` принимает `chapter_ids` и
+  `expected_revisions` в том же порядке; без ревизий запрос отклоняется.
+- `canfly_get_chapter_lease({ id })` возвращает текущего владельца права
+  редактирования или `null`. Подробности протокола —
+  [эксклюзивное редактирование глав](refactor/chapter-edit-lease.md).
 - `canfly_get_chapter({ id, offset = 0, limit = 8000 })` возвращает
   `content` и `next_offset`; максимальный `limit` — 12000.
   Смещения — в Unicode code points (не байтах и не UTF-16 units).
