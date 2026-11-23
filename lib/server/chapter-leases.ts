@@ -108,6 +108,36 @@ export async function lockChapterLeaseScopes(client: Queryable, chapterIds: stri
   }
 }
 
+/**
+ * Блокирует существующие lease-строки (включая истёкшие) в порядке chapter_id.
+ * Структурные операции вызывают это ДО блокировки строк глав: иначе писатель,
+ * успевший проверить ещё живой lease и ждущий строку главы, мог бы образовать
+ * цикл с каскадным удалением, которое ждёт его lease-строку.
+ */
+export async function lockChapterLeaseRows(client: Queryable, chapterIds: string[]) {
+  const ids = [...new Set(chapterIds)].sort()
+  if (ids.length === 0) return
+  await client.query(
+    `SELECT chapter_id FROM chapter_edit_leases
+     WHERE chapter_id = ANY($1::uuid[])
+     ORDER BY chapter_id
+     FOR UPDATE`,
+    [ids],
+  )
+}
+
+/**
+ * Блокировка состава релиза. Её берут createEdition и deleteRelease, чтобы
+ * между проверкой полного состава и удалением не появилось новое издание
+ * или глава.
+ */
+export async function lockReleaseComposition(client: Queryable, releaseId: string) {
+  await client.query(
+    'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+    [`canfly:release-composition:${releaseId}`],
+  )
+}
+
 function toLease(row: LeaseRow): ChapterLease {
   return {
     chapterId: row.chapter_id,

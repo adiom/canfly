@@ -6,8 +6,10 @@ import type { Chapter, ChapterVersion } from '@/lib/releases-types'
 import { ChapterWriteError } from '@/lib/studio/chapter-write'
 import {
   assertNoActiveChapterLeases,
+  lockChapterLeaseRows,
   lockChapterLeaseScopes,
   lockEditionComposition,
+  lockReleaseComposition,
   withChapterLease,
   type ChapterLeaseGrant,
 } from '@/lib/server/chapter-leases'
@@ -140,11 +142,38 @@ export async function fetchChapterNeighbors(editionId: string, chapterId: string
   )
 }
 
+/** release_id нужен для блокировки состава релиза до edition/chapter-локов. */
+async function lockEditionAndRelease(client: PoolClient, editionId: string) {
+  const { rows: [edition] } = await client.query<{ release_id: string }>(
+    'SELECT release_id FROM editions WHERE id = $1',
+    [editionId],
+  )
+  if (!edition) throw new ChapterWriteError('not-found')
+  await lockReleaseComposition(client, edition.release_id)
+  await lockEditionComposition(client, editionId)
+  return edition.release_id
+}
+
 export async function createChapter(data: Record<string, unknown>) {
   return withTransaction(async (client) => {
-    // Сериализуем изменение состава издания с reorder: иначе два запроса
-    // могут выбрать одинаковый следующий chapter_index.
-    await lockEditionComposition(client, String(data.edition_id))
+    const editionId = String(data.edition_id)
+    await lockEditionAndRelease(client, editionId)
+
+    // Индекс вычисляется уже под advisory-lock: два одновременных создания
+    // не могут получить одинаковый chapter_index.
+    let chapterIndex = typeof data.chapter_index === 'number' ? data.chapter_index : null
+    if (chapterIndex === null) {
+      const { rows: [next] } = await client.query<{ index: number }>(
+        `SELECT (COALESCE(MAX(chapter_index), 0) + 1)::integer AS index
+         FROM chapters WHERE edition_id = $1`,
+        [editionId],
+      )
+      chapterIndex = next?.index ?? 1
+    }
+    const title = typeof data.title === 'string' && data.title.trim()
+      ? data.title
+      : `Глава ${chapterIndex}`
+
     const { rows } = await client.query<Chapter>(
       `INSERT INTO chapters (
          edition_id, title, content, audio_url, audio_blob_path, duration_seconds,
@@ -154,8 +183,8 @@ export async function createChapter(data: Record<string, unknown>) {
        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12::chapter_status, $13)
        RETURNING ${chapterColumns}`,
       [
-        data.edition_id,
-        data.title,
+        editionId,
+        title,
         safeContent(data.content),
         data.audio_url ?? null,
         data.audio_blob_path ?? null,
@@ -164,7 +193,7 @@ export async function createChapter(data: Record<string, unknown>) {
         data.audio_content_type ?? null,
         data.audio_file_size_bytes ?? null,
         data.audio_uploaded_at ?? null,
-        data.chapter_index,
+        chapterIndex,
         data.status ?? 'draft',
         data.word_count ?? 0,
       ],
@@ -288,10 +317,10 @@ export async function reorderChapters(
   if (uniqueIds.size !== items.length) throw new Error('Неверный порядок глав')
 
   await withTransaction(async (client) => {
-    await lockEditionComposition(client, editionId)
-    // Сначала блокируем scope захвата lease, затем проверяем живые lease и
-    // только потом строки глав: тот же порядок, что у acquire → lease → chapter.
+    await lockEditionAndRelease(client, editionId)
+    // Порядок: release → edition → lease scope → lease rows → chapters.
     await lockChapterLeaseScopes(client, items.map(item => item.id))
+    await lockChapterLeaseRows(client, items.map(item => item.id))
     await assertNoActiveChapterLeases(client, items.map(item => item.id))
 
     const { rows } = await client.query<{ id: string; revision: number }>(
@@ -336,6 +365,16 @@ export async function deleteChapter(
   { expectedRevision, lease }: { expectedRevision: number; lease: ChapterLeaseGrant },
 ) {
   await withTransaction(async (client) => {
+    const { rows: [link] } = await client.query<{ edition_id: string; release_id: string }>(
+      `SELECT c.edition_id, e.release_id
+       FROM chapters c JOIN editions e ON e.id = c.edition_id
+       WHERE c.id = $1`,
+      [id],
+    )
+    if (!link) throw new ChapterWriteError('not-found')
+    await lockReleaseComposition(client, link.release_id)
+    await lockEditionComposition(client, link.edition_id)
+
     await withChapterLease(client, id, lease, async () => {
       await lockChapterContent(client, id, expectedRevision)
       await client.query('DELETE FROM chapters WHERE id = $1', [id])

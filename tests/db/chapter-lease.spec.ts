@@ -496,3 +496,129 @@ test('reorder and a writer with a live lease do not deadlock', async ({ sandbox:
     expect(['lease-held', 'conflict']).toContain(reorder.reason.code)
   }
 })
+
+async function waitForBlockedPid(holderPid: number): Promise<number> {
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const row = await dbQueryOne<{ pid: number }>(
+      'SELECT pid FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid)) LIMIT 1',
+      [holderPid],
+    )
+    if (row) return row.pid
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
+  throw new Error('Не дождались заблокированного соединения')
+}
+
+async function chapterRowLocks(pid: number): Promise<number> {
+  const row = await dbQueryOne<{ count: number }>(
+    `SELECT COUNT(*)::integer AS count
+     FROM pg_locks l
+     JOIN pg_class c ON c.oid = l.relation
+     WHERE l.pid = $1 AND l.granted
+       AND c.relname = 'chapters' AND l.mode = 'RowShareLock'`,
+    [pid],
+  )
+  return row?.count ?? 0
+}
+
+test('M1: каскадное удаление издания блокирует lease-строки раньше строк глав', async ({ sandbox: { chapter, userId, editionId } }) => {
+  await leaseFor(userId, chapter.id)
+  await expireLease(chapter.id)
+
+  const client = await directClient()
+  try {
+    await client.query('BEGIN')
+    await client.query(
+      'SELECT chapter_id FROM chapter_edit_leases WHERE chapter_id = $1 FOR UPDATE',
+      [chapter.id],
+    )
+    const { rows: [self] } = await client.query<{ pid: number }>('SELECT pg_backend_pid() AS pid')
+
+    const deletion = deleteEdition(editionId)
+    const blockedPid = await waitForBlockedPid(self.pid)
+    expect(await chapterRowLocks(blockedPid)).toBe(0)
+
+    await client.query('COMMIT')
+    await expect(deletion).resolves.toBeUndefined()
+  } finally {
+    await client.end()
+  }
+})
+
+test('M1: Studio writer и удаление издания завершаются без deadlock', async ({ sandbox: { chapter, userId, editionId } }) => {
+  const lease = await leaseFor(userId, chapter.id)
+  const [write, deletion] = await Promise.all([
+    settled(updateChapter(chapter.id, { content: edited }, {
+      expectedRevision: chapter.revision,
+      lease: sessionGrant(userId, lease),
+    })),
+    settled(deleteEdition(editionId)),
+  ])
+  expect(write.status).toBe('fulfilled')
+  expect(deletion.status).toBe('rejected')
+  if (deletion.status === 'rejected') {
+    expect(deletion.reason.code).not.toBe('40P01')
+    expect(deletion.reason.code).toBe('lease-held')
+  }
+})
+
+test('M2: два одновременных создания получают разные chapter_index', async ({ sandbox: { chapter } }) => {
+  const editionId = chapter.edition_id
+  const [first, second] = await Promise.all([
+    createChapter({ edition_id: editionId, title: 'Первая', content: null }),
+    createChapter({ edition_id: editionId, title: 'Вторая', content: null }),
+  ])
+  expect(first).not.toBeNull()
+  expect(second).not.toBeNull()
+  expect([first!.chapter_index, second!.chapter_index].sort()).toEqual([2, 3])
+})
+
+test('M3: deleteRelease фиксирует состав релиза и блокирует createEdition', async ({ sandbox: { releaseId } }) => {
+  const client = await directClient()
+  try {
+    await client.query('BEGIN')
+    await client.query(
+      'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+      [`canfly:release-composition:${releaseId}`],
+    )
+
+    const deletion = deleteRelease(releaseId)
+    const creation = createEdition({
+      release_id: releaseId,
+      slug: `late-edition-${randomUUID()}`,
+      status: 'draft',
+    })
+
+    expect(await stillPending(deletion)).toBe('pending')
+    expect(await stillPending(creation)).toBe('pending')
+
+    await client.query('COMMIT')
+    await expect(deletion).resolves.toBeUndefined()
+    await expect(creation).rejects.toMatchObject({ code: '23503' })
+  } finally {
+    await client.end()
+  }
+})
+
+test('M3: deleteRelease блокирует создание главы в существующем издании', async ({ sandbox: { editionId, releaseId } }) => {
+  const client = await directClient()
+  try {
+    await client.query('BEGIN')
+    await client.query(
+      'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+      [`canfly:release-composition:${releaseId}`],
+    )
+
+    const deletion = deleteRelease(releaseId)
+    const creation = createChapter({ edition_id: editionId, title: 'Поздняя глава', content: null })
+
+    expect(await stillPending(deletion)).toBe('pending')
+    expect(await stillPending(creation)).toBe('pending')
+
+    await client.query('COMMIT')
+    await expect(deletion).resolves.toBeUndefined()
+    await expect(creation).rejects.toMatchObject({ code: '23503' })
+  } finally {
+    await client.end()
+  }
+})

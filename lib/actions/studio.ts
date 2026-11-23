@@ -375,16 +375,12 @@ export async function createChapterAction(formData: FormData) {
   await requireEditionOwnership(data.edition_id)
 
   const editionId = data.edition_id
-  const existing = await chaptersDb.fetchChaptersByEdition(editionId)
-  const nextIndex = existing.length > 0
-    ? Math.max(...existing.map(c => c.chapter_index)) + 1
-    : 1
-
+  // Индекс и заголовок по умолчанию вычисляются в репозитории под
+  // advisory-lock, чтобы параллельные создания не получили один индекс.
   const chapter = await chaptersDb.createChapter({
     edition_id: editionId,
-    title: data.title ?? `Глава ${nextIndex}`,
+    title: data.title,
     content: null,
-    chapter_index: nextIndex,
     status: 'draft',
     word_count: 0,
   })
