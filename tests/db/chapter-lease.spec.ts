@@ -25,6 +25,7 @@ import {
 } from '@/lib/server/chapters'
 import { createEdition, deleteEdition } from '@/lib/server/editions'
 import { createRelease, deleteRelease } from '@/lib/server/releases'
+import { advisoryLockKey } from '@/lib/server/advisory-locks'
 
 const original = '<p>Original chapter</p>'
 const edited = '<p>Edited chapter</p>'
@@ -623,7 +624,7 @@ test('M3: deleteRelease фиксирует состав релиза и блок
     await client.query('BEGIN')
     await client.query(
       'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
-      [`canfly:release-composition:${releaseId}`],
+      [advisoryLockKey('release-composition', releaseId)],
     )
 
     const deletion = deleteRelease(releaseId)
@@ -637,8 +638,15 @@ test('M3: deleteRelease фиксирует состав релиза и блок
     expect(await stillPending(creation)).toBe('pending')
 
     await client.query('COMMIT')
-    await expect(deletion).resolves.toBeUndefined()
-    await expect(creation).rejects.toMatchObject({ code: '23503' })
+    const deleted = await settled(deletion)
+    const created = await settled(creation)
+    expect(deleted.status).toBe('fulfilled')
+    if (created.status === 'rejected') expect(created.reason.code).toBe('23503')
+    const editions = await dbQuery<{ id: string }>(
+      'SELECT id FROM editions WHERE release_id = $1',
+      [releaseId],
+    )
+    expect(editions).toEqual([])
   } finally {
     await client.end()
   }
@@ -650,7 +658,7 @@ test('M3: deleteRelease блокирует создание главы в сущ
     await client.query('BEGIN')
     await client.query(
       'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
-      [`canfly:release-composition:${releaseId}`],
+      [advisoryLockKey('release-composition', releaseId)],
     )
 
     const deletion = deleteRelease(releaseId)
@@ -660,8 +668,121 @@ test('M3: deleteRelease блокирует создание главы в сущ
     expect(await stillPending(creation)).toBe('pending')
 
     await client.query('COMMIT')
-    await expect(deletion).resolves.toBeUndefined()
-    await expect(creation).rejects.toMatchObject({ code: '23503' })
+    const deleted = await settled(deletion)
+    const created = await settled(creation)
+    expect(deleted.status).toBe('fulfilled')
+    if (created.status === 'rejected') expect(created.reason.code).toBe('23503')
+    const chapters = await dbQuery<{ id: string }>(
+      `SELECT c.id FROM chapters c
+       JOIN editions e ON e.id = c.edition_id
+       WHERE e.release_id = $1`,
+      [releaseId],
+    )
+    expect(chapters).toEqual([])
+  } finally {
+    await client.end()
+  }
+})
+
+test('UUID в верхнем и нижнем регистре даёт один advisory lock', async ({ sandbox: { chapter } }) => {
+  const first = await directClient()
+  const second = await directClient()
+  try {
+    await first.query('BEGIN')
+    const upper = advisoryLockKey('chapter-lease', chapter.id.toUpperCase())
+    const lower = advisoryLockKey('chapter-lease', chapter.id)
+    expect(upper).toBe(lower)
+
+    await first.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [upper])
+    const blocked = await second.query<{ acquired: boolean }>(
+      'SELECT pg_try_advisory_xact_lock(hashtextextended($1, 0)) AS acquired',
+      [lower],
+    )
+    expect(blocked.rows[0]?.acquired).toBe(false)
+
+    await first.query('COMMIT')
+    const free = await second.query<{ acquired: boolean }>(
+      'SELECT pg_try_advisory_xact_lock(hashtextextended($1, 0)) AS acquired',
+      [upper],
+    )
+    expect(free.rows[0]?.acquired).toBe(true)
+    await second.query('ROLLBACK')
+  } finally {
+    await first.end()
+    await second.end()
+  }
+})
+
+test('acquireChapterLease и deleteEdition конкурируют при разном регистре UUID', async ({ sandbox: { chapter, userId, editionId } }) => {
+  const client = await directClient()
+  try {
+    await client.query('BEGIN')
+    const acquired = await acquireChapterLeaseOnClient(client, {
+      chapterId: chapter.id,
+      sessionId: 'mixed-case-delete-edition-session',
+      documentId: 'mixed-case-delete-edition-document',
+      actor: { userId, actorKind: 'studio' },
+    })
+    expect(acquired.ok).toBe(true)
+
+    const deletion = deleteEdition(editionId.toUpperCase())
+    expect(await stillPending(deletion)).toBe('pending')
+
+    await client.query('COMMIT')
+    await expect(deletion).rejects.toMatchObject({ code: 'lease-held' })
+    expect(await fetchChapterById(chapter.id)).not.toBeNull()
+    expect(await fetchChapterVersions(chapter.id)).toEqual([])
+  } finally {
+    await client.end()
+  }
+})
+
+test('acquireChapterLease и deleteRelease конкурируют при разном регистре UUID', async ({ sandbox: { chapter, userId, releaseId } }) => {
+  const client = await directClient()
+  try {
+    await client.query('BEGIN')
+    const acquired = await acquireChapterLeaseOnClient(client, {
+      chapterId: chapter.id,
+      sessionId: 'mixed-case-delete-release-session',
+      documentId: 'mixed-case-delete-release-document',
+      actor: { userId, actorKind: 'studio' },
+    })
+    expect(acquired.ok).toBe(true)
+
+    const deletion = deleteRelease(releaseId.toUpperCase())
+    expect(await stillPending(deletion)).toBe('pending')
+
+    await client.query('COMMIT')
+    await expect(deletion).rejects.toMatchObject({ code: 'lease-held' })
+    expect(await fetchChapterById(chapter.id)).not.toBeNull()
+    expect(await fetchChapterVersions(chapter.id)).toEqual([])
+  } finally {
+    await client.end()
+  }
+})
+
+test('reorderChapters не обходит lease при другом регистре UUID', async ({ sandbox: { chapter, userId, editionId } }) => {
+  const client = await directClient()
+  try {
+    await client.query('BEGIN')
+    const acquired = await acquireChapterLeaseOnClient(client, {
+      chapterId: chapter.id,
+      sessionId: 'mixed-case-reorder-session',
+      documentId: 'mixed-case-reorder-document',
+      actor: { userId, actorKind: 'studio' },
+    })
+    expect(acquired.ok).toBe(true)
+
+    const reorder = reorderChapters(editionId.toUpperCase(), [{
+      id: chapter.id.toUpperCase(),
+      revision: chapter.revision,
+    }])
+    expect(await stillPending(reorder)).toBe('pending')
+
+    await client.query('COMMIT')
+    await expect(reorder).rejects.toMatchObject({ code: 'lease-held' })
+    expect(await fetchChapterById(chapter.id)).not.toBeNull()
+    expect(await fetchChapterVersions(chapter.id)).toEqual([])
   } finally {
     await client.end()
   }

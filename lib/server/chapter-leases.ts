@@ -6,6 +6,7 @@ import {
   CHAPTER_LEASE_TTL_SECONDS,
   type ChapterLeaseActorKind,
 } from '@/lib/studio/chapter-lease'
+import { advisoryLockKey, canonicalUuidList } from '@/lib/server/advisory-locks'
 
 export { CHAPTER_LEASE_TTL_SECONDS }
 export type { ChapterLeaseActorKind }
@@ -92,16 +93,15 @@ function newLeaseToken() {
 
 /**
  * Ключ advisory-lock на главу. Его берут и захват lease, и структурные
- * операции (reorder/удаление издания), поэтому захват не может проскочить
- * между проверкой lease и изменением порядка/удалением. Ключи блокируются
- * в отсортированном порядке, чтобы не было deadlock.
+ * операции (reorder/удаление издания). UUID канонизируется, чтобы верхний и
+ * нижний регистр давали один и тот же ключ.
  */
 function chapterLeaseLockKey(chapterId: string) {
-  return `canfly:chapter-lease:${chapterId}`
+  return advisoryLockKey('chapter-lease', chapterId)
 }
 
 export async function lockChapterLeaseScopes(client: Queryable, chapterIds: string[]) {
-  const ids = [...new Set(chapterIds)].sort()
+  const ids = canonicalUuidList(chapterIds)
   for (const id of ids) {
     await client.query(
       'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
@@ -117,7 +117,7 @@ export async function lockChapterLeaseScopes(client: Queryable, chapterIds: stri
  * цикл с каскадным удалением, которое ждёт его lease-строку.
  */
 export async function lockChapterLeaseRows(client: Queryable, chapterIds: string[]) {
-  const ids = [...new Set(chapterIds)].sort()
+  const ids = canonicalUuidList(chapterIds)
   if (ids.length === 0) return
   await client.query(
     `SELECT chapter_id FROM chapter_edit_leases
@@ -136,7 +136,7 @@ export async function lockChapterLeaseRows(client: Queryable, chapterIds: string
 export async function lockReleaseComposition(client: Queryable, releaseId: string) {
   await client.query(
     'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
-    [`canfly:release-composition:${releaseId}`],
+    [advisoryLockKey('release-composition', releaseId)],
   )
 }
 
@@ -429,6 +429,6 @@ export async function assertNoActiveChapterLeases(client: Queryable, chapterIds:
 export async function lockEditionComposition(client: Queryable, editionId: string) {
   await client.query(
     'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
-    [`canfly:chapter-composition:${editionId}`],
+    [advisoryLockKey('chapter-composition', editionId)],
   )
 }
