@@ -2,26 +2,42 @@ import type { PoolClient } from 'pg'
 import { dbQuery, dbQueryOne, dbUpdatePartial, withTransaction } from '@/lib/db'
 import type { UpdatableColumn } from '@/lib/db'
 import { sanitizeChapterHtml } from '@/lib/sanitize'
+import { normalizeComicPagesJson, parseComicPagesJson } from '@/lib/comic-content'
 import type { Chapter, ChapterVersion } from '@/lib/releases-types'
+import { ChapterWriteError } from '@/lib/studio/chapter-write'
+import {
+  assertNoActiveChapterLeases,
+  lockChapterLeaseRows,
+  lockChapterLeaseScopes,
+  lockEditionComposition,
+  lockReleaseComposition,
+  withChapterLease,
+  type ChapterLeaseGrant,
+} from '@/lib/server/chapter-leases'
 
 /**
  * Контент чистится здесь, в серверном слое, а не в ридерах: ридеры клиентские,
  * и санитайзер в них — это и лишний вес бандла, и защита не там, где нужно.
  * Чистим на чтении, чтобы покрыть и уже сохранённые главы.
  */
-function withSafeContent<T extends { content?: string | null }>(row: T): T {
-  if (!row.content) return row
-  return { ...row, content: sanitizeChapterHtml(row.content) }
+function safeStoredContent(value: string): string {
+  return normalizeComicPagesJson(value) ?? sanitizeChapterHtml(value)
 }
 
-/** Пишем в БД уже очищенный HTML: Studio и MCP идут через один слой. */
+function withSafeContent<T extends { content?: string | null }>(row: T): T {
+  if (!row.content) return row
+  return { ...row, content: safeStoredContent(row.content) }
+}
+
+/** Пишем в БД уже очищенный HTML; JSON страниц комикса не трогаем как HTML. */
 function safeContent(value: unknown): string | null {
   if (value === null || value === undefined) return null
-  return sanitizeChapterHtml(typeof value === 'string' ? value : String(value))
+  return safeStoredContent(typeof value === 'string' ? value : String(value))
 }
 
 function countChapterWords(html: string | null | undefined): number {
   if (!html) return 0
+  if (parseComicPagesJson(html)) return 0
   return html
     .replace(/<[^>]*>/g, ' ')
     .split(/\s+/)
@@ -29,14 +45,14 @@ function countChapterWords(html: string | null | undefined): number {
 }
 
 const chapterColumns = `
-  id, edition_id, title, content, audio_url, audio_blob_path, duration_seconds,
+  id, revision, edition_id, title, content, audio_url, audio_blob_path, duration_seconds,
   audio_metadata, audio_content_type, audio_file_size_bytes, audio_uploaded_at, chapter_index,
   status, word_count, view_count,
   created_at, updated_at, published_at
 `
 
 const chapterListColumns = `
-  id, edition_id, title, audio_url, audio_blob_path, duration_seconds,
+  id, revision, edition_id, title, audio_url, audio_blob_path, duration_seconds,
   audio_metadata, audio_content_type, audio_file_size_bytes, audio_uploaded_at, chapter_index,
   status, word_count, view_count,
   created_at, updated_at, published_at
@@ -132,31 +148,71 @@ export async function fetchChapterNeighbors(editionId: string, chapterId: string
   )
 }
 
-export async function createChapter(data: Record<string, unknown>) {
-  return dbQueryOne<Chapter>(
-    `INSERT INTO chapters (
-       edition_id, title, content, audio_url, audio_blob_path, duration_seconds,
-       audio_metadata, audio_content_type, audio_file_size_bytes, audio_uploaded_at,
-       chapter_index, status, word_count
-     )
-     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12::chapter_status, $13)
-     RETURNING ${chapterColumns}`,
-    [
-      data.edition_id,
-      data.title,
-      safeContent(data.content),
-      data.audio_url ?? null,
-      data.audio_blob_path ?? null,
-      data.duration_seconds ?? null,
-      JSON.stringify(data.audio_metadata ?? {}),
-      data.audio_content_type ?? null,
-      data.audio_file_size_bytes ?? null,
-      data.audio_uploaded_at ?? null,
-      data.chapter_index,
-      data.status ?? 'draft',
-      data.word_count ?? 0,
-    ],
+/** release_id нужен для блокировки состава релиза до edition/chapter-локов. */
+async function lockEditionAndRelease(client: PoolClient, editionId: string) {
+  const { rows: [edition] } = await client.query<{ release_id: string }>(
+    'SELECT release_id FROM editions WHERE id = $1',
+    [editionId],
   )
+  if (!edition) throw new ChapterWriteError('not-found')
+  await lockReleaseComposition(client, edition.release_id)
+  await lockEditionComposition(client, editionId)
+  return edition.release_id
+}
+
+export async function createChapter(
+  data: Record<string, unknown>,
+  { append = false }: { append?: boolean } = {},
+) {
+  return withTransaction(async (client) => {
+    const editionId = String(data.edition_id)
+    await lockEditionAndRelease(client, editionId)
+
+    // Studio и MCP всегда добавляют главу в конец (append), а индекс
+    // вычисляется под advisory-lock. Явный индекс оставлен для служебных
+    // вызовов и фикстур.
+    let chapterIndex = !append && typeof data.chapter_index === 'number'
+      ? data.chapter_index
+      : null
+    if (chapterIndex === null) {
+      const { rows: [next] } = await client.query<{ index: number }>(
+        `SELECT (COALESCE(MAX(chapter_index), 0) + 1)::integer AS index
+         FROM chapters WHERE edition_id = $1`,
+        [editionId],
+      )
+      chapterIndex = next?.index ?? 1
+    }
+    const title = typeof data.title === 'string' && data.title.trim()
+      ? data.title
+      : `Глава ${chapterIndex}`
+
+    const { rows } = await client.query<Chapter>(
+      `INSERT INTO chapters (
+         edition_id, title, content, audio_url, audio_blob_path, duration_seconds,
+         audio_metadata, audio_content_type, audio_file_size_bytes, audio_uploaded_at,
+         chapter_index, status, word_count
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12::chapter_status, $13)
+       RETURNING ${chapterColumns}`,
+      [
+        editionId,
+        title,
+        safeContent(data.content),
+        data.audio_url ?? null,
+        data.audio_blob_path ?? null,
+        data.duration_seconds ?? null,
+        JSON.stringify(data.audio_metadata ?? {}),
+        data.audio_content_type ?? null,
+        data.audio_file_size_bytes ?? null,
+        data.audio_uploaded_at ?? null,
+        chapterIndex,
+        data.status ?? 'draft',
+        data.word_count ?? 0,
+      ],
+    )
+    const chapter = rows[0] ?? null
+    return chapter ? withSafeContent(chapter) : null
+  })
 }
 
 /**
@@ -177,7 +233,6 @@ const chapterUpdatable: Record<string, UpdatableColumn> = {
   audio_content_type: { column: 'audio_content_type' },
   audio_file_size_bytes: { column: 'audio_file_size_bytes' },
   audio_uploaded_at: { column: 'audio_uploaded_at' },
-  chapter_index: { column: 'chapter_index' },
   status: { column: 'status', cast: '::chapter_status' },
   word_count: { column: 'word_count' },
 }
@@ -193,12 +248,14 @@ function updateChapterFields(id: string, data: Record<string, unknown>, client?:
   })
 }
 
-async function lockChapterContent(client: PoolClient, id: string) {
-  const { rows } = await client.query<{ content: string | null }>(
-    'SELECT content FROM chapters WHERE id = $1 FOR UPDATE',
+async function lockChapterContent(client: PoolClient, id: string, expectedRevision: number) {
+  const { rows: [current] } = await client.query<Pick<Chapter, 'content' | 'revision'>>(
+    'SELECT content, revision FROM chapters WHERE id = $1 FOR UPDATE',
     [id],
   )
-  return rows[0] ?? null
+  if (!current) throw new ChapterWriteError('not-found')
+  if (current.revision !== expectedRevision) throw new ChapterWriteError('conflict')
+  return current
 }
 
 /** Вызывается только после блокировки главы на том же клиенте. */
@@ -210,7 +267,7 @@ async function updateLockedChapter(
   content: string | null,
   archiveEmptyContent = false,
 ) {
-  const previous = sanitizeChapterHtml(currentContent)
+  const previous = safeStoredContent(currentContent ?? '')
   if ((previous || archiveEmptyContent) && previous !== (content ?? '')) {
     await client.query(
       `INSERT INTO chapter_versions (chapter_id, content, version_number)
@@ -229,64 +286,111 @@ async function updateLockedChapter(
   return updated
 }
 
-/** Перезаписывает только переданные поля и архивирует заменяемое содержимое. */
+/**
+ * Перезаписывает только переданные поля и архивирует заменяемое содержимое.
+ * Право записи проверяется lease-механизмом в той же транзакции, что и
+ * ревизия, архив и UPDATE: обойти проверку отдельным путём нельзя.
+ */
 export async function updateChapter(
   id: string,
   data: Record<string, unknown>,
-  { archiveEmptyContent = false } = {},
+  { archiveEmptyContent = false, expectedRevision, lease }: {
+    archiveEmptyContent?: boolean
+    expectedRevision: number
+    lease: ChapterLeaseGrant
+  },
 ) {
-  if (data.content === undefined) {
-    const chapter = await updateChapterFields(id, data)
-    return chapter ? withSafeContent(chapter) : null
-  }
-
-  const content = safeContent(data.content)
   return withTransaction(async (client) => {
-    const current = await lockChapterContent(client, id)
-    if (!current) return null
-    return updateLockedChapter(client, id, current.content, data, content, archiveEmptyContent)
+    return withChapterLease(client, id, lease, async () => {
+      const current = await lockChapterContent(client, id, expectedRevision)
+      if (data.content === undefined) {
+        const chapter = await updateChapterFields(id, data, client)
+        if (!chapter) throw new ChapterWriteError('not-found')
+        return withSafeContent(chapter)
+      }
+      return updateLockedChapter(client, id, current.content, data, safeContent(data.content), archiveEmptyContent)
+    })
   })
 }
 
-export async function reorderChapters(editionId: string, chapterIds: string[]) {
-  if (chapterIds.length === 0) return
+/**
+ * Переупорядочивание всего издания. Клиент присылает полный список с
+ * ревизиями; под блокировкой проверяются состав, ревизии и отсутствие живых
+ * lease. Строки глав блокируются в порядке `id`, чтобы не было deadlock.
+ */
+export async function reorderChapters(
+  editionId: string,
+  items: Array<{ id: string; revision: number }>,
+) {
+  if (items.length === 0) return
 
-  const rows = await dbQuery<{ id: string }>(
-    `SELECT id FROM chapters WHERE edition_id = $1`,
-    [editionId],
-  )
-
-  const existingIds = new Set(rows.map(row => row.id))
-  const uniqueIds = new Set(chapterIds)
-  if (
-    rows.length !== chapterIds.length ||
-    uniqueIds.size !== chapterIds.length ||
-    chapterIds.some(id => !existingIds.has(id))
-  ) {
-    throw new Error('Неверный порядок глав')
-  }
+  const uniqueIds = new Set(items.map(item => item.id))
+  if (uniqueIds.size !== items.length) throw new Error('Неверный порядок глав')
 
   await withTransaction(async (client) => {
-    for (let i = 0; i < chapterIds.length; i++) {
+    await lockEditionAndRelease(client, editionId)
+    // Порядок: release → edition → lease scope → lease rows → chapters.
+    await lockChapterLeaseScopes(client, items.map(item => item.id))
+    await lockChapterLeaseRows(client, items.map(item => item.id))
+    await assertNoActiveChapterLeases(client, items.map(item => item.id))
+
+    const { rows } = await client.query<{ id: string; revision: number }>(
+      `SELECT id, revision FROM chapters WHERE edition_id = $1 ORDER BY id ASC FOR UPDATE`,
+      [editionId],
+    )
+    if (rows.length !== items.length) throw new ChapterWriteError('conflict')
+
+    const revisions = new Map(rows.map(row => [row.id, row.revision]))
+    if (items.some(item => revisions.get(item.id) !== item.revision)) {
+      throw new ChapterWriteError('conflict')
+    }
+
+    for (let i = 0; i < items.length; i++) {
       await client.query(
         `UPDATE chapters SET chapter_index = $1 WHERE id = $2 AND edition_id = $3`,
-        [i + 1, chapterIds[i], editionId],
+        [i + 1, items[i].id, editionId],
       )
     }
   })
 }
 
-export async function publishChapter(id: string) {
-  return dbQueryOne<Chapter>(
-    `UPDATE chapters SET status = 'published', published_at = COALESCE(published_at, NOW())
-     WHERE id = $1
-     RETURNING ${chapterColumns}`,
-    [id],
-  )
+export async function publishChapter(
+  id: string,
+  { expectedRevision, lease }: { expectedRevision: number; lease: ChapterLeaseGrant },
+) {
+  return withTransaction(async (client) => {
+    return withChapterLease(client, id, lease, async () => {
+      await lockChapterContent(client, id, expectedRevision)
+      const { rows: [chapter] } = await client.query<Chapter>(
+        `UPDATE chapters SET status = 'published', published_at = COALESCE(published_at, NOW())
+         WHERE id = $1 RETURNING ${chapterColumns}`,
+        [id],
+      )
+      return chapter ?? null
+    })
+  })
 }
 
-export async function deleteChapter(id: string) {
-  await dbQuery('DELETE FROM chapters WHERE id = $1', [id])
+export async function deleteChapter(
+  id: string,
+  { expectedRevision, lease }: { expectedRevision: number; lease: ChapterLeaseGrant },
+) {
+  await withTransaction(async (client) => {
+    const { rows: [link] } = await client.query<{ edition_id: string; release_id: string }>(
+      `SELECT c.edition_id, e.release_id
+       FROM chapters c JOIN editions e ON e.id = c.edition_id
+       WHERE c.id = $1`,
+      [id],
+    )
+    if (!link) throw new ChapterWriteError('not-found')
+    await lockReleaseComposition(client, link.release_id)
+    await lockEditionComposition(client, link.edition_id)
+
+    await withChapterLease(client, id, lease, async () => {
+      await lockChapterContent(client, id, expectedRevision)
+      await client.query('DELETE FROM chapters WHERE id = $1', [id])
+    })
+  })
 }
 
 export async function incrementChapterViews(id: string) {
@@ -296,13 +400,15 @@ export async function incrementChapterViews(id: string) {
 // --- Chapter Versions ---
 
 export async function fetchChapterVersions(chapterId: string) {
-  return dbQuery<ChapterVersion>(
+  const rows = await dbQuery<ChapterVersion>(
     `SELECT id, chapter_id, content, version_number, created_at
      FROM chapter_versions
      WHERE chapter_id = $1
      ORDER BY version_number DESC`,
     [chapterId],
   )
+  // Older versions can also be rendered as HTML in Studio's history preview.
+  return rows.map(row => ({ ...row, content: safeStoredContent(row.content) }))
 }
 
 export async function fetchChapterVersion(versionId: string) {
@@ -319,18 +425,23 @@ export async function fetchChapterVersion(versionId: string) {
  * Обе операции — в одной транзакции, чтобы параллельное сохранение не вклинилось
  * между снимком и обновлением.
  */
-export async function restoreChapterVersion(chapterId: string, versionId: string) {
+export async function restoreChapterVersion(
+  chapterId: string,
+  versionId: string,
+  { expectedRevision, lease }: { expectedRevision: number; lease: ChapterLeaseGrant },
+) {
   return withTransaction(async (client) => {
-    const current = await lockChapterContent(client, chapterId)
-    if (!current) return null
+    return withChapterLease(client, chapterId, lease, async () => {
+      const current = await lockChapterContent(client, chapterId, expectedRevision)
 
-    const { rows } = await client.query<{ content: string }>(
-      'SELECT content FROM chapter_versions WHERE id = $1 AND chapter_id = $2',
-      [versionId, chapterId],
-    )
-    const version = rows[0]
-    if (!version) return null
+      const { rows } = await client.query<{ content: string }>(
+        'SELECT content FROM chapter_versions WHERE id = $1 AND chapter_id = $2',
+        [versionId, chapterId],
+      )
+      const version = rows[0]
+      if (!version) return null
 
-    return updateLockedChapter(client, chapterId, current.content, {}, sanitizeChapterHtml(version.content))
+      return updateLockedChapter(client, chapterId, current.content, {}, safeStoredContent(version.content))
+    })
   })
 }

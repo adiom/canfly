@@ -6,6 +6,7 @@ process.env.PGOPTIONS = '-c search_path=public'
 
 export default defineConfig({
   testDir: './tests/db',
+  globalSetup: './e2e/setup/db-preflight.ts',
   workers: 1,
   forbidOnly: !!process.env.CI,
   reporter: 'list',

@@ -122,6 +122,7 @@ export function NewsEditor({ news }: NewsEditorProps) {
     extensions: [
       StarterKit.configure({
         heading: { levels: [2, 3] },
+        link: false,
       }),
       Placeholder.configure({
         placeholder: 'Начните писать новость...',

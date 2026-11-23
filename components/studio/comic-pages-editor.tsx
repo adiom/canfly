@@ -1,43 +1,156 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import Image from 'next/image'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { Plus, Trash2, Check, Loader2 } from 'lucide-react'
-import { updateComicChapterPagesAction } from '@/lib/actions/studio'
+import type { Chapter } from '@/lib/releases-types'
+import { AutosaveQueue } from '@/lib/studio/autosave-queue'
+import type { ChapterWriteResult } from '@/lib/studio/chapter-write'
+import {
+  loadMediaDraft,
+  isMemoryMediaDraft,
+  removeMediaDraft,
+  storeMediaDraft,
+  type MediaDraft,
+  type MediaDraftInput,
+} from '@/lib/studio/media-drafts'
 
 interface ComicPagesEditorProps {
-  chapterId: string
   initialPages: string[]
+  savePages: (pages: string[]) => Promise<ChapterWriteResult<Chapter>>
+  getRevision: () => number
+  readOnly?: boolean
+  accessRevoked?: boolean
+  onLocalDraft?: (draft: MediaDraftInput | null, saved?: boolean) => void
+  onUploadPending?: (pending: boolean) => void
+  draftOwner: string
+  chapterId: string
+  chapterRevision: number
 }
 
-export function ComicPagesEditor({ chapterId, initialPages }: ComicPagesEditorProps) {
+export function ComicPagesEditor({
+  initialPages,
+  savePages,
+  getRevision,
+  readOnly = false,
+  accessRevoked = false,
+  onLocalDraft,
+  onUploadPending,
+  draftOwner,
+  chapterId,
+  chapterRevision,
+}: ComicPagesEditorProps) {
   const [pages, setPages] = useState<string[]>(initialPages)
   const [uploading, setUploading] = useState(false)
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
-  const [isPending, startTransition] = useTransition()
-  const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [revision, setRevision] = useState(chapterRevision)
+  const ownDraft = useRef<number | undefined>(undefined)
+  const [queue] = useState(() => new AutosaveQueue({ pages: initialPages }, async ({ pages }) => {
+    const result = await savePages(pages)
+    if (!result.ok) {
+      toast.error(result.message)
+      setSaveError(result.message)
+      throw new Error(result.message)
+    }
+    setRevision(result.value.revision)
+    setSaveError(null)
+  }))
+  const status = useSyncExternalStore(queue.subscribe, queue.getStatus, () => 'saved' as const)
+  const isPending = status === 'pending' || status === 'saving'
+  const wasReadOnly = useRef(readOnly)
+  const [recovery, setRecovery] = useState<MediaDraft | null>(null)
+  const [draftLoaded, setDraftLoaded] = useState(false)
+  const editingDisabled = readOnly || !draftLoaded || !!recovery || uploading
+
+  const recordDraft = useCallback((content: string, baseRevision: number) => {
+    const draft: MediaDraftInput = {
+      kind: 'comic',
+      chapterId,
+      userId: draftOwner,
+      baseRevision,
+      title: 'Комикс',
+      content,
+    }
+    const stored = storeMediaDraft(draft)
+    ownDraft.current = stored.draft.savedAt
+    onLocalDraft?.(draft, stored.persisted)
+    return stored.persisted
+  }, [chapterId, draftOwner, onLocalDraft])
+
+  useEffect(() => {
+    // Читаем хранилище после гидратации, чтобы SSR и клиент совпадали.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage недоступен на сервере
+    setRecovery(loadMediaDraft('comic', draftOwner, chapterId))
+    setDraftLoaded(true)
+  }, [chapterId, draftOwner])
+
+  useEffect(() => {
+    if (!draftLoaded || recovery) {
+      const memoryDraft = recovery && isMemoryMediaDraft(recovery) ? recovery : null
+      onLocalDraft?.(memoryDraft, !memoryDraft)
+      return
+    }
+    const content = JSON.stringify(pages)
+    if (!queue.isDirty() && content === JSON.stringify(queue.getSavedValue().pages)) {
+      onLocalDraft?.(null)
+      if (ownDraft.current !== undefined) {
+        removeMediaDraft('comic', draftOwner, chapterId, ownDraft.current)
+        ownDraft.current = undefined
+      }
+      return
+    }
+    if (!recordDraft(content, revision)) {
+      toast.error('Не удалось сохранить локальный черновик: хранилище переполнено')
+    }
+  }, [chapterId, draftLoaded, draftOwner, onLocalDraft, pages, queue, recordDraft, recovery, revision, status])
+
+  useEffect(() => {
+    // Возврат lease при неизменной ревизии: повторяем грязную очередь.
+    if (wasReadOnly.current && !readOnly) void queue.flush().catch(() => {})
+    wasReadOnly.current = readOnly
+  }, [queue, readOnly])
+
+  function restoreDraft() {
+    if (!recovery || readOnly) return
+    try {
+      const parsed = JSON.parse(recovery.content) as unknown
+      if (!Array.isArray(parsed) || parsed.some(item => typeof item !== 'string')) {
+        throw new Error('invalid')
+      }
+      setPages(parsed)
+      queue.update({ pages: parsed })
+      ownDraft.current = recovery.savedAt
+      setRecovery(null)
+      setSaveError(null)
+      toast.success('Локальный черновик комикса восстановлен')
+    } catch {
+      toast.error('Черновик комикса повреждён')
+    }
+  }
+
+  function discardDraft() {
+    if (recovery) removeMediaDraft('comic', draftOwner, chapterId, recovery.savedAt)
+    setRecovery(null)
+  }
 
   function persist(newPages: string[]) {
-    setSaved(false)
-    startTransition(async () => {
-      try {
-        await updateComicChapterPagesAction(chapterId, newPages)
-        setSaved(true)
-        setTimeout(() => setSaved(false), 2000)
-      } catch {
-        toast.error('Ошибка сохранения')
-      }
-    })
+    queue.update({ pages: newPages })
+    // Загрузка может завершиться уже после внутрисайтового Back.
+    if (queue.isDirty()) recordDraft(JSON.stringify(newPages), getRevision())
+    void queue.flush().catch(() => {})
   }
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    if (editingDisabled) return
     const files = e.target.files
     if (!files || files.length === 0) return
 
     setUploading(true)
-    const uploadedUrls: string[] = []
+    onUploadPending?.(true)
+    let uploaded = 0
 
     try {
       for (const file of Array.from(files)) {
@@ -55,22 +168,24 @@ export function ComicPagesEditor({ chapterId, initialPages }: ComicPagesEditorPr
         }
 
         const data = await res.json()
-        uploadedUrls.push(data.url)
+        const newPages = [...queue.getValue().pages, data.url]
+        setPages(newPages)
+        persist(newPages)
+        uploaded++
       }
 
-      const newPages = [...pages, ...uploadedUrls]
-      setPages(newPages)
-      persist(newPages)
-      toast.success(`Загружено ${uploadedUrls.length} страниц`)
+      toast.success(`Загружено ${uploaded} страниц`)
     } catch {
       toast.error('Ошибка загрузки')
     } finally {
       setUploading(false)
+      onUploadPending?.(false)
       e.target.value = ''
     }
   }
 
   function handleAddByUrl() {
+    if (editingDisabled) return
     const url = window.prompt('URL изображения:')
     if (url) {
       const newPages = [...pages, url]
@@ -80,6 +195,7 @@ export function ComicPagesEditor({ chapterId, initialPages }: ComicPagesEditorPr
   }
 
   function handleDelete(index: number) {
+    if (editingDisabled) return
     const newPages = pages.filter((_, i) => i !== index)
     setPages(newPages)
     persist(newPages)
@@ -87,12 +203,13 @@ export function ComicPagesEditor({ chapterId, initialPages }: ComicPagesEditorPr
   }
 
   function handleDragStart(index: number) {
+    if (editingDisabled) return
     setDraggedIndex(index)
   }
 
   function handleDragOver(e: React.DragEvent, index: number) {
     e.preventDefault()
-    if (draggedIndex === null || draggedIndex === index) return
+    if (editingDisabled || draggedIndex === null || draggedIndex === index) return
 
     const newPages = [...pages]
     const draggedItem = newPages[draggedIndex]
@@ -104,7 +221,7 @@ export function ComicPagesEditor({ chapterId, initialPages }: ComicPagesEditorPr
   }
 
   function handleDragEnd() {
-    if (draggedIndex !== null) {
+    if (!editingDisabled && draggedIndex !== null) {
       persist(pages)
     }
     setDraggedIndex(null)
@@ -112,17 +229,42 @@ export function ComicPagesEditor({ chapterId, initialPages }: ComicPagesEditorPr
 
   return (
     <div className="space-y-4">
+      {recovery && (
+        <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          <p className="font-semibold">Найден локальный черновик комикса</p>
+          <p className="mt-1 text-xs">
+            Сохранён {new Date(recovery.savedAt).toLocaleString('ru-RU')}, ревизия {recovery.baseRevision}.
+            {recovery.baseRevision !== chapterRevision && ' Глава изменилась: восстановление заменит текущие страницы.'}
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" disabled={readOnly} onClick={restoreDraft}>
+              Восстановить страницы
+            </Button>
+            <Button size="sm" variant="ghost" onClick={discardDraft}>
+              Удалить черновик
+            </Button>
+          </div>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h3 className="font-semibold">Страницы комикса ({pages.length})</h3>
-          <span className="text-xs text-muted-foreground">
+          {!accessRevoked && <span className="text-xs text-muted-foreground">
             {isPending && <Loader2 className="inline h-3 w-3 animate-spin mr-1" />}
-            {!isPending && saved && <Check className="inline h-3 w-3 text-emerald-500 mr-1" />}
-            {isPending ? 'Сохраняю...' : saved ? 'Сохранено' : ''}
-          </span>
+            {!recovery && status === 'saved' && !saveError && <Check className="inline h-3 w-3 text-emerald-500 mr-1" />}
+            {isPending && 'Сохраняю...'}
+            {recovery && 'Есть локальный черновик'}
+            {!recovery && status === 'saved' && !saveError && 'Сохранено'}
+            {saveError || (status === 'error' && 'Ошибка сохранения')}
+          </span>}
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={handleAddByUrl}>
+          {status === 'error' && !recovery && (
+            <Button variant="outline" size="sm" disabled={editingDisabled} onClick={() => void queue.flush().catch(() => {})}>
+              Повторить сохранение
+            </Button>
+          )}
+          <Button variant="outline" size="sm" onClick={handleAddByUrl} disabled={editingDisabled}>
             + URL
           </Button>
           <label>
@@ -131,13 +273,13 @@ export function ComicPagesEditor({ chapterId, initialPages }: ComicPagesEditorPr
               accept="image/*"
               multiple
               onChange={handleUpload}
-              disabled={uploading}
+              disabled={editingDisabled}
               className="hidden"
             />
             <Button
               variant="outline"
               size="sm"
-              disabled={uploading}
+              disabled={editingDisabled}
               onClick={e => {
                 e.preventDefault()
                 const input = e.currentTarget.previousElementSibling as HTMLInputElement | null
@@ -160,13 +302,13 @@ export function ComicPagesEditor({ chapterId, initialPages }: ComicPagesEditorPr
           {pages.map((url, index) => (
             <div
               key={`${url}-${index}`}
-              draggable
+              draggable={!editingDisabled}
               onDragStart={() => handleDragStart(index)}
               onDragOver={e => handleDragOver(e, index)}
               onDragEnd={handleDragEnd}
-              className={`relative group cursor-move rounded-xl overflow-hidden border border-white/70 shadow-sm ${
-                draggedIndex === index ? 'opacity-50' : ''
-              }`}
+              className={`relative group rounded-xl overflow-hidden border border-white/70 shadow-sm ${
+                readOnly ? 'cursor-default' : 'cursor-move'
+              } ${draggedIndex === index ? 'opacity-50' : ''}`}
             >
               <div className="relative aspect-[3/4] bg-muted">
                 <Image
@@ -174,6 +316,7 @@ export function ComicPagesEditor({ chapterId, initialPages }: ComicPagesEditorPr
                   alt={`Страница ${index + 1}`}
                   fill
                   sizes="200px"
+                  unoptimized
                   className="object-cover"
                 />
               </div>
@@ -182,7 +325,9 @@ export function ComicPagesEditor({ chapterId, initialPages }: ComicPagesEditorPr
                 <Button
                   variant="destructive"
                   size="icon-sm"
+                  disabled={editingDisabled}
                   onClick={() => handleDelete(index)}
+                  aria-label={`Удалить страницу ${index + 1}`}
                 >
                   <Trash2 className="h-3 w-3" />
                 </Button>
@@ -192,7 +337,9 @@ export function ComicPagesEditor({ chapterId, initialPages }: ComicPagesEditorPr
         </div>
       )}
 
-      <p className="text-xs text-muted-foreground">Перетаскивайте карточки для изменения порядка</p>
+      <p className="text-xs text-muted-foreground">
+        {readOnly ? 'Режим только для чтения: страницы нельзя менять.' : 'Перетаскивайте карточки для изменения порядка'}
+      </p>
     </div>
   )
 }

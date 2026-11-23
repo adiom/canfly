@@ -119,6 +119,7 @@ export type EditionWithRelease = Edition & {
 
 export interface Chapter {
   id: string
+  revision: number
   edition_id: string
   title: string
   content: string | null

@@ -7,6 +7,7 @@ import type { Chapter } from '@/lib/releases-types'
 import { reorderChaptersAction } from '@/lib/actions/studio'
 import { Badge } from '@/components/ui/badge'
 import { FileText, GripVertical } from 'lucide-react'
+import { toast } from 'sonner'
 
 const statusBadgeStyles: Record<string, string> = {
   draft: 'bg-amber-50 text-amber-600 border-amber-200/80',
@@ -24,10 +25,18 @@ export function ChapterList({ chapters, editionId }: { chapters: Chapter[]; edit
     if (isSaving) return
     setIsSaving(true)
     try {
-      await reorderChaptersAction(editionId, newItems.map(chapter => chapter.id))
+      await reorderChaptersAction(
+        editionId,
+        newItems.map(chapter => ({ id: chapter.id, revision: chapter.revision })),
+      )
       router.refresh()
     } catch (error) {
-      console.error(error)
+      setItems(chapters)
+      toast.error(
+        error instanceof Error && error.message.includes('редактир')
+          ? 'Порядок не изменён: одна из глав сейчас редактируется. Повторите после завершения.'
+          : 'Не удалось изменить порядок глав',
+      )
     } finally {
       setIsSaving(false)
     }

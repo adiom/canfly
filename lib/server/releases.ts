@@ -1,6 +1,13 @@
 import { dbQuery, dbQueryOne, dbUpdatePartial, withTransaction } from '@/lib/db'
 import type { UpdatableColumn } from '@/lib/db'
 import { generateSlug } from '@/lib/slug-utils'
+import {
+  assertNoActiveChapterLeases,
+  lockChapterLeaseRows,
+  lockChapterLeaseScopes,
+  lockEditionComposition,
+  lockReleaseComposition,
+} from '@/lib/server/chapter-leases'
 import type { CharacterChatAvailabilityInput } from '@/lib/ai/character-chat/availability'
 import type { Character } from '@/lib/types'
 import type {
@@ -135,8 +142,38 @@ export async function updateReleaseDesign(id: string, config: Record<string, unk
   )
 }
 
+/** Удаление релиза каскадно удаляет издания и главы — живой lease запрещает его. */
 export async function deleteRelease(id: string) {
-  await dbQuery('DELETE FROM releases WHERE id = $1', [id])
+  await withTransaction(async (client) => {
+    await lockReleaseComposition(client, id)
+    const { rows: editions } = await client.query<{ id: string }>(
+      'SELECT id FROM editions WHERE release_id = $1 ORDER BY id ASC',
+      [id],
+    )
+    for (const edition of editions) {
+      await lockEditionComposition(client, edition.id)
+    }
+    const { rows } = await client.query<{ id: string }>(
+      `SELECT c.id FROM chapters c
+       JOIN editions e ON e.id = c.edition_id
+       WHERE e.release_id = $1
+       ORDER BY c.id ASC`,
+      [id],
+    )
+    const chapterIds = rows.map(row => row.id)
+    await lockChapterLeaseScopes(client, chapterIds)
+    await lockChapterLeaseRows(client, chapterIds)
+    await assertNoActiveChapterLeases(client, chapterIds)
+    await client.query(
+      `SELECT c.id FROM chapters c
+       JOIN editions e ON e.id = c.edition_id
+       WHERE e.release_id = $1
+       ORDER BY c.id ASC
+       FOR UPDATE OF c`,
+      [id],
+    )
+    await client.query('DELETE FROM releases WHERE id = $1', [id])
+  })
 }
 
 // --- Release Characters ---

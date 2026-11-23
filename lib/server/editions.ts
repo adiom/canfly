@@ -1,5 +1,12 @@
-import { dbQuery, dbQueryOne, dbUpdatePartial } from '@/lib/db'
+import { dbQuery, dbQueryOne, dbUpdatePartial, withTransaction } from '@/lib/db'
 import type { UpdatableColumn } from '@/lib/db'
+import {
+  assertNoActiveChapterLeases,
+  lockChapterLeaseRows,
+  lockChapterLeaseScopes,
+  lockEditionComposition,
+  lockReleaseComposition,
+} from '@/lib/server/chapter-leases'
 import type {
   Edition,
   EditionCreateInput,
@@ -151,32 +158,38 @@ export async function createEdition(data: EditionCreateInput) {
     ? 0
     : await countEditionsOfRelease(data.release_id)
 
-  for (let attempt = 0; attempt < MAX_SLUG_ATTEMPTS; attempt++) {
-    const candidate = explicitSlug && attempt === 0
-      ? explicitSlug
-      : `${baseSlug}-${startIndex + attempt}`
+  return withTransaction(async (client) => {
+    // deleteRelease держит тот же lock: новое издание не появится между
+    // проверкой полного состава релиза и удалением.
+    await lockReleaseComposition(client, data.release_id)
 
-    const inserted = await dbQueryOne<Edition>(
-      `INSERT INTO editions (release_id, format, platform, external_url, artwork_url, slug, status, is_primary, quality_tier)
-       VALUES ($1, $2::edition_format, $3, $4, $5, $6, $7::edition_status, $8, $9)
-       ON CONFLICT (slug) DO NOTHING
-       RETURNING ${editionColumns}`,
-      [
-        data.release_id,
-        data.format ?? 'book',
-        data.platform ?? null,
-        data.external_url ?? null,
-        data.artwork_url ?? null,
-        candidate,
-        data.status ?? 'draft',
-        data.is_primary ?? false,
-        data.quality_tier ?? 'standard',
-      ],
-    )
-    if (inserted) return inserted
-  }
+    for (let attempt = 0; attempt < MAX_SLUG_ATTEMPTS; attempt++) {
+      const candidate = explicitSlug && attempt === 0
+        ? explicitSlug
+        : `${baseSlug}-${startIndex + attempt}`
 
-  throw new Error(`Не удалось подобрать слаг издания для «${baseSlug}»`)
+      const { rows: [inserted] } = await client.query<Edition>(
+        `INSERT INTO editions (release_id, format, platform, external_url, artwork_url, slug, status, is_primary, quality_tier)
+         VALUES ($1, $2::edition_format, $3, $4, $5, $6, $7::edition_status, $8, $9)
+         ON CONFLICT (slug) DO NOTHING
+         RETURNING ${editionColumns}`,
+        [
+          data.release_id,
+          data.format ?? 'book',
+          data.platform ?? null,
+          data.external_url ?? null,
+          data.artwork_url ?? null,
+          candidate,
+          data.status ?? 'draft',
+          data.is_primary ?? false,
+          data.quality_tier ?? 'standard',
+        ],
+      )
+      if (inserted) return inserted
+    }
+
+    throw new Error(`Не удалось подобрать слаг издания для «${baseSlug}»`)
+  })
 }
 
 async function countEditionsOfRelease(releaseId: string): Promise<number> {
@@ -257,6 +270,32 @@ export async function updateEditionStatus(id: string, status: string) {
   )
 }
 
+/**
+ * Удаление издания каскадно удаляет главы. Живой lease запрещает удаление:
+ * иначе активная вкладка потеряла бы текст в обход блокировки.
+ */
 export async function deleteEdition(id: string) {
-  await dbQuery('DELETE FROM editions WHERE id = $1', [id])
+  await withTransaction(async (client) => {
+    const { rows: [edition] } = await client.query<{ release_id: string }>(
+      'SELECT release_id FROM editions WHERE id = $1',
+      [id],
+    )
+    if (!edition) return
+
+    await lockReleaseComposition(client, edition.release_id)
+    await lockEditionComposition(client, id)
+    const { rows } = await client.query<{ id: string }>(
+      'SELECT id FROM chapters WHERE edition_id = $1 ORDER BY id ASC',
+      [id],
+    )
+    const chapterIds = rows.map(row => row.id)
+    await lockChapterLeaseScopes(client, chapterIds)
+    await lockChapterLeaseRows(client, chapterIds)
+    await assertNoActiveChapterLeases(client, chapterIds)
+    await client.query(
+      'SELECT id FROM chapters WHERE edition_id = $1 ORDER BY id ASC FOR UPDATE',
+      [id],
+    )
+    await client.query('DELETE FROM editions WHERE id = $1', [id])
+  })
 }

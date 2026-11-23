@@ -214,11 +214,13 @@ async function handler(request: Request): Promise<Response> {
   }
 
   let authenticated = false
+  let actorUserId: string | null = null
   if (expected && tokensMatch(provided, expected)) {
     authenticated = true
   } else if (oauth) {
     try {
-      authenticated = !!(await authenticateMcpOAuthToken(provided))
+      actorUserId = await authenticateMcpOAuthToken(provided)
+      authenticated = !!actorUserId
     } catch (error) {
       console.error('[mcp] OAuth token check failed', error)
     }
@@ -227,6 +229,15 @@ async function handler(request: Request): Promise<Response> {
   if (!authenticated) {
     console.warn('[mcp-oauth] mcp rejected reason=invalid_bearer')
     return unauthorized()
+  }
+
+  // Инструменты читают актора из ctx.http.req.auth. Для статического токена
+  // user_id неизвестен: lease по-прежнему проверяется, но actor_kind='mcp'.
+  request.auth = {
+    token: provided,
+    clientId: actorUserId ? 'canfly-oauth' : 'canfly-static-token',
+    scopes: [MCP_CONTENT_SCOPE],
+    extra: { userId: actorUserId },
   }
 
   const limited = await rateLimited(provided)

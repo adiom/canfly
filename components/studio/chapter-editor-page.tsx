@@ -1,17 +1,30 @@
 'use client'
 
-import { useState, useRef, useCallback, type ReactNode } from 'react'
+import { useState, useRef, useCallback, useEffect, type ReactNode } from 'react'
 import { useRouter, unstable_rethrow } from 'next/navigation'
 import { useAutosave } from '@/lib/studio/use-autosave'
+import type { ChapterWriteFailure } from '@/lib/studio/chapter-write'
+import { archiveChapterDraft, type ChapterDraft } from '@/lib/studio/chapter-drafts'
+import { saveChapterAutosave } from '@/lib/studio/chapter-autosave'
+import { planLeaseReacquire } from '@/lib/studio/chapter-reacquire'
+import { saveMediaDraft, type MediaDraftInput } from '@/lib/studio/media-drafts'
+import { ChapterDraftBlocked } from '@/components/studio/chapter-draft-blocked'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import type { Editor } from '@tiptap/react'
 import type { Chapter, ChapterEditorialNote, EditionFormat } from '@/lib/releases-types'
-import { publishChapterAction, deleteChapterAction, updateChapterAction } from '@/lib/actions/studio'
+import {
+  getChapterForRecovery, publishChapterAction, deleteChapterAction, updateChapterAction,
+  restoreChapterVersionAction, updateComicChapterPagesAction,
+} from '@/lib/actions/studio'
 import { TelegraphEditor } from '@/components/studio/telegraph-editor'
 import { AudioChapterEditor } from '@/components/studio/audio-chapter-editor'
 import { ComicPagesEditor } from '@/components/studio/comic-pages-editor'
 import { VersionHistory } from '@/components/studio/version-history'
+import { ChapterDraftRecovery } from '@/components/studio/chapter-draft-recovery'
+import { ChapterLeaseBanner } from '@/components/studio/chapter-lease-banner'
+import { useChapterLease } from '@/lib/studio/use-chapter-lease'
+import type { ChapterLeaseProof } from '@/lib/studio/chapter-lease'
 import { EditorialNotesPanel } from '@/components/studio/editorial-notes-panel'
 import { EditorialNotesOverlay } from '@/components/studio/editorial-notes-overlay'
 import { collectParagraphs } from '@/lib/studio/paragraphs'
@@ -76,12 +89,14 @@ function parseComicPages(content: string | null): string[] {
 
 export function ChapterEditorPage({
   chapter,
+  editorUserId,
   editionId,
   editionFormat,
   prevChapter,
   nextChapter,
 }: {
   chapter: Chapter
+  editorUserId: string
   editionId: string
   editionFormat: EditionFormat
   prevChapter: ChapterNavTarget | null
@@ -90,8 +105,10 @@ export function ChapterEditorPage({
   const router = useRouter()
   const isAudioEditor = audioFormats.has(editionFormat)
   const isComic = editionFormat === 'comic'
-  const [mediaSaveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [mediaSaveStatus, setSaveStatus] = useState<'idle' | 'pending' | 'saving' | 'saved' | 'error'>('idle')
   const [chapterTitle, setChapterTitle] = useState(chapter.title)
+  const [chapterSnapshot, setChapterSnapshot] = useState(chapter)
+  const [recoveryNotice, setRecoveryNotice] = useState<string | null>(null)
   const [editorialNotes, setEditorialNotes] = useState<ChapterEditorialNote[]>([])
   const [isHtmlMode, setIsHtmlMode] = useState(false)
   const [htmlContent, setHtmlContent] = useState('')
@@ -105,23 +122,323 @@ export function ChapterEditorPage({
     setEditorContainer(node)
   }, [])
   const tiptapRef = useRef<Editor | null>(null)
+  const revisionRef = useRef(chapter.revision)
+  const leaseProofRef = useRef<ChapterLeaseProof | null>(null)
+  const readOnlyRef = useRef(true)
+  const mediaDraftRef = useRef<MediaDraftInput | null>(null)
+  const mediaUploadRef = useRef(false)
+  const [unsavedMedia, setUnsavedMedia] = useState<MediaDraftInput | null>(null)
+  const handleLocalMedia = useCallback((draft: MediaDraftInput | null, saved = true) => {
+    mediaDraftRef.current = draft
+    setUnsavedMedia(saved ? null : draft)
+  }, [])
+  const handleMediaUpload = useCallback((pending: boolean) => {
+    mediaUploadRef.current = pending
+  }, [])
+  const hasExtraDraft = useCallback(() => !!mediaDraftRef.current || mediaUploadRef.current, [])
+  const persistExtraDraft = useCallback(() => {
+    const draft = mediaDraftRef.current
+    const saved = !draft || saveMediaDraft(draft)
+    setUnsavedMedia(saved ? null : draft)
+    return saved && !mediaUploadRef.current
+  }, [])
+  const isReadOnly = useCallback(() => readOnlyRef.current, [])
+  const getRevision = useCallback(() => revisionRef.current, [])
+  const saveComicPages = useCallback(async (pages: string[]) => {
+    const proof = readOnlyRef.current ? null : leaseProofRef.current
+    if (!proof) {
+      return {
+        ok: false as const,
+        code: 'lease-lost' as const,
+        message: 'Редактирование недоступно: глава открыта в другой сессии.',
+      }
+    }
+    const result = await updateComicChapterPagesAction(chapter.id, revisionRef.current, proof, pages)
+    if (result.ok) revisionRef.current = result.value.revision
+    return result
+  }, [chapter.id])
+  const restorePending = useRef(false)
+  const [restoring, setRestoring] = useState(false)
+  const [saveError, setSaveError] = useState<ChapterWriteFailure | null>(null)
+  const [blockedRecovery, setBlockedRecovery] = useState<{
+    fresh: Chapter
+    draft: ChapterDraft
+  } | null>(null)
+  const [accessRevoked, setAccessRevoked] = useState(false)
+  const accessRevokedRef = useRef(false)
   const [, setContentVersion] = useState(0)
+  const archivePrefix = `cf-chapter-draft-archive:${editorUserId}:${chapter.id}:`
+  const archiveDraft = useCallback((draft: ChapterDraft, revision: number) =>
+    archiveChapterDraft(archivePrefix, draft, revision), [archivePrefix])
+  const applyDraft = useCallback((draft: ChapterDraft) => {
+    setChapterTitle(draft.title)
+    setInitialContent(draft.content)
+    setHtmlContent(draft.content)
+    const editor = tiptapRef.current
+    if (editor && !editor.isDestroyed) editor.commands.setContent(draft.content, { emitUpdate: false })
+  }, [])
   const autosave = useAutosave({
-    storageKey: `cf-chapter-draft:${chapter.id}`,
+    storageKey: `cf-chapter-draft:${editorUserId}:${chapter.id}`,
+    legacyStorageKey: `cf-chapter-draft:${chapter.id}`,
     initial: { title: chapter.title, content: chapter.content ?? '' },
-    save: async (draft) => { await updateChapterAction(chapter.id, draft) },
-    onRestore: (draft) => {
-      setChapterTitle(draft.title)
-      setInitialContent(draft.content)
-      tiptapRef.current?.commands.setContent(draft.content, { emitUpdate: false })
+    getRevision,
+    archiveDraft,
+    isReadOnly,
+    hasExtraDraft,
+    persistExtraDraft,
+    save: async (draft, patch) => {
+      const outcome = await saveChapterAutosave(draft, patch, {
+        revision: revisionRef.current,
+        proof: readOnlyRef.current ? null : leaseProofRef.current,
+        archive: archiveDraft,
+        update: (revision, proof, nextPatch) => updateChapterAction(
+          chapter.id,
+          revision,
+          proof,
+          nextPatch,
+        ),
+      })
+
+      if (outcome.archiveFailed) {
+        toast.warning('Браузер не смог записать архив. Скопируйте текст из редактора.')
+      }
+      if (outcome.revision !== undefined) revisionRef.current = outcome.revision
+      if (outcome.failure) {
+        if (outcome.failure.code === 'forbidden') {
+          accessRevokedRef.current = true
+          setAccessRevoked(true)
+        }
+        setSaveError(error => error && (error.code === 'conflict' || error.code === 'not-found')
+          ? error
+          : outcome.failure!)
+      } else {
+        setSaveError(null)
+        setRecoveryNotice(null)
+      }
+      return outcome.result
+    },
+    onRestore: applyDraft,
+  })
+
+  function archiveLocalDraft(): boolean {
+    const textSaved = !autosave.isDirty() || archiveDraft(autosave.getValue(), revisionRef.current)
+    return persistExtraDraft() && textSaved
+  }
+
+  function applyServerSnapshot(fresh: Chapter) {
+    revisionRef.current = fresh.revision
+    setChapterSnapshot(fresh)
+    const draft = { title: fresh.title, content: fresh.content ?? '' }
+    autosave.reset(draft)
+    if (!isAudioEditor && !isComic) applyDraft(draft)
+    setSaveError(null)
+  }
+
+  function retryBlockedArchive() {
+    if (!blockedRecovery) return
+    if (!archiveLocalDraft()) {
+      toast.error('Хранилище всё ещё недоступно. Скопируйте текст из редактора.')
+      return
+    }
+    applyServerSnapshot(blockedRecovery.fresh)
+    setBlockedRecovery(null)
+    setRecoveryNotice('Черновик сохранён в «Локальные черновики». Загружена серверная версия.')
+  }
+
+  function loadBlockedServerVersion() {
+    if (!blockedRecovery) return
+    applyServerSnapshot(blockedRecovery.fresh)
+    setBlockedRecovery(null)
+    setRecoveryNotice(null)
+    toast.warning('Загружена серверная версия. Локальный текст остался в редакторе до этого действия.')
+  }
+
+  async function copyBlockedDraft() {
+    if (!blockedRecovery) return
+    try {
+      await navigator.clipboard.writeText(blockedRecovery.draft.content)
+      toast.success('Текст черновика скопирован')
+    } catch {
+      toast.error('Выделите текст в поле черновика и скопируйте вручную')
+    }
+  }
+
+  const lease = useChapterLease({
+    chapterId: chapter.id,
+    onLost: () => {
+      if (!autosave.isDirty() && !hasExtraDraft()) return
+      const archived = archiveLocalDraft()
+      if (archived) {
+        toast.warning('Право редактирования потеряно. Правки сохранены в локальных черновиках.')
+      } else {
+        toast.error('Не удалось сохранить черновик в архив. Скопируйте текст из редактора.')
+      }
+    },
+    onAcquired: async (acquired) => {
+      if (accessRevokedRef.current || mediaUploadRef.current) return false
+      leaseProofRef.current = {
+        sessionId: acquired.sessionId,
+        token: acquired.token,
+        generation: acquired.generation,
+      }
+      // onAcquired вызывается при повторном захвате; до завершения
+      // восстановления редактор остаётся read-only.
+      try {
+        const fresh = await getChapterForRecovery(chapter.id)
+        if (!fresh) {
+          archiveLocalDraft()
+          accessRevokedRef.current = true
+          setAccessRevoked(true)
+          return false
+        }
+        if (accessRevokedRef.current || mediaUploadRef.current) return false
+        const dirty = autosave.isDirty() || hasExtraDraft()
+        const archived = fresh.revision === revisionRef.current || archiveLocalDraft()
+        const action = planLeaseReacquire({
+          dirty,
+          currentRevision: revisionRef.current,
+          freshRevision: fresh.revision,
+          archived,
+        })
+        if (action === 'blocked') {
+          readOnlyRef.current = true
+          setBlockedRecovery({
+            fresh,
+            draft: mediaDraftRef.current
+              ? { title: mediaDraftRef.current.title, content: JSON.stringify(mediaDraftRef.current, null, 2) }
+              : autosave.getValue(),
+          })
+          setSaveError({
+            ok: false,
+            code: 'error',
+            message: 'Черновик не сохранён в браузере. Скопируйте текст перед загрузкой серверной версии.',
+          })
+          return true
+        }
+        if (action === 'retry') {
+          setSaveError(null)
+          // Восстановление подтверждено: lease наш, ревизия совпадает.
+          readOnlyRef.current = false
+          if (autosave.isDirty()) {
+            try {
+              await autosave.flush()
+            } catch {
+              // Ошибка остаётся видимой, черновик уже в архиве/sessionStorage.
+            }
+          }
+          return !accessRevokedRef.current
+        }
+        if (action === 'none') {
+          setSaveError(null)
+          return true
+        }
+
+        applyServerSnapshot(fresh)
+        setRecoveryNotice(
+          'Глава изменилась, пока вы были в режиме чтения. Загружена серверная версия; ваш текст сохранён в «Локальные черновики».',
+        )
+        toast.warning('Глава изменилась. Откройте «Локальные черновики», чтобы восстановить свой текст.')
+        return true
+      } catch {
+        setSaveError({
+          ok: false,
+          code: 'error',
+          message: 'Не удалось перечитать главу после возврата права редактирования.',
+        })
+        return false
+      }
     },
   })
-  const saveStatus = isAudioEditor || isComic ? mediaSaveStatus : autosave.status
+
+  const readOnly = lease.state.status !== 'active' || blockedRecovery !== null || autosave.blockedDraft !== null || accessRevoked
+
+  const abandonLease = lease.abandon
+  useEffect(() => {
+    if (accessRevoked) abandonLease()
+  }, [accessRevoked, abandonLease])
+
+  useEffect(() => {
+    leaseProofRef.current = lease.proof
+    readOnlyRef.current = readOnly
+  }, [lease.proof, readOnly])
+  const revoked = accessRevoked || (lease.state.status === 'error' && lease.state.revoked === true)
+  const saveStatus = revoked ? 'error' : isAudioEditor || isComic ? mediaSaveStatus : autosave.status
+  const titleError = !isAudioEditor && !isComic && !chapterTitle.trim() ? 'Введите заголовок главы' : null
+  const saveMessage = revoked ? 'Доступ к главе отозван' : recoveryNotice ?? (saveError?.code === 'conflict'
+    ? 'Глава изменилась после открытия. Проверьте локальные черновики перед перезагрузкой.'
+    : saveError?.code === 'lease-lost' || saveError?.code === 'lease-held'
+      ? 'Режим только для чтения: правки сохраняются в локальные черновики.'
+      : saveError?.message ?? titleError)
+  const canRestoreDraft = !restoring && !readOnly && saveError?.code !== 'conflict' && saveError?.code !== 'not-found'
   const updateDraft = autosave.update
   const handleDraftChange = useCallback((patch: { title?: string; content?: string }) => {
-    if (patch.title !== undefined) setChapterTitle(patch.title)
+    if (restorePending.current) return
+    if (patch.title !== undefined) {
+      setChapterTitle(patch.title)
+      if (patch.title.trim()) {
+        setSaveError(error => error?.code === 'validation' ? null : error)
+      }
+    }
     updateDraft(patch)
   }, [updateDraft])
+
+  function restoreLocalText(draft: ChapterDraft) {
+    if (!canRestoreDraft || restorePending.current) return false
+    const current = autosave.getValue()
+    if (autosave.isDirty() && !archiveDraft(current, revisionRef.current)) {
+      toast.error('Не удалось сохранить текущий черновик в архив. Скопируйте его перед восстановлением.')
+      return false
+    }
+    updateDraft({ content: draft.content })
+    applyDraft({ ...current, content: draft.content })
+    return true
+  }
+
+  function applyWriteFailure(failure: ChapterWriteFailure) {
+    if (failure.code === 'forbidden') {
+      accessRevokedRef.current = true
+      setAccessRevoked(true)
+    }
+    setSaveError(failure)
+  }
+
+  async function handleRestoreVersion(versionId: string) {
+    if (restorePending.current) return
+    restorePending.current = true
+    setRestoring(true)
+    try {
+      if (tiptapRef.current && !tiptapRef.current.isDestroyed) tiptapRef.current.setEditable(false, false)
+      await autosave.flush()
+      const proof = leaseProofRef.current
+      if (!proof) {
+        const failure: ChapterWriteFailure = {
+          ok: false,
+          code: 'lease-lost',
+          message: 'Восстановление недоступно: глава открыта в другой сессии.',
+        }
+        setSaveError(failure)
+        throw new Error(failure.message)
+      }
+      const result = await restoreChapterVersionAction(chapter.id, versionId, revisionRef.current, proof)
+      if (!result.ok) {
+        applyWriteFailure(result)
+        throw new Error(result.message)
+      }
+      revisionRef.current = result.value.revision
+      setChapterSnapshot(result.value)
+      const draft = { title: result.value.title, content: result.value.content ?? '' }
+      autosave.reset(draft)
+      applyDraft(draft)
+      setSaveError(null)
+      setRecoveryNotice(null)
+    } finally {
+      if (tiptapRef.current && !tiptapRef.current.isDestroyed) {
+        tiptapRef.current.setEditable(!readOnlyRef.current && !accessRevokedRef.current, false)
+      }
+      restorePending.current = false
+      setRestoring(false)
+    }
+  }
 
   const handleEditorReady = useCallback((editor: Editor) => {
     tiptapRef.current = editor
@@ -213,9 +530,18 @@ export function ChapterEditorPage({
   }
 
   async function handlePublish() {
+    if (restorePending.current) return
     try {
       await autosave.flush()
-      await publishChapterAction(chapter.id)
+      const proof = leaseProofRef.current
+      if (!proof) throw new Error('Публикация недоступна: глава открыта в другой сессии.')
+      const result = await publishChapterAction(chapter.id, revisionRef.current, proof)
+      if (!result.ok) {
+        applyWriteFailure(result)
+        toast.error(result.message)
+        return
+      }
+      revisionRef.current = result.value.revision
       toast.success('Глава опубликована')
       router.refresh()
     } catch (error) {
@@ -225,9 +551,16 @@ export function ChapterEditorPage({
   }
 
   async function handleDelete() {
+    if (restorePending.current) return
     try {
       await autosave.flush()
-      await deleteChapterAction(chapter.id)
+      const proof = leaseProofRef.current
+      if (!proof) throw new Error('Удаление недоступно: глава открыта в другой сессии.')
+      const result = await deleteChapterAction(chapter.id, revisionRef.current, proof)
+      if (!result.ok) {
+        applyWriteFailure(result)
+        toast.error(result.message)
+      }
     } catch (error) {
       unstable_rethrow(error)
       toast.error('Ошибка удаления')
@@ -251,11 +584,11 @@ export function ChapterEditorPage({
             <span className="text-sm text-cf-text-3" role="status" aria-live="polite">
               {saveStatus === 'pending' && 'Есть несохранённые правки'}
               {saveStatus === 'saving' && <Loader2 className="inline h-3 w-3 animate-spin text-cf-accent" />}
-              {saveStatus === 'saved' && <Check className="inline h-3 w-3 text-cf-status-resolved" />}
-              {saveStatus === 'error' && <AlertCircle className="inline h-3 w-3 text-cf-accent" />}
+              {saveStatus === 'saved' && !saveMessage && <Check className="inline h-3 w-3 text-cf-status-resolved" />}
+              {(saveStatus === 'error' || saveMessage) && <AlertCircle className="inline h-3 w-3 text-cf-accent" />}
               {saveStatus === 'saving' && ' Сохраняю...'}
-              {saveStatus === 'saved' && ' Сохранено'}
-              {saveStatus === 'error' && ' Ошибка'}
+              {saveStatus === 'saved' && !saveMessage && ' Сохранено'}
+              {saveMessage || (saveStatus === 'error' && ' Ошибка')}
             </span>
           </div>
 
@@ -274,6 +607,7 @@ export function ChapterEditorPage({
             <Button
               variant="ghost"
               size="sm"
+              disabled={restoring || readOnly}
               onClick={isHtmlMode ? switchToWysiwyg : switchToHtml}
               className={`rounded-xl ${isHtmlMode ? 'bg-cf-status-open/15 text-cf-status-open border border-cf-status-open/40 font-semibold' : 'text-cf-text-3 hover:text-cf-accent hover:bg-cf-accent/10'}`}
             >
@@ -282,10 +616,15 @@ export function ChapterEditorPage({
             </Button>
           )}
 
-          {!isAudioEditor && !isComic && <VersionHistory chapterId={chapter.id} />}
+          {!isAudioEditor && !isComic && (
+            <VersionHistory chapterId={chapter.id} onRestore={handleRestoreVersion} disabled={readOnly} />
+          )}
+          {!isAudioEditor && !isComic && (
+            <ChapterDraftRecovery prefix={archivePrefix} canRestore={canRestoreDraft} onRestore={restoreLocalText} />
+          )}
 
           {chapter.status !== 'published' && (
-            <Button size="sm" onClick={handlePublish} className="rounded-xl bg-cf-status-resolved text-cf-bg hover:opacity-90">
+            <Button size="sm" disabled={restoring || readOnly} onClick={handlePublish} className="rounded-xl bg-cf-status-resolved text-cf-bg hover:opacity-90">
               <Globe className="mr-2 h-4 w-4" />
               Опубликовать
             </Button>
@@ -293,7 +632,7 @@ export function ChapterEditorPage({
 
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button variant="ghost" size="icon-sm" className="rounded-xl text-cf-text-4 hover:text-cf-accent hover:bg-cf-accent/10">
+              <Button variant="ghost" size="icon-sm" disabled={restoring || readOnly} className="rounded-xl text-cf-text-4 hover:text-cf-accent hover:bg-cf-accent/10">
                 <Trash2 className="h-4 w-4" />
               </Button>
             </AlertDialogTrigger>
@@ -313,17 +652,59 @@ export function ChapterEditorPage({
         </div>
       </header>
 
+      <ChapterLeaseBanner state={lease.state} onRetry={() => void lease.reacquire()} />
+      {autosave.blockedDraft && (
+        <div role="alert" className="mx-auto max-w-4xl space-y-2 p-4">
+          <p>Не удалось перенести старый черновик в архив. Скопируйте его или освободите место и повторите.</p>
+          <textarea aria-label="Старый локальный черновик" readOnly value={autosave.blockedDraft.content} className="w-full font-mono" />
+          <Button size="sm" onClick={autosave.retryArchive}>Повторить архивацию</Button>
+        </div>
+      )}
+      {unsavedMedia && !blockedRecovery && (
+        <div role="alert" className="mx-auto max-w-4xl space-y-2 p-4">
+          <p>Медиачерновик не записан. Скопируйте его перед уходом.</p>
+          <textarea aria-label="Несохранённый медиачерновик" readOnly value={JSON.stringify(unsavedMedia, null, 2)} className="w-full font-mono" />
+        </div>
+      )}
+      {blockedRecovery && (
+        <ChapterDraftBlocked
+          draft={blockedRecovery.draft}
+          onCopy={() => void copyBlockedDraft()}
+          onRetry={retryBlockedArchive}
+          onLoadServer={loadBlockedServerVersion}
+        />
+      )}
+
       <div className="mx-auto max-w-6xl px-4 md:px-8 py-8">
         {isAudioEditor ? (
           <div className="mx-auto max-w-4xl">
-            <AudioChapterEditor chapter={chapter} onSaveStatus={setSaveStatus} />
+            <AudioChapterEditor
+              key={`audio:${chapterSnapshot.revision}`}
+              chapter={chapterSnapshot}
+              revisionRef={revisionRef}
+              leaseRef={leaseProofRef}
+              readOnly={readOnly}
+              onSaveStatus={setSaveStatus}
+              onLocalDraft={handleLocalMedia}
+              onUploadPending={handleMediaUpload}
+              draftOwner={editorUserId}
+            />
           </div>
         ) : isComic ? (
           <div className="mx-auto max-w-4xl">
             <div className="bg-cf-bg-2 border border-cf-text-1/10 rounded-2xl p-5 md:p-6">
               <ComicPagesEditor
+                key={`comic:${chapterSnapshot.revision}`}
+                initialPages={parseComicPages(chapterSnapshot.content)}
+                savePages={saveComicPages}
+                getRevision={getRevision}
+                readOnly={readOnly}
+                accessRevoked={revoked}
+                onLocalDraft={handleLocalMedia}
+                onUploadPending={handleMediaUpload}
+                draftOwner={editorUserId}
                 chapterId={chapter.id}
-                initialPages={parseComicPages(chapter.content)}
+                chapterRevision={chapterSnapshot.revision}
               />
             </div>
           </div>
@@ -333,6 +714,7 @@ export function ChapterEditorPage({
               <div className="bg-cf-bg-2 border border-cf-text-1/10 rounded-2xl p-4">
                 <label className="text-sm font-semibold text-cf-text-2 mb-2 block">HTML код главы</label>
                 <textarea
+                  disabled={restoring || readOnly}
                   value={htmlContent}
                   onChange={(e) => {
                     setHtmlContent(e.target.value)
@@ -344,6 +726,7 @@ export function ChapterEditorPage({
                 <div className="flex justify-end gap-3 mt-4">
                   <Button
                     variant="outline"
+                    disabled={restoring || readOnly}
                     onClick={switchToWysiwyg}
                     className="rounded-xl border-cf-text-1/10 bg-cf-bg text-cf-text-2 hover:bg-cf-bg-2"
                   >
@@ -351,7 +734,7 @@ export function ChapterEditorPage({
                   </Button>
                   <Button
                     onClick={handleHtmlSave}
-                    disabled={saveStatus === 'saving'}
+                    disabled={restoring || readOnly || saveStatus === 'saving'}
                     className="rounded-xl bg-cf-accent text-cf-bg hover:bg-cf-accent-hover"
                   >
                     {saveStatus === 'saving' ? 'Сохраняю...' : 'Сохранить'}
@@ -380,6 +763,7 @@ export function ChapterEditorPage({
               />
               <TelegraphEditor
                 ref={editorCallbackRef}
+                disabled={restoring || readOnly}
                 initialTitle={chapterTitle}
                 initialContent={initialContent}
                 onDraftChange={handleDraftChange}

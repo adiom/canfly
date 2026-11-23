@@ -22,6 +22,7 @@ import {
 
 interface TelegraphEditorProps {
   initialTitle: string
+  disabled?: boolean
   initialContent: string | null
   onDraftChange: (patch: { title?: string; content?: string }) => void
   onContentUpdate?: () => void
@@ -65,7 +66,7 @@ function BubbleDivider() {
 
 export const TelegraphEditor = forwardRef<HTMLDivElement, TelegraphEditorProps>(
   function TelegraphEditor(
-    { initialTitle, initialContent, onDraftChange, onContentUpdate, onEditorReady },
+    { initialTitle, initialContent, onDraftChange, onContentUpdate, onEditorReady, disabled = false },
     ref,
   ) {
     const containerRef = useRef<HTMLDivElement>(null)
@@ -75,6 +76,7 @@ export const TelegraphEditor = forwardRef<HTMLDivElement, TelegraphEditorProps>(
       extensions: [
         StarterKit.configure({
           heading: { levels: [2, 3] },
+          link: false,
         }),
         Placeholder.configure({
           placeholder: 'Начните писать...',
@@ -99,6 +101,11 @@ export const TelegraphEditor = forwardRef<HTMLDivElement, TelegraphEditorProps>(
         onContentUpdate?.()
       },
     })
+
+    useEffect(() => {
+      if (!editor || editor.isDestroyed) return
+      editor.setEditable(!disabled)
+    }, [editor, disabled])
 
     useEffect(() => {
       if (editor && editor.getHTML() !== (initialContent ?? '')) {
@@ -137,6 +144,7 @@ export const TelegraphEditor = forwardRef<HTMLDivElement, TelegraphEditorProps>(
       <div ref={setRefs} className="relative mx-auto max-w-2xl">
         {/* Title */}
         <input
+          disabled={disabled}
           value={initialTitle}
           onChange={(e) => onDraftChange({ title: e.target.value })}
           className="mb-1 w-full bg-transparent text-3xl font-black uppercase leading-none tracking-tight text-cf-text-heading placeholder:text-cf-text-3/50 focus:outline-none"
@@ -145,7 +153,7 @@ export const TelegraphEditor = forwardRef<HTMLDivElement, TelegraphEditorProps>(
         <div className="mb-8 h-px bg-cf-text-1/10" />
 
         {/* Bubble formatting menu */}
-        <BubbleMenu editor={editor}>
+        {!disabled && <BubbleMenu editor={editor}>
           <div className="flex items-center gap-0.5 rounded-md border border-cf-text-1/20 bg-cf-bg-2 px-1 py-1 shadow-xl shadow-black/40">
             <BubbleBtn
               active={editor.isActive('bold')}
@@ -222,7 +230,7 @@ export const TelegraphEditor = forwardRef<HTMLDivElement, TelegraphEditorProps>(
               <Minus className="h-3.5 w-3.5" />
             </BubbleBtn>
           </div>
-        </BubbleMenu>
+        </BubbleMenu>}
 
         <EditorContent editor={editor} />
       </div>

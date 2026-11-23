@@ -144,8 +144,18 @@ export const lyricsSchema = z.object({
   lines: z.array(lyricLineSchema).min(1),
 })
 
+export const chapterRevisionSchema = z.number().int().min(0).max(2147483647)
+export const chapterIdSchema = z.string().uuid()
+export const chapterLeaseProofSchema = z.object({
+  sessionId: z.string().min(8).max(128),
+  token: z.string().regex(/^[0-9a-f]{64}$/),
+  generation: z.number().int().min(1),
+})
+export const comicChapterPagesSchema = z.array(z.string())
+
 export const chapterUpdateSchema = z.object({
-  title: optionalString.optional(),
+  title: z.string({ invalid_type_error: 'Введите заголовок главы' })
+    .trim().min(1, 'Введите заголовок главы').optional(),
   content: z.string().trim().nullable().optional(),
   audio_url: optionalString.optional(),
   audio_blob_path: optionalString.optional(),
@@ -154,7 +164,6 @@ export const chapterUpdateSchema = z.object({
   audio_content_type: optionalString.optional(),
   audio_file_size_bytes: z.number().int().nonnegative().nullable().optional(),
   audio_uploaded_at: optionalString.optional(),
-  chapter_index: z.number().int().min(1).optional(),
 })
 
 // --- Series ---

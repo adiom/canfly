@@ -1,4 +1,9 @@
 {
+  "git": {
+    "deploymentEnabled": {
+      "refactor/phase-2": false
+    }
+  },
   "crons": [
     {
       "path": "/api/cron/cleanup",

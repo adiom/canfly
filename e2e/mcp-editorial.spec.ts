@@ -98,6 +98,7 @@ test.describe('MCP editorial roundtrip (isolated test DB only)', () => {
       expect(initialStored).toContain('Город N уснул.')
       const updated = await callTool(request, 'canfly_update_chapter', {
         id: createdId,
+        expected_revision: created.revision,
         content: revised,
       })
       expect(updated.ok).toBe(true)

@@ -12,6 +12,10 @@ flowchart LR
   Action --> Revalidate[revalidatePath]
 ```
 
+## Редактирование глав
+
+**Факт:** одна глава одновременно редактируется только в одной сессии. Право записи даёт строка [`chapter_edit_leases`](../../postgres/versioned/0002_chapter_edit_leases.sql): вкладка захватывает lease, продлевает его heartbeat (20 с при TTL 60 с) и освобождает через `sendBeacon` при закрытии. Остальные вкладки и пользователи, включая администратора, получают read-only и баннер с именем владельца. Каждая запись Studio и MCP проверяет lease, `lease_token`/`generation` и `chapters.revision` в одной транзакции; потеря lease не удаляет локальный черновик. MCP использует неявный one-shot lease в транзакции записи и получает `lease_held`, если глава занята. Протокол и остаточные обходы — [chapter-edit-lease.md](../refactor/chapter-edit-lease.md).
+
 **Факт:** [`/studio`](../../app/studio/page.tsx) получает релизы через `getMyReleasesWithEditions`; администратор видит все, остальные — свои. Его число «Просмотров» суммирует `releases.view_count`. Причина недостоверности текущего значения описана в [analytics.md](analytics.md). Для доступа к релизу/изданию/главе применяются `require*Ownership()` из [`studio-auth.ts`](../../lib/server/studio-auth.ts). **План:** при расширении Studio сохранять проверку в каждой мутации; одного `proxy.ts` недостаточно.
 
 ## AI-центр
