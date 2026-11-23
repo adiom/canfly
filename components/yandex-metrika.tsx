@@ -6,7 +6,8 @@ import Script from 'next/script'
 export function YandexMetrika() {
   const pathname = usePathname()
 
-  if (pathname.startsWith('/studio')) return null
+  // Avoid tracking local development and sending E2E requests to a third party.
+  if (process.env.NODE_ENV !== 'production' || pathname.startsWith('/studio')) return null
 
   return (
     <Script
